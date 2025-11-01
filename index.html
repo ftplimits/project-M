@@ -1191,19 +1191,11 @@ useEffect(() => {
                         // Show notification
                         alert('You were kicked by the host');
                         
-                        // Disconnect
-                        if (peer) {
-                            peer.destroy();
-                        }
+                        // Disconnect and reset state
+                        disconnectFromRoom();
                         
-                        // Reset state
-                        connectionsRef.current = [];
-                        setConnections([]);
-                        setIsConnected(false);
-                        setIsHost(false);
-                        setPlayers([]);
-                        setRoomCode('');
-                        setPeer(null);
+                        // Clean up URL parameter
+                        window.history.replaceState({}, document.title, window.location.pathname);
                         break;
 
                     default:
@@ -1337,10 +1329,10 @@ useEffect(() => {
                         data: { reason: 'kicked by host' }
                     });
                     
-                    // Close connection after a short delay to ensure message is delivered
+                    // Close connection after delay to ensure message is delivered
                     setTimeout(() => {
                         playerConnection.close();
-                    }, 100);
+                    }, MESSAGE_DELIVERY_DELAY);
                 }
                 
                 // Remove from connections
