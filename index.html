@@ -325,6 +325,7 @@
             const [tokens, setTokens] = useState([]);
             const [draggedToken, setDraggedToken] = useState(null);
             const [tokenDragOffset, setTokenDragOffset] = useState({ x: 0, y: 0 });
+            const [tokenDragStart, setTokenDragStart] = useState(null); // { tokenId, startX, startY }
 
             const [diceVisible, setDiceVisible] = useState(false);
             const [diceRollLog, setDiceRollLog] = useState([]);
@@ -2196,6 +2197,12 @@ const handleAvatarUpload = (e) => {
                     x: e.clientX - transformedX,
                     y: e.clientY - transformedY
                 });
+                // Store drag start position for measurement
+                setTokenDragStart({
+                    tokenId: tokenId,
+                    startX: token.x,
+                    startY: token.y
+                });
             };
 
             const handleTokenContextMenu = (e, tokenId) => {
@@ -2336,6 +2343,7 @@ const handleAvatarUpload = (e) => {
         setDraggedToken(null);
         setDraggedSheet(null);
         setResizingSheet(null);
+        setTokenDragStart(null); // Clear drag start position
         
         // STUTTER FIX: Delay clearing draggedTokenRef to ignore in-flight updates
         // This prevents the stutter when releasing - any updates from the last mousemove
@@ -2383,7 +2391,8 @@ const handleAvatarUpload = (e) => {
                 y: gridCenterY,
                 size: size,
                 sizeMultiplier: 1, 
-                name: 'Token'
+                name: 'Token',
+                showMeasurement: false
             };
             setTokens(prev => [...prev, newToken]);
         };
@@ -2415,6 +2424,16 @@ const resizeToken = (tokenId, multiplier) => {
     setTokens(prevTokens => 
         prevTokens.map(t => 
             t.id === tokenId ? { ...t, sizeMultiplier: multiplier } : t
+        )
+    );
+    setDiceCountMenu(null);
+};
+
+// ADD THIS NEW FUNCTION:
+const toggleTokenMeasurement = (tokenId) => {
+    setTokens(prevTokens => 
+        prevTokens.map(t => 
+            t.id === tokenId ? { ...t, showMeasurement: !t.showMeasurement } : t
         )
     );
     setDiceCountMenu(null);
@@ -2897,7 +2916,62 @@ const handleHandoutUpload = (e) => {
                         ctx.fillRect(sx, sy, sw, sh);
                     }
                 }
-            }, [drawings, currentDrawing, activeScene.grid?.enabled, gridTransform]);
+
+                // Draw measurement line for tokens being dragged with measurement enabled
+                if (tokenDragStart && draggedToken === tokenDragStart.tokenId) {
+                    const draggedTokenWithMeasurement = tokens.find(t => 
+                        t.id === tokenDragStart.tokenId && t.showMeasurement
+                    );
+                    
+                    if (draggedTokenWithMeasurement) {
+                        // Convert world coordinates to screen coordinates
+                        const startScreenX = worldToScreenX(tokenDragStart.startX);
+                        const startScreenY = worldToScreenY(tokenDragStart.startY);
+                        
+                        const currentScreenX = worldToScreenX(draggedTokenWithMeasurement.x);
+                        const currentScreenY = worldToScreenY(draggedTokenWithMeasurement.y);
+                        
+                        // Draw line
+                        ctx.strokeStyle = '#d4af37'; // Amber
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.moveTo(startScreenX, startScreenY);
+                        ctx.lineTo(currentScreenX, currentScreenY);
+                        ctx.stroke();
+                        
+                        // Calculate distance in grid squares
+                        const deltaX = draggedTokenWithMeasurement.x - tokenDragStart.startX;
+                        const deltaY = draggedTokenWithMeasurement.y - tokenDragStart.startY;
+                        const distanceInPixels = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                        const gridSize = activeScene.grid?.size || 50;
+                        const distanceInSquares = Math.round(distanceInPixels / gridSize * 10) / 10; // Round to 1 decimal
+                        
+                        // Draw label at midpoint
+                        const midX = (startScreenX + currentScreenX) / 2;
+                        const midY = (startScreenY + currentScreenY) / 2 - 20; // Offset above line
+                        
+                        const label = `${distanceInSquares} sq`;
+                        ctx.font = 'bold 14px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        
+                        // Background
+                        const metrics = ctx.measureText(label);
+                        const padding = 6;
+                        ctx.fillStyle = '#27272a'; // zinc-800
+                        ctx.fillRect(
+                            midX - metrics.width / 2 - padding,
+                            midY - 10,
+                            metrics.width + padding * 2,
+                            20
+                        );
+                        
+                        // Text
+                        ctx.fillStyle = '#d4af37'; // Amber
+                        ctx.fillText(label, midX, midY);
+                    }
+                }
+            }, [drawings, currentDrawing, activeScene.grid?.enabled, gridTransform, tokenDragStart, draggedToken, tokens]);
 
             useEffect(() => {
                 const repositionAvatars = () => {
@@ -5335,6 +5409,33 @@ const handleHandoutUpload = (e) => {
             }}
         >
             ✏️ Rename Token
+        </button>
+        
+        {/* Toggle Measurement Button */}
+        <button
+            onClick={() => toggleTokenMeasurement(diceCountMenu.tokenId)}
+            style={{
+                padding: '6px 12px',
+                backgroundColor: '#2a2a2a',
+                color: '#e0e0e0',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#3a3a3a';
+                e.currentTarget.style.borderColor = '#d4af37';
+            }}
+            onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#2a2a2a';
+                e.currentTarget.style.borderColor = '#444';
+            }}
+        >
+            {tokens.find(t => t.id === diceCountMenu.tokenId)?.showMeasurement ? '📏 Hide Measurement' : '📏 Show Measurement'}
         </button>
         
         {/* Size Options Divider */}
