@@ -259,6 +259,8 @@
             const [playerName, setPlayerName] = useState('Player');
             const [diceNotification, setDiceNotification] = useState(null);
             const [clipboardNotification, setClipboardNotification] = useState(false);
+            const [lastHeartbeat, setLastHeartbeat] = useState(null);
+            const [reconnectAttempts, setReconnectAttempts] = useState(0);
             const playersRef = useRef([]);
             const tokensRef = useRef([]);
             const draggedTokenRef = useRef(null); // Track which token we're actively dragging
@@ -272,6 +274,9 @@
             const throttledAvatarBroadcast = useRef(null);
             const throttledSceneBroadcast = useRef(null);
             const throttledSheetBroadcast = useRef(null);
+            const heartbeatIntervalRef = useRef(null);
+            const reconnectTimeoutRef = useRef(null);
+            const MAX_RECONNECT_ATTEMPTS = 3;
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -581,7 +586,13 @@ const dice = [
                 peer = new Peer(roomCode, {
                     config: {
                         iceServers: [
+                            // Google STUN servers (primary)
                             { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' },
+                            { urls: 'stun:stun3.l.google.com:19302' },
+                            { urls: 'stun:stun4.l.google.com:19302' },
+                            // Twilio STUN server (fallback)
                             { urls: 'stun:global.stun.twilio.com:3478' }
                         ]
                     }
@@ -611,6 +622,22 @@ const dice = [
                     setConnectionFlow(null);
                     
                     setPlayers([{ id: id, name: playerName || 'Game Master', isHost: true }]);
+                    
+                    // Start heartbeat for connection monitoring
+                    heartbeatIntervalRef.current = setInterval(() => {
+                        if (isConnectedRef.current && isHostRef.current) {
+                            const heartbeatMsg = { type: 'HEARTBEAT', data: { timestamp: Date.now() } };
+                            clientConnections.forEach((conn, peerId) => {
+                                if (conn.open) {
+                                    try {
+                                        conn.send(heartbeatMsg);
+                                    } catch (err) {
+                                        console.error(`Heartbeat failed for ${peerId}:`, err);
+                                    }
+                                }
+                            });
+                        }
+                    }, 30000); // Send heartbeat every 30 seconds
                 });
                 
                 peer.on('connection', (conn) => {
@@ -679,7 +706,13 @@ const dice = [
                 peer = new Peer(playerId, {
                     config: {
                         iceServers: [
+                            // Google STUN servers (primary)
                             { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' },
+                            { urls: 'stun:stun3.l.google.com:19302' },
+                            { urls: 'stun:stun4.l.google.com:19302' },
+                            // Twilio STUN server (fallback)
                             { urls: 'stun:global.stun.twilio.com:3478' }
                         ]
                     }
@@ -698,6 +731,7 @@ const dice = [
                         setIsHost(false);
                         setIsConnected(true);
                         setConnectionStatus('connected');
+                        setReconnectAttempts(0);
                         
                         // Send player info to host
                         hostConnection.send({
@@ -721,7 +755,22 @@ const dice = [
                         console.log('Disconnected from host');
                         setIsConnected(false);
                         setConnectionStatus('disconnected');
-                        alert('Disconnected from host');
+                        
+                        // Attempt auto-reconnect
+                        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                            const newAttempts = reconnectAttempts + 1;
+                            setReconnectAttempts(newAttempts);
+                            
+                            console.log(`Connection lost. Reconnecting... (attempt ${newAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                            
+                            reconnectTimeoutRef.current = setTimeout(() => {
+                                console.log('Attempting to reconnect to host...');
+                                joinRoom(roomCodeRef.current);
+                            }, 2000 * newAttempts); // Exponential backoff: 2s, 4s, 6s
+                        } else {
+                            alert('Disconnected from host. Maximum reconnection attempts reached.');
+                            setReconnectAttempts(0); // Reset for future connections
+                        }
                     });
                     
                     hostConnection.on('error', (err) => {
@@ -911,6 +960,12 @@ const dice = [
                             });
                         }
                         break;
+                    
+                    case 'HEARTBEAT':
+                        // Update last heartbeat timestamp
+                        setLastHeartbeat(Date.now());
+                        console.log('Heartbeat received from host');
+                        break;
                         
                     default:
                         console.warn('Unknown message type:', message.type);
@@ -939,11 +994,24 @@ const dice = [
                     peer = null;
                 }
                 
+                // Clear heartbeat interval
+                if (heartbeatIntervalRef.current) {
+                    clearInterval(heartbeatIntervalRef.current);
+                    heartbeatIntervalRef.current = null;
+                }
+                
+                // Clear reconnect timeout
+                if (reconnectTimeoutRef.current) {
+                    clearTimeout(reconnectTimeoutRef.current);
+                    reconnectTimeoutRef.current = null;
+                }
+                
                 setIsConnected(false);
                 setIsHost(false);
                 setRoomCode('');
                 setMyPeerId('');
                 setPlayers([]);
+                setReconnectAttempts(0);
             };
 
             // Sync tokens when they change (only if host) - THROTTLED
