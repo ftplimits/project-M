@@ -276,7 +276,6 @@
             const draggedTokenRef = useRef(null); // Track which token we're actively dragging
             const diceNotificationTimeoutRef = useRef(null);
             const clipboardNotificationTimeoutRef = useRef(null);
-            const throttledTokenBroadcast = useRef(null);
             const isHostRef = useRef(false);
             const isConnectedRef = useRef(false);
 
@@ -621,6 +620,7 @@ const dice = [
                     
                     // Close connection popup
                     setShowConnectionPopup(false);
+                    setConnectionFlow(null);
                     
                     setPlayers([{ id: roomCode, name: playerName || 'Game Master', isHost: true }]);
                 }).catch(error => {
@@ -649,7 +649,8 @@ const dice = [
                     
                     console.log('Room found, joining...');
                     
-                    const playerId = generateRoomCode(); // Generate unique player ID
+                    // Generate unique player ID (timestamp + random to avoid collisions)
+                    const playerId = 'P' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5).toUpperCase();
                     
                     setMyPeerId(playerId);
                     setRoomCode(roomCode);
@@ -670,6 +671,7 @@ const dice = [
                         
                         // Close connection popup
                         setShowConnectionPopup(false);
+                        setConnectionFlow(null);
                     }).catch(error => {
                         console.error('Error joining room:', error);
                         alert('Failed to join room. Please try again.');
