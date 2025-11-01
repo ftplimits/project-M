@@ -643,13 +643,20 @@ useEffect(() => {
             const createSession = () => {
                 console.log('createSession called');
                 
-                // Show "Creating game, Please wait..." popup immediately
-                setShowCreatingDialog(true);
+                // Prompt for host name BEFORE showing creating dialog
+                const hostName = prompt('Enter your name:', DEFAULT_HOST_NAME);
                 
-                // Use default host name (no prompt)
-                const hostName = DEFAULT_HOST_NAME;
-                setPlayerName(hostName);
-                console.log('Creating peer as Host');
+                // If user cancels, abort session creation
+                if (!hostName || hostName.trim() === '') {
+                    console.log('Session creation cancelled - no name provided');
+                    return;
+                }
+                
+                setPlayerName(hostName.trim());
+                console.log('Creating session with host name:', hostName.trim());
+                
+                // NOW show "Creating game, Please wait..." popup
+                setShowCreatingDialog(true);
                 
                 const newPeer = new Peer({
                     host: '0.peerjs.com',
@@ -673,7 +680,7 @@ useEffect(() => {
                     setRoomCode(id);
                     setIsHost(true);
                     setIsConnected(true);
-                    setPlayers([{ id: id, name: hostName, isHost: true }]);
+                    setPlayers([{ id: id, name: hostName.trim(), isHost: true }]);
                     setPeer(newPeer);
                     
                     // Hide creating dialog
