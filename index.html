@@ -272,6 +272,7 @@
             const [deniedMessage, setDeniedMessage] = useState(false);
             const [playerContextMenu, setPlayerContextMenu] = useState(null); // { x, y, playerId, playerName }
             const [kickConfirmation, setKickConfirmation] = useState(null); // { playerId, playerName }
+            const [kickedMessage, setKickedMessage] = useState(false);
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -441,8 +442,8 @@
                     }
                     autoSave();
                     
-                    // Show warning if host and connected with players
-                    if (isHost && isConnected) {
+                    // Show warning if host and connected with other players
+                    if (isHost && isConnected && players.length > 1) {
                         const message = "Alert: During beta, refreshing will break game URL for all players.";
                         e.preventDefault();
                         e.returnValue = message;
@@ -454,7 +455,7 @@
                 return () => {
                     window.removeEventListener('beforeunload', handleBeforeUnload);
                 };
-            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers, isHost, isConnected]);            
+            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers, isHost, isConnected, players]);            
 
 const dice = [
   { type: 'd4',  sides: 4,  image: 'https://res.cloudinary.com/dmbibsole/image/upload/v1761679707/4_ze8lej.png' },
@@ -1187,10 +1188,10 @@ useEffect(() => {
                         // Player was kicked by host
                         console.log('You were kicked from the session');
                         
-                        // Show notification
-                        alert('You were kicked by the host');
+                        // Show notification modal
+                        setKickedMessage(true);
                         
-                        // Disconnect
+                        // Disconnect immediately
                         if (peer) {
                             peer.destroy();
                         }
@@ -1203,6 +1204,11 @@ useEffect(() => {
                         setPlayers([]);
                         setRoomCode('');
                         setPeer(null);
+                        
+                        // Auto-close message after configured duration
+                        setTimeout(() => {
+                            setKickedMessage(false);
+                        }, AUTO_FADE_DURATION);
                         break;
 
                     default:
@@ -3996,7 +4002,7 @@ const handleHandoutUpload = (e) => {
                                         backgroundColor: '#2a2a2a',
                                         borderRadius: '6px',
                                         border: '1px solid #444',
-                                        cursor: isHost && !player.isHost ? 'context-menu' : 'default'
+                                        cursor: isHost && !player.isHost ? 'pointer' : 'default'
                                     }}
                                     onContextMenu={(e) => {
                                         // Only show context menu if host and player is not the host
@@ -6217,6 +6223,46 @@ const handleHandoutUpload = (e) => {
                                     fontFamily: 'Georgia, serif'
                                 }}>
                                     Host denied your request
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Kicked Message */}
+                    {kickedMessage && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <div style={{
+                                backgroundColor: '#1a1a1a',
+                                border: '3px solid #dc3545',
+                                borderRadius: '12px',
+                                padding: '40px 60px',
+                                boxShadow: '0 8px 32px rgba(220, 53, 69, 0.4)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{
+                                    fontSize: '24px',
+                                    marginBottom: '10px'
+                                }}>
+                                    ⚠️
+                                </div>
+                                <div style={{
+                                    fontSize: '20px',
+                                    fontWeight: 'bold',
+                                    color: '#dc3545',
+                                    fontFamily: 'Georgia, serif'
+                                }}>
+                                    You were kicked by the host
                                 </div>
                             </div>
                         </div>
