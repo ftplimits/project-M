@@ -210,8 +210,8 @@
                         // Calculate new dimensions (preserve aspect ratio)
                         if (width > maxWidth || height > maxHeight) {
                             const ratio = Math.min(maxWidth / width, maxHeight / height);
-                            width = Math.round(width * ratio);
-                            height = Math.round(height * ratio);
+                            width = Math.floor(width * ratio);
+                            height = Math.floor(height * ratio);
                             
                             console.log(`Downscaling image from ${img.width}x${img.height} to ${width}x${height} for performance`);
                         } else {
@@ -224,14 +224,14 @@
                         canvas.height = height;
                         const ctx = canvas.getContext('2d');
                         
-                        // Use better image smoothing
+                        // Use better image smoothing (imageSmoothingQuality may not be supported in older browsers)
                         ctx.imageSmoothingEnabled = true;
                         ctx.imageSmoothingQuality = 'high';
                         
                         // Draw resized image
                         ctx.drawImage(img, 0, 0, width, height);
                         
-                        // Convert to data URL with 90% quality JPEG
+                        // Convert to data URL with 90% quality JPEG (optimized for VTT performance)
                         const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
                         resolve(dataUrl);
                     };
