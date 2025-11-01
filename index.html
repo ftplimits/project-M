@@ -2563,6 +2563,12 @@ const handleHandoutUpload = (e) => {
                     zoomAnimationRef.current = null;
                 }
 
+                // Get mouse position relative to viewport element
+                if (!viewportRef.current) return;
+                const rect = viewportRef.current.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
                 const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
                 const wheelSpeed = 0.0018;
                 const zoomFactor = Math.exp(-delta * wheelSpeed);
@@ -2570,8 +2576,6 @@ const handleHandoutUpload = (e) => {
                 const startZoom = gridTransform.zoom;
                 const startPanX = gridTransform.panX;
                 const startPanY = gridTransform.panY;
-                const mouseX = e.clientX;
-                const mouseY = e.clientY - GRID_OFFSET_Y;
                 const worldX = (mouseX - startPanX) / startZoom;
                 const worldY = (mouseY - startPanY) / startZoom;
                 const targetZoom = clamp(startZoom * zoomFactor);
