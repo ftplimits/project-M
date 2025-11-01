@@ -574,6 +574,7 @@ const dice = [
                 setRoomCode(roomCode);
                 setIsHost(true);
                 setIsConnected(true);
+                setConnectionStatus('hosting');
                 
                 // Create room in Firebase
                 const roomRef = database.ref(`rooms/${roomCode}`);
@@ -657,6 +658,7 @@ const dice = [
                     setRoomCode(roomCode);
                     setIsHost(false);
                     setIsConnected(true);
+                    setConnectionStatus('connected');
                     
                     // Add player to room
                     roomRef.child(`players/${playerId}`).set({
