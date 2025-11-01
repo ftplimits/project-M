@@ -1825,7 +1825,17 @@ const handleAvatarUpload = (e) => {
                     });
                     setTimeout(() => {
                         setBouncingAvatarIds(prev => prev.filter(id => id !== avatarId));
-                    }, 500);                    
+                    }, 500);
+                    
+                    // Broadcast bounce to all players via PeerJS
+                    if (isConnected && roomCode) {
+                        broadcastState('AVATAR_BOUNCE', {
+                            avatarId: avatarId,
+                            timestamp: Date.now()
+                        });
+                    }
+                }, 200);
+            };
 
             const handleAvatarDoubleClick = (avatarId) => {
                 if (clickTimeoutRef.current) {
