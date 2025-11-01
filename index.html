@@ -552,6 +552,11 @@ const dice = [
                         database.ref(`rooms/${roomCode}/diceRolls`).push(data)
                             .catch(error => console.error('Error syncing dice roll:', error));
                         break;
+                    case 'HANDOUT_SHOW':
+                        // For handouts, push to a list
+                        database.ref(`rooms/${roomCode}/handouts`).push(data)
+                            .catch(error => console.error('Error syncing handout:', error));
+                        break;
                     default:
                         console.warn('Unknown broadcast type:', type);
                 }
@@ -762,6 +767,40 @@ const dice = [
                     setTimeout(() => {
                         setBouncingAvatarIds(prev => prev.filter(id => id !== avatarId));
                     }, 500);
+                });
+                
+                // Listen for pointer updates
+                roomRef.child('pointers').on('value', (snapshot) => {
+                    if (!snapshot.exists()) {
+                        setActivePointers({});
+                        return;
+                    }
+                    
+                    const pointersData = snapshot.val();
+                    const pointers = {};
+                    
+                    Object.keys(pointersData).forEach(playerId => {
+                        if (playerId !== myPeerId) { // Don't show our own pointer
+                            const pointerData = pointersData[playerId];
+                            if (pointerData.active) {
+                                pointers[pointerData.playerName] = {
+                                    x: pointerData.x,
+                                    y: pointerData.y
+                                };
+                            }
+                        }
+                    });
+                    
+                    setActivePointers(pointers);
+                });
+                
+                // Listen for handouts
+                roomRef.child('handouts').on('child_added', (snapshot) => {
+                    const handoutData = snapshot.val();
+                    if (!handoutData) return;
+                    
+                    setHandoutImage(handoutData.src);
+                    setHandoutVisible(true);
                 });
             };
 
@@ -1487,21 +1526,12 @@ const handleAvatarUpload = (e) => {
                         setBouncingAvatarIds(prev => prev.filter(id => id !== avatarId));
                     }, 500);
                     
-                    // Broadcast bounce to all players
-                    if (isConnected) {
-                        if (isHostRef.current) {
-                            broadcastState('AVATAR_BOUNCE', { avatarId });
-                        } else {
-                            // Players send bounce to host
-                            connectionsRef.current.forEach(conn => {
-                                if (conn && conn.open) {
-                                    conn.send({
-                                        type: 'AVATAR_BOUNCE',
-                                        data: { avatarId }
-                                    });
-                                }
-                            });
-                        }
+                    // Broadcast bounce to all players via Firebase
+                    if (isConnected && roomCode) {
+                        database.ref(`rooms/${roomCode}/avatarBounces`).push({
+                            avatarId: avatarId,
+                            timestamp: Date.now()
+                        }).catch(error => console.error('Error broadcasting avatar bounce:', error));
                     }
                 }, 200);
             };
@@ -2114,7 +2144,7 @@ const handleHandoutUpload = (e) => {
                     if (isPointerActive) {
                         setPointerPosition({ x: e.clientX, y: e.clientY });
                         
-                        // Broadcast pointer movement
+                        // Broadcast pointer movement via Firebase
                         const pointerData = {
                             playerName: playerName,
                             x: e.clientX,
@@ -2122,15 +2152,9 @@ const handleHandoutUpload = (e) => {
                             active: true
                         };
                         
-                        if (isConnectedRef.current) {
-                            if (isHostRef.current) {
-                                broadcastState('POINTER_UPDATE', pointerData);
-                            } else {
-                                connectionsRef.current[0]?.send({
-                                    type: 'POINTER_UPDATE',
-                                    data: pointerData
-                                });
-                            }
+                        if (isConnectedRef.current && roomCode) {
+                            database.ref(`rooms/${roomCode}/pointers/${myPeerId}`).set(pointerData)
+                                .catch(error => console.error('Error updating pointer:', error));
                         }
                     }
                 };
@@ -2140,23 +2164,10 @@ const handleHandoutUpload = (e) => {
                     if (e.button === 1) {
                         setIsPointerActive(false);
                         
-                        // Broadcast pointer deactivation
-                        const pointerData = {
-                            playerName: playerName,
-                            x: e.clientX,
-                            y: e.clientY,
-                            active: false
-                        };
-                        
-                        if (isConnectedRef.current) {
-                            if (isHostRef.current) {
-                                broadcastState('POINTER_UPDATE', pointerData);
-                            } else {
-                                connectionsRef.current[0]?.send({
-                                    type: 'POINTER_UPDATE',
-                                    data: pointerData
-                                });
-                            }
+                        // Broadcast pointer deactivation via Firebase
+                        if (isConnectedRef.current && roomCode) {
+                            database.ref(`rooms/${roomCode}/pointers/${myPeerId}`).remove()
+                                .catch(error => console.error('Error removing pointer:', error));
                         }
                     }
                 };
