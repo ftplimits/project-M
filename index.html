@@ -2576,9 +2576,8 @@ const handleHandoutUpload = (e) => {
                 const rect = viewportRef.current.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
-
                 const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-                const wheelSpeed = 0.0018;
+                const wheelSpeed = 0.004;  
                 const zoomFactor = Math.exp(-delta * wheelSpeed);
                 const clamp = (v, a = 0.2, b = 6) => Math.max(a, Math.min(b, v));
                 const startZoom = gridTransform.zoom;
