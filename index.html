@@ -1228,21 +1228,13 @@ const dice = [
                             });
                             setTimeout(() => {
                                 setBouncingAvatarIds(prev => prev.filter(id => id !== selectedAvatar.id));
-                            }, 500);
+                            }, 500);                           
                             
-                            // Broadcast bounce to all players via PeerJS
-                            if (isConnected && roomCode) {
-                                broadcastState('AVATAR_BOUNCE', {
-                                    avatarId: selectedAvatar.id,
-                                    timestamp: Date.now()
-                                });
-                            }
                         } else {
                             // Trigger flip animation
                             setAvatars(prev => prev.map(av => 
                                 av.id === selectedAvatar.id ? { ...av, flipped: !av.flipped } : av
-                            ));
-                            // Flip syncs automatically via the avatars useEffect
+                            ));                           
                         }
                         
                         // Schedule next animation
