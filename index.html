@@ -413,6 +413,7 @@
             }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers]);
 
             // Sync gridTransformRef with gridTransform state
+            // This ensures handleGridWheel always reads fresh values without recreating the function
             useEffect(() => {
                 gridTransformRef.current = gridTransform;
             }, [gridTransform]);
