@@ -210,8 +210,8 @@
                         // Calculate new dimensions (preserve aspect ratio)
                         if (width > maxWidth || height > maxHeight) {
                             const ratio = Math.min(maxWidth / width, maxHeight / height);
-                            width = Math.floor(width * ratio);
-                            height = Math.floor(height * ratio);
+                            width = Math.round(width * ratio);
+                            height = Math.round(height * ratio);
                             
                             console.log(`Downscaling image from ${img.width}x${img.height} to ${width}x${height} for performance`);
                         } else {
@@ -231,8 +231,14 @@
                         // Draw resized image
                         ctx.drawImage(img, 0, 0, width, height);
                         
-                        // Convert to data URL with 90% quality JPEG (optimized for VTT performance)
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                        // Preserve PNG format for transparency, use JPEG for compression
+                        const isPNG = file.type === 'image/png';
+                        const format = isPNG ? 'image/png' : 'image/jpeg';
+                        const quality = isPNG ? 1.0 : 0.9; // PNG = lossless, JPEG = 90%
+                        
+                        console.log(`Saving as ${format} with quality ${quality}`);
+                        
+                        const dataUrl = canvas.toDataURL(format, quality);
                         resolve(dataUrl);
                     };
                     
