@@ -292,11 +292,8 @@
             const importInputRef = useRef(null);
             const tokenInputRef = useRef(null);
             const gridImageInputRef = useRef(null);
-            
-
             const [bouncingAvatarIds, setBouncingAvatarIds] = useState([]);
             const clickTimeoutRef = useRef(null);
-
             const [gridTransform, setGridTransform] = useState({
                 zoom: 1.5,
                 panX: 0,
@@ -579,14 +576,10 @@ useEffect(() => {
 
             // Shared Peer Configuration using ICE servers
             const PEER_CONFIG = {
-                host: '0.peerjs.com',
-                port: 443,
-                path: '/',
-                secure: true,
-                config: {
-                    iceServers: ICE_SERVERS
-                }
-            };
+    // Remove host, port, path - let PeerJS auto-select
+    secure: true,
+    config: { iceServers: ICE_SERVERS }
+};
 
             const createRoom = () => {
                 console.log('createRoom called - HOST flow');
