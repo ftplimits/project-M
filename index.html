@@ -861,6 +861,9 @@ const dice = [
                         break;
                         
                     case 'TOKEN_UPDATE':
+    if (message.sourceId === myPeerId) {
+        break; // Ignore own updates
+    }
     // Ignore updates for tokens we're currently dragging
     const incomingTokens = message.data;
     const filteredTokens = draggedTokenRef.current 
