@@ -249,6 +249,11 @@
             const [joinCode, setJoinCode] = useState('');
             const [isConnected, setIsConnected] = useState(false);
             const [showMultiplayerMenu, setShowMultiplayerMenu] = useState(false);
+            const [showConnectionPopup, setShowConnectionPopup] = useState(false);
+            const [connectionStatus, setConnectionStatus] = useState('disconnected'); // 'disconnected', 'connected', 'hosting'
+            const [connectionFlow, setConnectionFlow] = useState(null); // null, 'join', 'host'
+            const [joinInputCode, setJoinInputCode] = useState('');
+            const [connectionMessage, setConnectionMessage] = useState('');
             const [playerName, setPlayerName] = useState('Player');
             const connectionsRef = useRef([]);
             const [diceNotification, setDiceNotification] = useState(null);
@@ -502,6 +507,16 @@ useEffect(() => {
 // ===== MULTIPLAYER FUNCTIONS =====
 
             // ===== MULTIPLAYER FUNCTIONS =====
+
+            // Generate 8-character room code
+            const generateRoomCode = () => {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                let code = '';
+                for (let i = 0; i < 8; i++) {
+                    code += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                return code;
+            };
             
             const broadcastState = (type, data) => {
                 if (!isHostRef.current || connectionsRef.current.length === 0) {
@@ -574,16 +589,14 @@ useEffect(() => {
             };
 
             const createRoom = () => {
-                console.log('createRoom called');
-                const name = prompt('Enter your name:', playerName) || playerName;
-                if (!name || name.trim() === '') {
-                    alert('Please enter a valid name!');
-                    return;
-                }
-                setPlayerName(name);
-                console.log('Creating peer with name:', name);
+                console.log('createRoom called - HOST flow');
                 
-                const newPeer = new Peer(PEER_CONFIG);
+                // Generate 8-character room code
+                const roomCode = generateRoomCode();
+                console.log('Generated room code:', roomCode);
+                
+                // Create peer with custom room code as ID
+                const newPeer = new Peer(roomCode, PEER_CONFIG);
                 
                 newPeer.on('open', (id) => {
                     console.log('Host peer opened with ID:', id);
@@ -591,7 +604,8 @@ useEffect(() => {
                     setRoomCode(id);
                     setIsHost(true);
                     setIsConnected(true);
-                    setPlayers([{ id: id, name: name, isHost: true }]);
+                    setConnectionStatus('hosting');
+                    setPlayers([{ id: id, name: playerName, isHost: true }]);
                     setPeer(newPeer);
                     
                     // Automatically copy room code to clipboard
@@ -617,10 +631,9 @@ useEffect(() => {
                             });
                     }
                     
-                    // Give React a moment to update state, then close modal
-                    setTimeout(() => {
-                        setShowMultiplayerMenu(false);
-                    }, 100);
+                    // Close connection popup
+                    setShowConnectionPopup(false);
+                    setConnectionFlow(null);
                 });
 
                 newPeer.on('connection', (conn) => {
@@ -670,14 +683,14 @@ useEffect(() => {
                 });
             };
 
-            const joinRoom = () => {
-                if (!joinCode.trim()) {
-                    alert('Please enter a room code!');
+            const joinRoom = (code) => {
+                if (!code || !code.trim()) {
+                    setConnectionMessage('Connection failed, please check the code or contact the host.');
                     return;
                 }
 
-                const name = prompt('Enter your name:', playerName) || playerName;
-                setPlayerName(name);
+                // Show connecting message
+                setConnectionMessage('Connecting, please wait...');
                 
                 const newPeer = new Peer(PEER_CONFIG);
                 
@@ -685,7 +698,7 @@ useEffect(() => {
                     setMyPeerId(id);
                     setPeer(newPeer);
                     
-                    const conn = newPeer.connect(joinCode.trim());
+                    const conn = newPeer.connect(code.trim().toUpperCase());
                     
                     conn.on('open', () => {
                         console.log('Connected to host!');
@@ -693,15 +706,21 @@ useEffect(() => {
                         setConnections([...connectionsRef.current]);
                         setIsConnected(true);
                         setIsHost(false);
-                        setRoomCode(joinCode.trim());
+                        setConnectionStatus('connected');
+                        setRoomCode(code.trim().toUpperCase());
                         
-                        console.log('Sending PLAYER_JOIN with id:', id, 'name:', name);
+                        console.log('Sending PLAYER_JOIN with id:', id, 'name:', playerName);
                         
                         // Send player info to host
                         conn.send({
                             type: 'PLAYER_JOIN',
-                            data: { id: id, name: name, isHost: false }
+                            data: { id: id, name: playerName, isHost: false }
                         });
+                        
+                        // Close connection popup on success
+                        setShowConnectionPopup(false);
+                        setConnectionFlow(null);
+                        setConnectionMessage('');
                     });
 
                     conn.on('data', (message) => {
@@ -711,13 +730,19 @@ useEffect(() => {
                     conn.on('close', () => {
                         console.log('Disconnected from host');
                         setIsConnected(false);
+                        setConnectionStatus('disconnected');
                         alert('Disconnected from host!');
                     });
 
                     conn.on('error', (err) => {
                         console.error('Connection error:', err);
-                        alert('Failed to connect to room. Check the room code!');
+                        setConnectionMessage('Connection failed, please check the code or contact the host.');
                     });
+                });
+                
+                newPeer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    setConnectionMessage('Connection failed, please check the code or contact the host.');
                 });
             };
 
@@ -924,6 +949,7 @@ useEffect(() => {
                 setConnections([]);
                 setIsConnected(false);
                 setIsHost(false);
+                setConnectionStatus('disconnected');
                 setPlayers([]);
                 setRoomCode('');
                 setPeer(null);
@@ -2770,7 +2796,10 @@ const handleHandoutUpload = (e) => {
 
                                     {/* Continue Button */}
                                     <button
-                                        onClick={() => setShowSplash(false)}
+                                        onClick={() => {
+                                            setShowSplash(false);
+                                            setShowConnectionPopup(true);
+                                        }}
                                         style={{
                                             marginTop: '40px',
                                             padding: '12px 40px',
@@ -2804,7 +2833,365 @@ const handleHandoutUpload = (e) => {
                         </div>
                     )}
 
-                    {/* Multiplayer Menu */}
+                    {/* Connection Popup - Shown after Beta Splash */}
+                    {showConnectionPopup && (
+                        <>
+                            <div 
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                                    zIndex: 5000,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                <div 
+                                    style={{
+                                        position: 'relative',
+                                        backgroundColor: '#1a1a1a',
+                                        border: '4px solid #d4af37',
+                                        borderRadius: '16px',
+                                        padding: '50px',
+                                        minWidth: '700px',
+                                        boxShadow: '0 12px 48px rgba(0,0,0,0.95)',
+                                        overflow: 'hidden'
+                                    }}
+                                >
+                                    {/* Large M Background */}
+                                    <div
+                                        style={{
+                                            position: 'absolute',
+                                            top: '50%',
+                                            left: '50%',
+                                            transform: 'translate(-50%, -50%)',
+                                            fontSize: '500px',
+                                            fontWeight: 'bold',
+                                            fontFamily: 'Times New Roman, serif',
+                                            color: '#d4af37',
+                                            opacity: '0.08',
+                                            lineHeight: '1',
+                                            zIndex: 1,
+                                            userSelect: 'none',
+                                            pointerEvents: 'none'
+                                        }}
+                                    >
+                                        M
+                                    </div>
+
+                                    {/* Content */}
+                                    <div style={{ position: 'relative', zIndex: 2 }}>
+                                        {/* Banner */}
+                                        <div
+                                            style={{
+                                                fontSize: '36px',
+                                                fontWeight: 'bold',
+                                                fontFamily: 'Georgia, serif',
+                                                color: '#d4af37',
+                                                marginBottom: '40px',
+                                                textAlign: 'center',
+                                                letterSpacing: '2px',
+                                                textShadow: '0 0 15px rgba(212, 175, 55, 0.5)'
+                                            }}
+                                        >
+                                            Monomyth VTT
+                                        </div>
+
+                                        {/* Connection Flow Selection */}
+                                        {!connectionFlow && (
+                                            <div style={{
+                                                display: 'flex',
+                                                gap: '20px',
+                                                justifyContent: 'center'
+                                            }}>
+                                                {/* JOIN Button */}
+                                                <button
+                                                    onClick={() => setConnectionFlow('join')}
+                                                    style={{
+                                                        flex: 1,
+                                                        padding: '30px 20px',
+                                                        backgroundColor: '#2a2a2a',
+                                                        border: '3px solid #d4af37',
+                                                        borderRadius: '12px',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        gap: '15px'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                                        e.currentTarget.style.borderColor = '#f5c842';
+                                                        e.currentTarget.style.transform = 'translateY(-4px)';
+                                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(212, 175, 55, 0.4)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                                        e.currentTarget.style.borderColor = '#d4af37';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                        e.currentTarget.style.boxShadow = 'none';
+                                                    }}
+                                                >
+                                                    <div style={{
+                                                        fontSize: '48px',
+                                                        fontWeight: 'bold',
+                                                        color: '#d4af37',
+                                                        fontFamily: 'Georgia, serif',
+                                                        letterSpacing: '2px'
+                                                    }}>
+                                                        JOIN
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: '14px',
+                                                        color: '#aaa',
+                                                        fontFamily: 'Arial, sans-serif',
+                                                        textAlign: 'center',
+                                                        lineHeight: '1.4'
+                                                    }}>
+                                                        Enter code provided by GM
+                                                    </div>
+                                                </button>
+
+                                                {/* HOST Button */}
+                                                <button
+                                                    onClick={() => {
+                                                        setConnectionFlow('host');
+                                                        createRoom();
+                                                    }}
+                                                    style={{
+                                                        flex: 1,
+                                                        padding: '30px 20px',
+                                                        backgroundColor: '#2a2a2a',
+                                                        border: '3px solid #d4af37',
+                                                        borderRadius: '12px',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        gap: '15px'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                                        e.currentTarget.style.borderColor = '#f5c842';
+                                                        e.currentTarget.style.transform = 'translateY(-4px)';
+                                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(212, 175, 55, 0.4)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                                        e.currentTarget.style.borderColor = '#d4af37';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                        e.currentTarget.style.boxShadow = 'none';
+                                                    }}
+                                                >
+                                                    <div style={{
+                                                        fontSize: '48px',
+                                                        fontWeight: 'bold',
+                                                        color: '#d4af37',
+                                                        fontFamily: 'Georgia, serif',
+                                                        letterSpacing: '2px'
+                                                    }}>
+                                                        HOST
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: '14px',
+                                                        color: '#aaa',
+                                                        fontFamily: 'Arial, sans-serif',
+                                                        textAlign: 'center',
+                                                        lineHeight: '1.4'
+                                                    }}>
+                                                        Generate a code for your players
+                                                    </div>
+                                                </button>
+
+                                                {/* SETUP Button */}
+                                                <button
+                                                    onClick={() => setShowConnectionPopup(false)}
+                                                    style={{
+                                                        flex: 1,
+                                                        padding: '30px 20px',
+                                                        backgroundColor: '#2a2a2a',
+                                                        border: '3px solid #d4af37',
+                                                        borderRadius: '12px',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        gap: '15px'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                                        e.currentTarget.style.borderColor = '#f5c842';
+                                                        e.currentTarget.style.transform = 'translateY(-4px)';
+                                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(212, 175, 55, 0.4)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                                        e.currentTarget.style.borderColor = '#d4af37';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                        e.currentTarget.style.boxShadow = 'none';
+                                                    }}
+                                                >
+                                                    <div style={{
+                                                        fontSize: '48px',
+                                                        fontWeight: 'bold',
+                                                        color: '#d4af37',
+                                                        fontFamily: 'Georgia, serif',
+                                                        letterSpacing: '2px'
+                                                    }}>
+                                                        SETUP
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: '14px',
+                                                        color: '#aaa',
+                                                        fontFamily: 'Arial, sans-serif',
+                                                        textAlign: 'center',
+                                                        lineHeight: '1.4'
+                                                    }}>
+                                                        Prepare for upcoming game
+                                                    </div>
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* JOIN Flow */}
+                                        {connectionFlow === 'join' && (
+                                            <div style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                gap: '20px'
+                                            }}>
+                                                {connectionMessage === 'Connecting, please wait...' ? (
+                                                    <div style={{
+                                                        fontSize: '18px',
+                                                        color: '#d4af37',
+                                                        fontFamily: 'Georgia, serif',
+                                                        textAlign: 'center',
+                                                        padding: '40px'
+                                                    }}>
+                                                        {connectionMessage}
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="ENTER 8-CHARACTER CODE"
+                                                            value={joinInputCode}
+                                                            onChange={(e) => setJoinInputCode(e.target.value.toUpperCase())}
+                                                            maxLength={8}
+                                                            style={{
+                                                                width: '100%',
+                                                                padding: '20px',
+                                                                backgroundColor: '#2a2a2a',
+                                                                color: '#d4af37',
+                                                                border: '3px solid #d4af37',
+                                                                borderRadius: '8px',
+                                                                fontSize: '24px',
+                                                                fontWeight: 'bold',
+                                                                fontFamily: 'monospace',
+                                                                textAlign: 'center',
+                                                                letterSpacing: '4px',
+                                                                textTransform: 'uppercase'
+                                                            }}
+                                                            autoFocus
+                                                        />
+                                                        
+                                                        {connectionMessage && (
+                                                            <div style={{
+                                                                color: '#dc3545',
+                                                                fontSize: '14px',
+                                                                fontFamily: 'Arial, sans-serif',
+                                                                textAlign: 'center'
+                                                            }}>
+                                                                {connectionMessage}
+                                                            </div>
+                                                        )}
+
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            gap: '15px',
+                                                            width: '100%'
+                                                        }}>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setConnectionFlow(null);
+                                                                    setJoinInputCode('');
+                                                                    setConnectionMessage('');
+                                                                }}
+                                                                style={{
+                                                                    flex: 1,
+                                                                    padding: '15px 30px',
+                                                                    backgroundColor: '#444',
+                                                                    color: '#e0e0e0',
+                                                                    border: '2px solid #666',
+                                                                    borderRadius: '8px',
+                                                                    fontSize: '16px',
+                                                                    fontWeight: 'bold',
+                                                                    fontFamily: 'Arial, sans-serif',
+                                                                    cursor: 'pointer',
+                                                                    transition: 'all 0.2s'
+                                                                }}
+                                                                onMouseEnter={(e) => {
+                                                                    e.currentTarget.style.backgroundColor = '#555';
+                                                                }}
+                                                                onMouseLeave={(e) => {
+                                                                    e.currentTarget.style.backgroundColor = '#444';
+                                                                }}
+                                                            >
+                                                                Back
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (joinInputCode.length === 8) {
+                                                                        joinRoom(joinInputCode);
+                                                                    }
+                                                                }}
+                                                                disabled={joinInputCode.length !== 8}
+                                                                style={{
+                                                                    flex: 1,
+                                                                    padding: '15px 30px',
+                                                                    backgroundColor: joinInputCode.length === 8 ? '#28a745' : '#2a2a2a',
+                                                                    color: joinInputCode.length === 8 ? '#fff' : '#666',
+                                                                    border: `2px solid ${joinInputCode.length === 8 ? '#1e7e34' : '#444'}`,
+                                                                    borderRadius: '8px',
+                                                                    fontSize: '16px',
+                                                                    fontWeight: 'bold',
+                                                                    fontFamily: 'Arial, sans-serif',
+                                                                    cursor: joinInputCode.length === 8 ? 'pointer' : 'not-allowed',
+                                                                    transition: 'all 0.2s'
+                                                                }}
+                                                                onMouseEnter={(e) => {
+                                                                    if (joinInputCode.length === 8) {
+                                                                        e.currentTarget.style.backgroundColor = '#218838';
+                                                                    }
+                                                                }}
+                                                                onMouseLeave={(e) => {
+                                                                    if (joinInputCode.length === 8) {
+                                                                        e.currentTarget.style.backgroundColor = '#28a745';
+                                                                    }
+                                                                }}
+                                                            >
+                                                                Connect
+                                                            </button>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Old Multiplayer Menu - Keep for debugging/fallback */}
                     {showMultiplayerMenu && (
                         <>
                             <div 
@@ -2922,7 +3309,7 @@ const handleHandoutUpload = (e) => {
                                                     }}
                                                 />
                                                 <button
-                                                    onClick={joinRoom}
+                                                    onClick={() => joinRoom(joinCode)}
                                                     style={{
                                                         width: '100%',
                                                         padding: '12px',
@@ -3108,26 +3495,40 @@ const handleHandoutUpload = (e) => {
                                     M
                                 </div>
 
-                                {/* Multiplayer Button */}
-                                <button
-                                    onClick={() => setShowMultiplayerMenu(true)}
-                                    className={`px-3 py-1.5 font-bold rounded text-sm transition-all border-2 flex items-center gap-1.5 ${
-                                        isConnected
+                                {/* Connection Status Indicator (non-clickable) */}
+                                <div
+                                    className={`px-3 py-1.5 font-bold rounded text-sm border-2 flex items-center gap-1.5 ${
+                                        connectionStatus === 'hosting'
+                                            ? 'bg-blue-600 text-white border-blue-500 shadow-lg'
+                                            : connectionStatus === 'connected'
                                             ? 'bg-green-600 text-white border-green-500 shadow-lg'
-                                            : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600 hover:border-amber-700'
+                                            : 'bg-zinc-700 text-amber-500 border-amber-600'
                                     }`}
                                     style={{ fontFamily: 'Georgia, serif' }}
-                                    title={isConnected ? `Connected: ${players.length} players` : 'Start Multiplayer'}
+                                    title={
+                                        connectionStatus === 'hosting'
+                                            ? `Hosting: ${players.length} player(s) - Code: ${roomCode}`
+                                            : connectionStatus === 'connected'
+                                            ? `Connected: ${players.length} player(s)`
+                                            : 'Disconnected'
+                                    }
                                 >
-                                    {isConnected ? (
+                                    {connectionStatus === 'hosting' ? (
                                         <>
                                             <span className="connection-pulse">🌐</span>
-                                            {players.length}
+                                            Hosting
+                                        </>
+                                    ) : connectionStatus === 'connected' ? (
+                                        <>
+                                            <span className="connection-pulse">🌐</span>
+                                            Connected
                                         </>
                                     ) : (
-                                        '🌐 Multiplayer'
+                                        <>
+                                            🌐 Disconnected
+                                        </>
                                     )}
-                                </button>
+                                </div>
 
                                 <div className="flex gap-2 items-center">
                                     <button
