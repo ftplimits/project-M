@@ -181,6 +181,11 @@
         let hostConnection = null; // For clients: connection to host
         const clientConnections = new Map(); // For host: connections to clients
 
+        // Connection resilience constants
+        const MAX_RECONNECT_ATTEMPTS = 3;
+        const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+        const RECONNECT_BASE_DELAY = 2000; // 2 seconds
+
         const { useState, useRef, useEffect } = React;
 
         const throttle = (func, limit) => {
@@ -276,9 +281,6 @@
             const throttledSheetBroadcast = useRef(null);
             const heartbeatIntervalRef = useRef(null);
             const reconnectTimeoutRef = useRef(null);
-            const MAX_RECONNECT_ATTEMPTS = 3;
-            const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-            const RECONNECT_BASE_DELAY = 2000; // 2 seconds
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -627,7 +629,7 @@ const dice = [
                     
                     // Start heartbeat for connection monitoring
                     heartbeatIntervalRef.current = setInterval(() => {
-                        if (isConnectedRef.current && isHostRef.current) {
+                        if (isConnectedRef.current && isHostRef.current && clientConnections.size > 0) {
                             const heartbeatMsg = { type: 'HEARTBEAT', data: { timestamp: Date.now() } };
                             clientConnections.forEach((conn, peerId) => {
                                 if (conn.open) {
@@ -773,7 +775,7 @@ const dice = [
                                 reconnectTimeoutRef.current = setTimeout(() => {
                                     console.log('Attempting to reconnect to host...');
                                     joinRoom(roomCodeRef.current);
-                                }, RECONNECT_BASE_DELAY * newAttempts); // Linear backoff: 2s, 4s, 6s
+                                }, RECONNECT_BASE_DELAY * newAttempts); // Linear backoff delays: 2s (attempt 1), 4s (attempt 2), 6s (attempt 3)
                                 
                                 return newAttempts;
                             } else {
@@ -974,7 +976,7 @@ const dice = [
                     case 'HEARTBEAT':
                         // Update last heartbeat timestamp
                         setLastHeartbeat(Date.now());
-                        console.log('Heartbeat received from host');
+                        console.debug('Heartbeat received from host');
                         break;
                         
                     default:
