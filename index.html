@@ -501,45 +501,47 @@ const dice = [
             }, []);
 
             // Initialize throttled broadcast functions
+            // Note: Only initialized once on mount. Uses isHostRef/isConnectedRef
+            // to get current values without recreating throttled functions.
             useEffect(() => {
                 const THROTTLE_INTERVAL = 100; // 100ms = 10 updates/second
                 
                 throttledTokenBroadcast.current = throttle((data) => {
-                    if (isHost && isConnected) {
+                    if (isHostRef.current && isConnectedRef.current) {
                         broadcastState('TOKEN_UPDATE', data);
                     }
                 }, THROTTLE_INTERVAL);
                 
                 throttledDrawingBroadcast.current = throttle((data) => {
-                    if (isHost && isConnected) {
+                    if (isHostRef.current && isConnectedRef.current) {
                         broadcastState('DRAWING_UPDATE', data);
                     }
                 }, THROTTLE_INTERVAL);
                 
                 throttledAvatarBroadcast.current = throttle((data) => {
-                    if (isHost && isConnected) {
+                    if (isHostRef.current && isConnectedRef.current) {
                         broadcastState('AVATAR_UPDATE', data);
                     }
                 }, THROTTLE_INTERVAL);
                 
                 throttledSceneBroadcast.current = throttle((data) => {
-                    if (isHost && isConnected) {
+                    if (isHostRef.current && isConnectedRef.current) {
                         broadcastState('SCENE_IMAGE_UPDATE', data);
                     }
                 }, THROTTLE_INTERVAL);
                 
                 throttledSheetBroadcast.current = throttle((data) => {
-                    if (isHost && isConnected) {
+                    if (isHostRef.current && isConnectedRef.current) {
                         broadcastState('CHARACTER_SHEETS_UPDATE', data);
                     }
                 }, THROTTLE_INTERVAL);
                 
                 throttledGridTransformBroadcast.current = throttle((data) => {
-                    if (isHost && isConnected) {
+                    if (isHostRef.current && isConnectedRef.current) {
                         broadcastState('GRID_TRANSFORM', data);
                     }
                 }, THROTTLE_INTERVAL);
-            }, [isHost, isConnected]);
+            }, []); // Empty dependency array - only initialize once on mount
 
 
 
