@@ -178,6 +178,8 @@
 
     <script type="text/babel">
         // Initialize Firebase
+        // Note: API keys for Firebase are meant to be public in client apps
+        // Security is enforced through Firebase Security Rules, not by hiding the API key
         const firebaseConfig = {
             apiKey: "AIzaSyBoegTLDPhiOktG_lJWNVBPhcK7ULJ9fxM",
             authDomain: "monomyth-974f8.firebaseapp.com",
@@ -524,7 +526,7 @@ const dice = [
                             .catch(error => console.error('Error syncing tokens:', error));
                         break;
                     case 'DRAWING_UPDATE':
-                        database.ref(`rooms/${roomCode}/gameState/drawingPaths`).set(data)
+                        database.ref(`rooms/${roomCode}/gameState/drawings`).set(data)
                             .catch(error => console.error('Error syncing drawings:', error));
                         break;
                     case 'AVATAR_UPDATE':
@@ -591,12 +593,7 @@ const dice = [
                     },
                     gameState: {
                         tokens: tokens,
-                        dice: dice,
-                        fogPoints: [],
-                        drawingPaths: drawings,
-                        images: scenes,
-                        gridSize: 50,
-                        backgroundImage: null,
+                        drawings: drawings,
                         scenes: scenes,
                         avatars: avatars,
                         activeSceneIndex: activeSceneIndex,
@@ -687,15 +684,17 @@ const dice = [
                 const roomRef = database.ref(`rooms/${roomCode}`);
                 
                 // Listen for game state changes
+                // Note: Host broadcasts changes, all clients (including host) receive updates
+                // React's state management prevents unnecessary re-renders for unchanged data
                 roomRef.child('gameState').on('value', (snapshot) => {
                     if (!snapshot.exists()) return;
                     
                     const state = snapshot.val();
                     console.log('Firebase state update received:', state);
                     
-                    // Update local state (only if not the one who made the change)
+                    // Update local state from Firebase (source of truth)
                     if (state.tokens) setTokens(state.tokens);
-                    if (state.drawingPaths) setDrawings(state.drawingPaths);
+                    if (state.drawings) setDrawings(state.drawings);
                     if (state.scenes) setScenes(state.scenes);
                     if (state.avatars) setAvatars(state.avatars);
                     if (state.activeSceneIndex !== undefined) setActiveSceneIndex(state.activeSceneIndex);
