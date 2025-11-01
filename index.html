@@ -528,6 +528,51 @@ useEffect(() => {
                 });
             };
 
+            // ICE Servers Configuration for WebRTC
+            // STUN servers - Help discover public IP addresses for direct P2P connections
+            // TURN servers - Relay traffic when direct P2P fails (firewall/NAT issues)
+            const ICE_SERVERS = [
+                // STUN servers - Help discover public IP addresses for direct P2P
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
+                
+                // TURN servers - Relay traffic when direct P2P fails (firewall/NAT issues)
+                { 
+                    urls: 'turn:a.relay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                { 
+                    urls: 'turn:a.relay.metered.ca:80?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                { 
+                    urls: 'turn:a.relay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                { 
+                    urls: 'turn:a.relay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ];
+
+            // Shared Peer Configuration using ICE servers
+            const PEER_CONFIG = {
+                host: '0.peerjs.com',
+                port: 443,
+                path: '/',
+                secure: true,
+                config: {
+                    iceServers: ICE_SERVERS
+                }
+            };
+
             const createRoom = () => {
                 console.log('createRoom called');
                 const name = prompt('Enter your name:', playerName) || playerName;
@@ -538,21 +583,7 @@ useEffect(() => {
                 setPlayerName(name);
                 console.log('Creating peer with name:', name);
                 
-                const newPeer = new Peer({
-                    host: '0.peerjs.com',
-                    port: 443,
-                    path: '/',
-                    secure: true,
-                    config: {
-                        iceServers: [
-                            { urls: 'stun:stun.l.google.com:19302' },
-                            { urls: 'stun:stun1.l.google.com:19302' },
-                            { urls: 'stun:stun2.l.google.com:19302' },
-                            { urls: 'stun:stun3.l.google.com:19302' },
-                            { urls: 'stun:stun4.l.google.com:19302' }
-                        ]
-                    }
-                });
+                const newPeer = new Peer(PEER_CONFIG);
                 
                 newPeer.on('open', (id) => {
                     console.log('Host peer opened with ID:', id);
@@ -648,21 +679,7 @@ useEffect(() => {
                 const name = prompt('Enter your name:', playerName) || playerName;
                 setPlayerName(name);
                 
-                const newPeer = new Peer({
-                    host: '0.peerjs.com',
-                    port: 443,
-                    path: '/',
-                    secure: true,
-                    config: {
-                        iceServers: [
-                            { urls: 'stun:stun.l.google.com:19302' },
-                            { urls: 'stun:stun1.l.google.com:19302' },
-                            { urls: 'stun:stun2.l.google.com:19302' },
-                            { urls: 'stun:stun3.l.google.com:19302' },
-                            { urls: 'stun:stun4.l.google.com:19302' }
-                        ]
-                    }
-                });
+                const newPeer = new Peer(PEER_CONFIG);
                 
                 newPeer.on('open', (id) => {
                     setMyPeerId(id);
