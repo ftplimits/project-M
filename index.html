@@ -278,6 +278,7 @@
             const clipboardNotificationTimeoutRef = useRef(null);
             const isHostRef = useRef(false);
             const isConnectedRef = useRef(false);
+            const roomCodeRef = useRef('');
             const throttledTokenBroadcast = useRef(null);
             const throttledDrawingBroadcast = useRef(null);
             const throttledAvatarBroadcast = useRef(null);
@@ -490,6 +491,12 @@ const dice = [
                 console.log('isConnectedRef updated to:', isConnected);
             }, [isConnected]);
 
+            // Sync roomCodeRef with roomCode state
+            useEffect(() => {
+                roomCodeRef.current = roomCode;
+                console.log('roomCodeRef updated to:', roomCode);
+            }, [roomCode]);
+
             // Cleanup dice notification timeout on unmount
             useEffect(() => {
                 return () => {
@@ -543,51 +550,51 @@ const dice = [
             };
             
             const broadcastState = (type, data) => {
-                if (!roomCode || !isConnected) {
-                    console.log(`Cannot broadcast ${type}: no room or not connected`);
+                if (!roomCodeRef.current || !isConnectedRef.current) {
+                    console.log(`Cannot broadcast ${type}: no room (${roomCodeRef.current}) or not connected (${isConnectedRef.current})`);
                     return;
                 }
                 
-                console.log(`Broadcasting ${type} to Firebase`);
+                console.log(`Broadcasting ${type} to Firebase (room: ${roomCodeRef.current})`);
                 
                 // Map different types to Firebase paths
                 switch(type) {
                     case 'TOKEN_UPDATE':
-                        database.ref(`rooms/${roomCode}/gameState/tokens`).set(data)
+                        database.ref(`rooms/${roomCodeRef.current}/gameState/tokens`).set(data)
                             .catch(error => console.error('Error syncing tokens:', error));
                         break;
                     case 'DRAWING_UPDATE':
-                        database.ref(`rooms/${roomCode}/gameState/drawings`).set(data)
+                        database.ref(`rooms/${roomCodeRef.current}/gameState/drawings`).set(data)
                             .catch(error => console.error('Error syncing drawings:', error));
                         break;
                     case 'AVATAR_UPDATE':
-                        database.ref(`rooms/${roomCode}/gameState/avatars`).set(data)
+                        database.ref(`rooms/${roomCodeRef.current}/gameState/avatars`).set(data)
                             .catch(error => console.error('Error syncing avatars:', error));
                         break;
                     case 'SCENE_CHANGE':
-                        database.ref(`rooms/${roomCode}/gameState/activeSceneIndex`).set(data)
+                        database.ref(`rooms/${roomCodeRef.current}/gameState/activeSceneIndex`).set(data)
                             .catch(error => console.error('Error syncing scene:', error));
                         break;
                     case 'SCENE_IMAGE_UPDATE':
-                        database.ref(`rooms/${roomCode}/gameState/scenes`).set(data)
+                        database.ref(`rooms/${roomCodeRef.current}/gameState/scenes`).set(data)
                             .catch(error => console.error('Error syncing scenes:', error));
                         break;
                     case 'CHARACTER_SHEETS_UPDATE':
-                        database.ref(`rooms/${roomCode}/gameState/characterSheets`).set(data)
+                        database.ref(`rooms/${roomCodeRef.current}/gameState/characterSheets`).set(data)
                             .catch(error => console.error('Error syncing character sheets:', error));
                         break;
                     case 'GRID_TRANSFORM':
-                        database.ref(`rooms/${roomCode}/gameState/gridTransform`).set(data)
+                        database.ref(`rooms/${roomCodeRef.current}/gameState/gridTransform`).set(data)
                             .catch(error => console.error('Error syncing grid transform:', error));
                         break;
                     case 'DICE_ROLL':
                         // For dice rolls, push to a list instead of set
-                        database.ref(`rooms/${roomCode}/diceRolls`).push(data)
+                        database.ref(`rooms/${roomCodeRef.current}/diceRolls`).push(data)
                             .catch(error => console.error('Error syncing dice roll:', error));
                         break;
                     case 'HANDOUT_SHOW':
                         // For handouts, push to a list
-                        database.ref(`rooms/${roomCode}/handouts`).push(data)
+                        database.ref(`rooms/${roomCodeRef.current}/handouts`).push(data)
                             .catch(error => console.error('Error syncing handout:', error));
                         break;
                     default:
