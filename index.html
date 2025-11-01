@@ -192,6 +192,57 @@
     };
 };
 
+        // Image downscaling utility function
+        const downscaleImage = (file, maxWidth = 2048, maxHeight = 2048) => {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const reader = new FileReader();
+                
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                
+                reader.onload = (e) => {
+                    img.onerror = () => reject(new Error('Failed to load image'));
+                    
+                    img.onload = () => {
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        // Calculate new dimensions (preserve aspect ratio)
+                        if (width > maxWidth || height > maxHeight) {
+                            const ratio = Math.min(maxWidth / width, maxHeight / height);
+                            width = Math.floor(width * ratio);
+                            height = Math.floor(height * ratio);
+                            
+                            console.log(`Downscaling image from ${img.width}x${img.height} to ${width}x${height} for performance`);
+                        } else {
+                            console.log(`Image ${img.width}x${img.height} is within limits, no downscaling needed`);
+                        }
+                        
+                        // Create canvas and resize
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Use better image smoothing (imageSmoothingQuality may not be supported in older browsers)
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        
+                        // Draw resized image
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Convert to data URL with 90% quality JPEG (optimized for VTT performance)
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                        resolve(dataUrl);
+                    };
+                    
+                    img.src = e.target.result;
+                };
+                
+                reader.readAsDataURL(file);
+            });
+        };
+
         const Upload = ({ size = 24, className = "" }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -1679,18 +1730,23 @@ useEffect(() => {
                 const file = e.target.files[0];
                 if (!file || !file.type.startsWith('image/')) return;
                 
-                const reader = new FileReader();
-                reader.onload = (event) => {
+                try {
+                    // Downscale image before using
+                    const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+                    
                     const newSheet = {
                         id: Date.now(),
                         playerName: prompt('Enter character name:', 'Character') || 'Character',
-                        image: event.target.result,
+                        image: downscaledDataUrl,
                         filename: file.name,
                         uploadedAt: new Date().toISOString()
                     };
                     setCharacterSheets(prev => [...prev, newSheet]);
-                };
-                reader.readAsDataURL(file);
+                } catch (err) {
+                    console.error('Failed to process image:', err);
+                    alert('Failed to load image. Please try a different file.');
+                }
+                
                 e.target.value = '';
             };
 
@@ -1957,116 +2013,136 @@ useEffect(() => {
                 }
             };
 
-            const handleImageUpload = (e) => {
+            const handleImageUpload = async (e) => {
     const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-                const newImage = {
-                    id: Date.now(),
-                    src: event.target.result,
-                    x: 50,
-                    y: 50,
-                    width: Math.min(400, img.width),
-                    height: Math.min(400 * (img.height / img.width), img.height),
-                    locked: false,
-                    originalWidth: img.width,
-                    originalHeight: img.height
-                };
-                setScenes(prev => prev.map((s, i) => {
-                    if (i !== activeSceneIndex) return s;
-                    return {
-                        ...s,
-                        images: [...(s.images || []), newImage]
-                    };
-                }));
-            };
-            img.src = event.target.result;
+    if (!file || !file.type.startsWith('image/')) return;
+    
+    try {
+        // Downscale image before using
+        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        
+        // Load the downscaled image to get dimensions
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = () => reject(new Error('Failed to load downscaled image'));
+            img.src = downscaledDataUrl;
+        });
+        
+        const newImage = {
+            id: Date.now(),
+            src: downscaledDataUrl,
+            x: 50,
+            y: 50,
+            width: Math.min(400, img.width),
+            height: Math.min(400 * (img.height / img.width), img.height),
+            locked: false,
+            originalWidth: img.width,
+            originalHeight: img.height
         };
-        reader.readAsDataURL(file);
+        
+        setScenes(prev => prev.map((s, i) => {
+            if (i !== activeSceneIndex) return s;
+            return {
+                ...s,
+                images: [...(s.images || []), newImage]
+            };
+        }));
+    } catch (err) {
+        console.error('Failed to process image:', err);
+        alert('Failed to load image. Please try a different file.');
     }
+    
     e.target.value = '';
 };
 
 // ADD THIS NEW FUNCTION FOR GRID IMAGE UPLOADS:
-const handleGridImageUpload = (e) => {
+const handleGridImageUpload = async (e) => {
     const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-                // Place image at center of viewport in grid coordinates
-                const centerClientX = window.innerWidth / 2;
-                const centerClientY = window.innerHeight / 2;
-                
-                // Calculate initial size (proportional to grid)
-                const initialWidth = 200 / gridTransform.zoom;
-                const initialHeight = (initialWidth * img.height) / img.width;
-                
-                // Convert screen center to grid coordinates
-                const gridCenterX = (centerClientX - gridTransform.panX) / gridTransform.zoom - initialWidth / 2;
-                const gridCenterY = (centerClientY - GRID_OFFSET_Y - gridTransform.panY) / gridTransform.zoom - initialHeight / 2;
-                
-                const newImage = {
-                    id: Date.now(),
-                    src: event.target.result,
-                    x: gridCenterX,
-                    y: gridCenterY,
-                    width: initialWidth,
-                    height: initialHeight,
-                    locked: false,
-                    originalWidth: img.width,
-                    originalHeight: img.height,
-                    isGridImage: true // Mark this as a grid-placed image
-                };
-                
-                setScenes(prev => prev.map((s, i) => {
-                    if (i !== activeSceneIndex) return s;
-                    return {
-                        ...s,
-                        images: [...(s.images || []), newImage]
-                    };
-                }));
-            };
-            img.src = event.target.result;
+    if (!file || !file.type.startsWith('image/')) return;
+    
+    try {
+        // Downscale image before using
+        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        
+        // Load the downscaled image to get dimensions
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = () => reject(new Error('Failed to load downscaled image'));
+            img.src = downscaledDataUrl;
+        });
+        
+        // Place image at center of viewport in grid coordinates
+        const centerClientX = window.innerWidth / 2;
+        const centerClientY = window.innerHeight / 2;
+        
+        // Calculate initial size (proportional to grid)
+        const initialWidth = 200 / gridTransform.zoom;
+        const initialHeight = (initialWidth * img.height) / img.width;
+        
+        // Convert screen center to grid coordinates
+        const gridCenterX = (centerClientX - gridTransform.panX) / gridTransform.zoom - initialWidth / 2;
+        const gridCenterY = (centerClientY - GRID_OFFSET_Y - gridTransform.panY) / gridTransform.zoom - initialHeight / 2;
+        
+        const newImage = {
+            id: Date.now(),
+            src: downscaledDataUrl,
+            x: gridCenterX,
+            y: gridCenterY,
+            width: initialWidth,
+            height: initialHeight,
+            locked: false,
+            originalWidth: img.width,
+            originalHeight: img.height,
+            isGridImage: true // Mark this as a grid-placed image
         };
-        reader.readAsDataURL(file);
+        
+        setScenes(prev => prev.map((s, i) => {
+            if (i !== activeSceneIndex) return s;
+            return {
+                ...s,
+                images: [...(s.images || []), newImage]
+            };
+        }));
+    } catch (err) {
+        console.error('Failed to process image:', err);
+        alert('Failed to load image. Please try a different file.');
     }
+    
     e.target.value = '';
 };
-const handleAvatarUpload = (e) => {
+const handleAvatarUpload = async (e) => {
     const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-                if (!viewportRef.current) return;
-                setAvatars(prev => {
-                    if (prev.length >= 6) {
-                        alert('Maximum 6 avatars allowed.');
-                        return prev;
-                    }
-                    const newAvatar = {
-                        id: Date.now(),
-                        src: event.target.result,
-                        x: 0,
-                        y: 0,
-                        width: 180,
-                        height: 225,
-                        name: `Player ${prev.length + 1}`,
-                        flipped: false
-                    };
-                    return [...prev, newAvatar];
-                });
+    if (!file || !file.type.startsWith('image/')) return;
+    
+    try {
+        // Downscale image before using
+        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        
+        if (!viewportRef.current) return;
+        setAvatars(prev => {
+            if (prev.length >= 6) {
+                alert('Maximum 6 avatars allowed.');
+                return prev;
+            }
+            const newAvatar = {
+                id: Date.now(),
+                src: downscaledDataUrl,
+                x: 0,
+                y: 0,
+                width: 180,
+                height: 225,
+                name: `Player ${prev.length + 1}`,
+                flipped: false
             };
-            img.src = event.target.result;
-        };
-        reader.readAsDataURL(file);
+            return [...prev, newAvatar];
+        });
+    } catch (err) {
+        console.error('Failed to process avatar:', err);
+        alert('Failed to load avatar. Please try a different file.');
     }
+    
     e.target.value = '';
 };
 
@@ -2374,30 +2450,35 @@ const handleAvatarUpload = (e) => {
                 setDrawings([]);
             };
 
-            const handleTokenUpload = (e) => {
+            const handleTokenUpload = async (e) => {
     const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const size = 50; // Base size
-            const centerClientX = window.innerWidth / 2;
-            const centerClientY = window.innerHeight / 2;
-            const gridCenterX = (centerClientX - gridTransform.panX) / gridTransform.zoom - size / 2;
-            const gridCenterY = (centerClientY - GRID_OFFSET_Y - gridTransform.panY) / gridTransform.zoom - size / 2;
-            const newToken = {
-                id: Date.now(),
-                src: event.target.result,
-                x: gridCenterX,
-                y: gridCenterY,
-                size: size,
-                sizeMultiplier: 1, 
-                name: 'Token',
-                showMeasurement: false
-            };
-            setTokens(prev => [...prev, newToken]);
+    if (!file || !file.type.startsWith('image/')) return;
+    
+    try {
+        // Downscale image before using
+        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        
+        const size = 50; // Base size
+        const centerClientX = window.innerWidth / 2;
+        const centerClientY = window.innerHeight / 2;
+        const gridCenterX = (centerClientX - gridTransform.panX) / gridTransform.zoom - size / 2;
+        const gridCenterY = (centerClientY - GRID_OFFSET_Y - gridTransform.panY) / gridTransform.zoom - size / 2;
+        const newToken = {
+            id: Date.now(),
+            src: downscaledDataUrl,
+            x: gridCenterX,
+            y: gridCenterY,
+            size: size,
+            sizeMultiplier: 1, 
+            name: 'Token',
+            showMeasurement: false
         };
-        reader.readAsDataURL(file);
+        setTokens(prev => [...prev, newToken]);
+    } catch (err) {
+        console.error('Failed to process token:', err);
+        alert('Failed to load token. Please try a different file.');
     }
+    
     e.target.value = '';
 };
 
@@ -2440,27 +2521,32 @@ const toggleTokenMeasurement = (tokenId) => {
 };
 
 // Handout upload handler
-const handleHandoutUpload = (e) => {
+const handleHandoutUpload = async (e) => {
     const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const handoutData = {
-                src: event.target.result,
-                timestamp: Date.now()
-            };
-            
-            // Show handout locally
-            setHandoutImage(handoutData.src);
-            setHandoutVisible(true);
-            
-            // Broadcast to all players if connected
-            if (isConnectedRef.current && isHostRef.current) {
-                broadcastState('HANDOUT_SHOW', handoutData);
-            }
+    if (!file || !file.type.startsWith('image/')) return;
+    
+    try {
+        // Downscale image before using
+        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        
+        const handoutData = {
+            src: downscaledDataUrl,
+            timestamp: Date.now()
         };
-        reader.readAsDataURL(file);
+        
+        // Show handout locally
+        setHandoutImage(handoutData.src);
+        setHandoutVisible(true);
+        
+        // Broadcast to all players if connected
+        if (isConnectedRef.current && isHostRef.current) {
+            broadcastState('HANDOUT_SHOW', handoutData);
+        }
+    } catch (err) {
+        console.error('Failed to process handout:', err);
+        alert('Failed to load handout. Please try a different file.');
     }
+    
     e.target.value = '';
 };
 
