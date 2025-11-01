@@ -514,7 +514,7 @@ const dice = [
             // Note: Only initialized once on mount. Host/connected checks happen
             // in the calling useEffect hooks, not inside these throttled functions.
             useEffect(() => {
-                const THROTTLE_INTERVAL = 100; // 100ms = 10 updates/second
+                const THROTTLE_INTERVAL = 50;
                 
                 throttledTokenBroadcast.current = throttle((data) => {
                     broadcastState('TOKEN_UPDATE', data);
@@ -2034,9 +2034,7 @@ const handleAvatarUpload = (e) => {
     );
     
     // Update local state immediately (smooth visual feedback)
-    setTokens(updatedTokens);
-    tokensRef.current = updatedTokens;
-    
+    setTokens(updatedTokens);    
     // Throttled network update (50ms max = 20 updates/sec instead of 60+)
     if (throttledTokenBroadcast.current) {
         throttledTokenBroadcast.current(updatedTokens);
