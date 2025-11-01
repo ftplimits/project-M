@@ -278,6 +278,12 @@
             const clipboardNotificationTimeoutRef = useRef(null);
             const isHostRef = useRef(false);
             const isConnectedRef = useRef(false);
+            const throttledTokenBroadcast = useRef(null);
+            const throttledDrawingBroadcast = useRef(null);
+            const throttledAvatarBroadcast = useRef(null);
+            const throttledSceneBroadcast = useRef(null);
+            const throttledSheetBroadcast = useRef(null);
+            const throttledGridTransformBroadcast = useRef(null);
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -493,6 +499,47 @@ const dice = [
                     }
                 };
             }, []);
+
+            // Initialize throttled broadcast functions
+            useEffect(() => {
+                const THROTTLE_INTERVAL = 100; // 100ms = 10 updates/second
+                
+                throttledTokenBroadcast.current = throttle((data) => {
+                    if (isHost && isConnected) {
+                        broadcastState('TOKEN_UPDATE', data);
+                    }
+                }, THROTTLE_INTERVAL);
+                
+                throttledDrawingBroadcast.current = throttle((data) => {
+                    if (isHost && isConnected) {
+                        broadcastState('DRAWING_UPDATE', data);
+                    }
+                }, THROTTLE_INTERVAL);
+                
+                throttledAvatarBroadcast.current = throttle((data) => {
+                    if (isHost && isConnected) {
+                        broadcastState('AVATAR_UPDATE', data);
+                    }
+                }, THROTTLE_INTERVAL);
+                
+                throttledSceneBroadcast.current = throttle((data) => {
+                    if (isHost && isConnected) {
+                        broadcastState('SCENE_IMAGE_UPDATE', data);
+                    }
+                }, THROTTLE_INTERVAL);
+                
+                throttledSheetBroadcast.current = throttle((data) => {
+                    if (isHost && isConnected) {
+                        broadcastState('CHARACTER_SHEETS_UPDATE', data);
+                    }
+                }, THROTTLE_INTERVAL);
+                
+                throttledGridTransformBroadcast.current = throttle((data) => {
+                    if (isHost && isConnected) {
+                        broadcastState('GRID_TRANSFORM', data);
+                    }
+                }, THROTTLE_INTERVAL);
+            }, [isHost, isConnected]);
 
 
 
@@ -834,27 +881,27 @@ const dice = [
                 setPlayers([]);
             };
 
-            // Sync tokens when they change (only if host)
+            // Sync tokens when they change (only if host) - THROTTLED
             useEffect(() => {
                 tokensRef.current = tokens;
-                if (isHost && isConnected) {
-                    broadcastState('TOKEN_UPDATE', tokens);
+                if (throttledTokenBroadcast.current) {
+                    throttledTokenBroadcast.current(tokens);
                 }
-            }, [tokens, isHost, isConnected]);
+            }, [tokens]);
 
-            // Sync drawings when they change (only if host)
+            // Sync drawings when they change (only if host) - THROTTLED
             useEffect(() => {
-                if (isHost && isConnected) {
-                    broadcastState('DRAWING_UPDATE', drawings);
+                if (throttledDrawingBroadcast.current) {
+                    throttledDrawingBroadcast.current(drawings);
                 }
-            }, [drawings, isHost, isConnected]);
+            }, [drawings]);
 
-            // Sync avatars when they change (only if host)
+            // Sync avatars when they change (only if host) - THROTTLED
             useEffect(() => {
-                if (isHost && isConnected) {
-                    broadcastState('AVATAR_UPDATE', avatars);
+                if (throttledAvatarBroadcast.current) {
+                    throttledAvatarBroadcast.current(avatars);
                 }
-            }, [avatars, isHost, isConnected]);
+            }, [avatars]);
 
             // Sync scene changes (only if host)
             useEffect(() => {
@@ -863,17 +910,17 @@ const dice = [
                 }
             }, [activeSceneIndex, isHost, isConnected]);
 
-            // Sync character sheets when they change (only if host)
+            // Sync character sheets when they change (only if host) - THROTTLED
             useEffect(() => {
-                if (isHost && isConnected) {
-                    broadcastState('CHARACTER_SHEETS_UPDATE', characterSheets);
+                if (throttledSheetBroadcast.current) {
+                    throttledSheetBroadcast.current(characterSheets);
                 }
-            }, [characterSheets, isHost, isConnected]);
+            }, [characterSheets]);
 
-            // Sync scenes when they change (for grid and other scene properties) (only if host)
+            // Sync scenes when they change (for grid and other scene properties) (only if host) - THROTTLED
             useEffect(() => {
-                if (isHost && isConnected) {
-                    broadcastState('SCENE_IMAGE_UPDATE', scenes);
+                if (throttledSceneBroadcast.current) {
+                    throttledSceneBroadcast.current(scenes);
                 }
             }, [scenes]);
 
