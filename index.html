@@ -3647,11 +3647,11 @@ const handleHandoutUpload = (e) => {
                                                             // Show notification
                                                             setClipboardNotification(true);
                                                             
-                                                            // Auto-fade after 2 seconds
+                                                            // Auto-fade after configured duration
                                                             clipboardNotificationTimeoutRef.current = setTimeout(() => {
                                                                 setClipboardNotification(false);
                                                                 clipboardNotificationTimeoutRef.current = null;
-                                                            }, 2000);
+                                                            }, AUTO_FADE_DURATION);
                                                         })
                                                         .catch(err => {
                                                             console.warn('Could not copy link to clipboard:', err);
@@ -4020,7 +4020,7 @@ const handleHandoutUpload = (e) => {
                                         backgroundColor: '#2a2a2a',
                                         borderRadius: '6px',
                                         border: '1px solid #444',
-                                        cursor: isHost && !player.isHost ? 'context-menu' : 'default'
+                                        cursor: isHost && !player.isHost ? 'pointer' : 'default'
                                     }}
                                 >
                                     <div style={{
@@ -4141,54 +4141,6 @@ const handleHandoutUpload = (e) => {
                                 fontFamily: 'Georgia, serif'
                             }}>
                                 ✅ Link copied!
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Clipboard Notification */}
-                    {clipboardNotification && (
-                        <div
-                            style={{
-                                position: 'fixed',
-                                top: '20px',
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                backgroundColor: 'rgba(26, 26, 26, 0.98)',
-                                border: '3px solid #d4af37',
-                                borderRadius: '12px',
-                                padding: '16px 24px',
-                                minWidth: '320px',
-                                boxShadow: '0 8px 32px rgba(212, 175, 55, 0.5), 0 4px 16px rgba(0,0,0,0.9)',
-                                zIndex: 2000,
-                                animation: 'slideDown 0.3s ease-out'
-                            }}
-                        >
-                            <div style={{
-                                textAlign: 'center'
-                            }}>
-                                <div style={{
-                                    color: '#d4af37',
-                                    fontSize: '20px',
-                                    marginBottom: '8px'
-                                }}>
-                                    ✅
-                                </div>
-                                <div style={{
-                                    color: '#d4af37',
-                                    fontSize: '16px',
-                                    fontWeight: 'bold',
-                                    fontFamily: 'Georgia, serif',
-                                    marginBottom: '4px'
-                                }}>
-                                    Room Code Copied!
-                                </div>
-                                <div style={{
-                                    color: '#888',
-                                    fontSize: '13px',
-                                    fontFamily: 'Arial, sans-serif'
-                                }}>
-                                    Share with your players!
-                                </div>
                             </div>
                         </div>
                     )}
