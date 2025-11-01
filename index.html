@@ -857,22 +857,30 @@ const dice = [
                         break;
                         
                     case 'TOKEN_UPDATE':
-                        // Update our own state (both host and players)
-                        setTokens(message.data);
-                        
-                        // If we're the host, relay to all other players
-                        if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying token update to ${peerId}:`, err);
-                                    }
-                                }
-                            });
-                        }
-                        break;
+    // Ignore updates for tokens we're currently dragging
+    const incomingTokens = message.data;
+    const filteredTokens = draggedTokenRef.current 
+        ? incomingTokens.map(token => 
+            token.id === draggedTokenRef.current ? tokensRef.current.find(t => t.id === token.id) || token : token
+          )
+        : incomingTokens;
+    
+    // Update our own state
+    setTokens(filteredTokens);
+    
+    // If we're the host, relay to all other players
+    if (isHostRef.current) {
+        clientConnections.forEach((conn, peerId) => {
+            if (peerId !== fromPeer && conn.open) {
+                try {
+                    conn.send(message);
+                } catch (err) {
+                    console.error(`Error relaying token update to ${peerId}:`, err);
+                }
+            }
+        });
+    }
+    break;
                         
                     case 'DRAWING_UPDATE':
                         // Update our own state (both host and players)
