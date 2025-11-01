@@ -857,15 +857,57 @@ const dice = [
                         break;
                         
                     case 'TOKEN_UPDATE':
-                        if (!isHostRef.current) setTokens(message.data);
+                        // Update our own state (both host and players)
+                        setTokens(message.data);
+                        
+                        // If we're the host, relay to all other players
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying token update to ${peerId}:`, err);
+                                    }
+                                }
+                            });
+                        }
                         break;
                         
                     case 'DRAWING_UPDATE':
-                        if (!isHostRef.current) setDrawings(message.data);
+                        // Update our own state (both host and players)
+                        setDrawings(message.data);
+                        
+                        // If we're the host, relay to all other players
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying drawing update to ${peerId}:`, err);
+                                    }
+                                }
+                            });
+                        }
                         break;
                         
                     case 'AVATAR_UPDATE':
-                        if (!isHostRef.current) setAvatars(message.data);
+                        // Update our own state (both host and players)
+                        setAvatars(message.data);
+                        
+                        // If we're the host, relay to all other players
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying avatar update to ${peerId}:`, err);
+                                    }
+                                }
+                            });
+                        }
                         break;
                         
                     case 'SCENE_CHANGE':
@@ -873,11 +915,39 @@ const dice = [
                         break;
                         
                     case 'SCENE_IMAGE_UPDATE':
-                        if (!isHostRef.current) setScenes(message.data);
+                        // Update our own state (both host and players)
+                        setScenes(message.data);
+                        
+                        // If we're the host, relay to all other players
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying scene update to ${peerId}:`, err);
+                                    }
+                                }
+                            });
+                        }
                         break;
                         
                     case 'CHARACTER_SHEETS_UPDATE':
-                        if (!isHostRef.current) setCharacterSheets(message.data);
+                        // Update our own state (both host and players)
+                        setCharacterSheets(message.data);
+                        
+                        // If we're the host, relay to all other players
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying character sheet update to ${peerId}:`, err);
+                                    }
+                                }
+                            });
+                        }
                         break;
                         
                     case 'GRID_TRANSFORM':
@@ -1047,27 +1117,27 @@ const dice = [
                 setReconnectAttempts(0);
             };
 
-            // Sync tokens when they change (only if host) - THROTTLED
+            // Sync tokens when they change - THROTTLED
             useEffect(() => {
                 tokensRef.current = tokens;
                 if (isConnected && throttledTokenBroadcast.current) {
                     throttledTokenBroadcast.current(tokens);
                 }
-            }, [tokens, isHost, isConnected]);
+            }, [tokens, isConnected]);
 
-            // Sync drawings when they change (only if host) - THROTTLED
+            // Sync drawings when they change - THROTTLED
             useEffect(() => {
-                if (isHost && isConnected && throttledDrawingBroadcast.current) {
+                if (isConnected && throttledDrawingBroadcast.current) {
                     throttledDrawingBroadcast.current(drawings);
                 }
-            }, [drawings, isHost, isConnected]);
+            }, [drawings, isConnected]);
 
-            // Sync avatars when they change (only if host) - THROTTLED
+            // Sync avatars when they change - THROTTLED
             useEffect(() => {
-                if (isHost && isConnected && throttledAvatarBroadcast.current) {
+                if (isConnected && throttledAvatarBroadcast.current) {
                     throttledAvatarBroadcast.current(avatars);
                 }
-            }, [avatars, isHost, isConnected]);
+            }, [avatars, isConnected]);
 
             // Sync scene changes (only if host)
             // Note: NOT throttled - scene switching should be immediate for all players
@@ -1077,19 +1147,19 @@ const dice = [
                 }
             }, [activeSceneIndex, isHost, isConnected]);
 
-            // Sync character sheets when they change (only if host) - THROTTLED
+            // Sync character sheets when they change - THROTTLED
             useEffect(() => {
-                if (isHost && isConnected && throttledSheetBroadcast.current) {
+                if (isConnected && throttledSheetBroadcast.current) {
                     throttledSheetBroadcast.current(characterSheets);
                 }
-            }, [characterSheets, isHost, isConnected]);
+            }, [characterSheets, isConnected]);
 
-            // Sync scenes when they change (for grid and other scene properties) (only if host) - THROTTLED
+            // Sync scenes when they change (for grid and other scene properties) - THROTTLED
             useEffect(() => {
-                if (isHost && isConnected && throttledSceneBroadcast.current) {
+                if (isConnected && throttledSceneBroadcast.current) {
                     throttledSceneBroadcast.current(scenes);
                 }
-            }, [scenes, isHost, isConnected]);
+            }, [scenes, isConnected]);
 
             // Automatic avatar animations - adds life to the table!
             useEffect(() => {
