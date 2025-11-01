@@ -317,6 +317,7 @@
             const [isPanning, setIsPanning] = useState(false);
             const [panStart, setPanStart] = useState({ x: 0, y: 0 });
             const zoomAnimationRef = useRef(null);
+            const gridTransformRef = useRef({ zoom: 1.5, panX: 0, panY: 0 });
 
             const [drawingTool, setDrawingTool] = useState(null);
             const [drawingColor, setDrawingColor] = useState('#ffffff');
@@ -410,6 +411,12 @@
             useEffect(() => {
                 scheduleAutoSave();
             }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers]);
+
+            // Sync gridTransformRef with gridTransform state
+            // This ensures handleGridWheel always reads fresh values without recreating the function
+            useEffect(() => {
+                gridTransformRef.current = gridTransform;
+            }, [gridTransform]);
 
             // Auto-load on startup
             useEffect(() => {
@@ -2220,9 +2227,9 @@ const handleHandoutUpload = (e) => {
                 const wheelSpeed = 0.0018;
                 const zoomFactor = Math.exp(-delta * wheelSpeed);
                 const clamp = (v, a = 0.2, b = 6) => Math.max(a, Math.min(b, v));
-                const startZoom = gridTransform.zoom;
-                const startPanX = gridTransform.panX;
-                const startPanY = gridTransform.panY;
+                const startZoom = gridTransformRef.current.zoom;
+                const startPanX = gridTransformRef.current.panX;
+                const startPanY = gridTransformRef.current.panY;
                 const mouseX = e.clientX;
                 const mouseY = e.clientY - GRID_OFFSET_Y;
                 const worldX = (mouseX - startPanX) / startZoom;
