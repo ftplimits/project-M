@@ -500,39 +500,29 @@ const dice = [
             }, []);
 
             // Initialize throttled broadcast functions
-            // Note: Only initialized once on mount. Uses isHostRef/isConnectedRef
-            // to get current values without recreating throttled functions.
+            // Note: Only initialized once on mount. Host/connected checks happen
+            // in the calling useEffect hooks, not inside these throttled functions.
             useEffect(() => {
                 const THROTTLE_INTERVAL = 100; // 100ms = 10 updates/second
                 
                 throttledTokenBroadcast.current = throttle((data) => {
-                    if (isHostRef.current && isConnectedRef.current) {
-                        broadcastState('TOKEN_UPDATE', data);
-                    }
+                    broadcastState('TOKEN_UPDATE', data);
                 }, THROTTLE_INTERVAL);
                 
                 throttledDrawingBroadcast.current = throttle((data) => {
-                    if (isHostRef.current && isConnectedRef.current) {
-                        broadcastState('DRAWING_UPDATE', data);
-                    }
+                    broadcastState('DRAWING_UPDATE', data);
                 }, THROTTLE_INTERVAL);
                 
                 throttledAvatarBroadcast.current = throttle((data) => {
-                    if (isHostRef.current && isConnectedRef.current) {
-                        broadcastState('AVATAR_UPDATE', data);
-                    }
+                    broadcastState('AVATAR_UPDATE', data);
                 }, THROTTLE_INTERVAL);
                 
                 throttledSceneBroadcast.current = throttle((data) => {
-                    if (isHostRef.current && isConnectedRef.current) {
-                        broadcastState('SCENE_IMAGE_UPDATE', data);
-                    }
+                    broadcastState('SCENE_IMAGE_UPDATE', data);
                 }, THROTTLE_INTERVAL);
                 
                 throttledSheetBroadcast.current = throttle((data) => {
-                    if (isHostRef.current && isConnectedRef.current) {
-                        broadcastState('CHARACTER_SHEETS_UPDATE', data);
-                    }
+                    broadcastState('CHARACTER_SHEETS_UPDATE', data);
                 }, THROTTLE_INTERVAL);
             }, []); // Empty dependency array - only initialize once on mount
 
@@ -879,24 +869,24 @@ const dice = [
             // Sync tokens when they change (only if host) - THROTTLED
             useEffect(() => {
                 tokensRef.current = tokens;
-                if (throttledTokenBroadcast.current) {
+                if (isHost && isConnected && throttledTokenBroadcast.current) {
                     throttledTokenBroadcast.current(tokens);
                 }
-            }, [tokens]);
+            }, [tokens, isHost, isConnected]);
 
             // Sync drawings when they change (only if host) - THROTTLED
             useEffect(() => {
-                if (throttledDrawingBroadcast.current) {
+                if (isHost && isConnected && throttledDrawingBroadcast.current) {
                     throttledDrawingBroadcast.current(drawings);
                 }
-            }, [drawings]);
+            }, [drawings, isHost, isConnected]);
 
             // Sync avatars when they change (only if host) - THROTTLED
             useEffect(() => {
-                if (throttledAvatarBroadcast.current) {
+                if (isHost && isConnected && throttledAvatarBroadcast.current) {
                     throttledAvatarBroadcast.current(avatars);
                 }
-            }, [avatars]);
+            }, [avatars, isHost, isConnected]);
 
             // Sync scene changes (only if host)
             // Note: NOT throttled - scene switching should be immediate for all players
@@ -908,17 +898,17 @@ const dice = [
 
             // Sync character sheets when they change (only if host) - THROTTLED
             useEffect(() => {
-                if (throttledSheetBroadcast.current) {
+                if (isHost && isConnected && throttledSheetBroadcast.current) {
                     throttledSheetBroadcast.current(characterSheets);
                 }
-            }, [characterSheets]);
+            }, [characterSheets, isHost, isConnected]);
 
             // Sync scenes when they change (for grid and other scene properties) (only if host) - THROTTLED
             useEffect(() => {
-                if (throttledSceneBroadcast.current) {
+                if (isHost && isConnected && throttledSceneBroadcast.current) {
                     throttledSceneBroadcast.current(scenes);
                 }
-            }, [scenes]);
+            }, [scenes, isHost, isConnected]);
 
             // Automatic avatar animations - adds life to the table!
             useEffect(() => {
