@@ -264,7 +264,7 @@
             const [playerName, setPlayerName] = useState('Player');
             const [diceNotification, setDiceNotification] = useState(null);
             const [clipboardNotification, setClipboardNotification] = useState(false);
-            const [lastHeartbeat, setLastHeartbeat] = useState(null);
+            const [lastHeartbeat, setLastHeartbeat] = useState(null); // Foundation for future connection quality monitoring
             const [reconnectAttempts, setReconnectAttempts] = useState(0);
             const playersRef = useRef([]);
             const tokensRef = useRef([]);
@@ -685,6 +685,13 @@ const dice = [
                 
                 peer.on('error', (err) => {
                     console.error('PeerJS error:', err);
+                    
+                    // Clear heartbeat interval on error
+                    if (heartbeatIntervalRef.current) {
+                        clearInterval(heartbeatIntervalRef.current);
+                        heartbeatIntervalRef.current = null;
+                    }
+                    
                     if (err.type === 'unavailable-id') {
                         alert('Room code already in use. Please try again.');
                     } else {
@@ -774,6 +781,13 @@ const dice = [
                                 
                                 reconnectTimeoutRef.current = setTimeout(() => {
                                     console.log('Attempting to reconnect to host...');
+                                    
+                                    // Clean up existing peer before reconnecting
+                                    if (peer) {
+                                        peer.destroy();
+                                        peer = null;
+                                    }
+                                    
                                     joinRoom(roomCodeRef.current);
                                 }, RECONNECT_BASE_DELAY * newAttempts); // Linear backoff delays: 2s (attempt 1), 4s (attempt 2), 6s (attempt 3)
                                 
