@@ -277,6 +277,8 @@
             const heartbeatIntervalRef = useRef(null);
             const reconnectTimeoutRef = useRef(null);
             const MAX_RECONNECT_ATTEMPTS = 3;
+            const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+            const RECONNECT_BASE_DELAY = 2000; // 2 seconds
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -637,7 +639,7 @@ const dice = [
                                 }
                             });
                         }
-                    }, 30000); // Send heartbeat every 30 seconds
+                    }, HEARTBEAT_INTERVAL); // Send heartbeat every 30 seconds
                 });
                 
                 peer.on('connection', (conn) => {
@@ -771,7 +773,7 @@ const dice = [
                                 reconnectTimeoutRef.current = setTimeout(() => {
                                     console.log('Attempting to reconnect to host...');
                                     joinRoom(roomCodeRef.current);
-                                }, 2000 * newAttempts); // Linear backoff: 2s, 4s, 6s
+                                }, RECONNECT_BASE_DELAY * newAttempts); // Linear backoff: 2s, 4s, 6s
                                 
                                 return newAttempts;
                             } else {
