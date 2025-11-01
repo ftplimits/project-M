@@ -860,17 +860,16 @@ const dice = [
                         break;
                         
                     case 'POINTER_UPDATE':
-                        if (!isHostRef.current) {
-                            const { playerName, x, y, active } = message.data;
-                            if (active) {
-                                setActivePointers(prev => ({ ...prev, [playerName]: { x, y } }));
-                            } else {
-                                setActivePointers(prev => {
-                                    const updated = { ...prev };
-                                    delete updated[playerName];
-                                    return updated;
-                                });
-                            }
+                        // Process pointer update (for display)
+                        const { playerName, x, y, active } = message.data;
+                        if (active) {
+                            setActivePointers(prev => ({ ...prev, [playerName]: { x, y } }));
+                        } else {
+                            setActivePointers(prev => {
+                                const updated = { ...prev };
+                                delete updated[playerName];
+                                return updated;
+                            });
                         }
                         
                         // Host relays to all other clients
