@@ -763,6 +763,11 @@ const dice = [
                             if (newAttempts <= MAX_RECONNECT_ATTEMPTS) {
                                 console.log(`Connection lost. Reconnecting... (attempt ${newAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
                                 
+                                // Clear any existing timeout before setting a new one
+                                if (reconnectTimeoutRef.current) {
+                                    clearTimeout(reconnectTimeoutRef.current);
+                                }
+                                
                                 reconnectTimeoutRef.current = setTimeout(() => {
                                     console.log('Attempting to reconnect to host...');
                                     joinRoom(roomCodeRef.current);
