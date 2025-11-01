@@ -1261,7 +1261,7 @@ const dice = [
                         clearTimeout(timeoutRef.current);
                     }
                 };
-            }, [avatars, isConnected]); // Re-run when avatars change
+            }, [avatars.length, isConnected]); // Only re-run when avatar COUNT changes
 
             // ===== EXISTING FUNCTIONS (with multiplayer hooks) =====
 
