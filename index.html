@@ -2944,7 +2944,7 @@ const handleHandoutUpload = (e) => {
                         const deltaY = draggedTokenWithMeasurement.y - tokenDragStart.startY;
                         const distanceInPixels = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
                         const gridSize = activeScene.grid?.size || 50;
-                        const distanceInSquares = Math.round(distanceInPixels / gridSize * 10) / 10; // Round to 1 decimal
+                        const distanceInFeet = Math.round(distanceInSquares * 5);
                         
                         // Draw label at midpoint
                         const midX = (startScreenX + currentScreenX) / 2;
