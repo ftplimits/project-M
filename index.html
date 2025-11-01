@@ -2307,7 +2307,7 @@ const handleHandoutUpload = (e) => {
                         document.removeEventListener('contextmenu', handleGridContextMenu);
                     };
                 }
-            }, [activeScene.grid?.enabled, gridTransform.zoom]);
+            }, [activeScene.grid?.enabled]);
 
             useEffect(() => {
                 const handleClick = () => {
