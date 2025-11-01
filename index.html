@@ -774,10 +774,6 @@ const dice = [
                                 return 0; // Reset for future connections
                             }
                         });
-                        } else {
-                            alert('Disconnected from host. Maximum reconnection attempts reached.');
-                            setReconnectAttempts(0); // Reset for future connections
-                        }
                     });
                     
                     hostConnection.on('error', (err) => {
