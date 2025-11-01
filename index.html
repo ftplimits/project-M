@@ -997,22 +997,6 @@ useEffect(() => {
                                 setBouncingAvatarIds(prev => prev.filter(id => id !== selectedAvatar.id));
                             }, 500);
                             
-                            // Broadcast bounce to all players
-                            if (isConnected) {
-                                if (isHostRef.current) {
-                                    broadcastState('AVATAR_BOUNCE', { avatarId: selectedAvatar.id });
-                                } else {
-                                    // Players send bounce to host
-                                    connectionsRef.current.forEach(conn => {
-                                        if (conn && conn.open) {
-                                            conn.send({
-                                                type: 'AVATAR_BOUNCE',
-                                                data: { avatarId: selectedAvatar.id }
-                                            });
-                                        }
-                                    });
-                                }
-                            }
                         } else {
                             // Trigger flip animation
                             setAvatars(prev => prev.map(av => 
