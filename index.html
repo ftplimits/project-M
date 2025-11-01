@@ -757,16 +757,23 @@ const dice = [
                         setConnectionStatus('disconnected');
                         
                         // Attempt auto-reconnect
-                        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                            const newAttempts = reconnectAttempts + 1;
-                            setReconnectAttempts(newAttempts);
+                        setReconnectAttempts(prev => {
+                            const newAttempts = prev + 1;
                             
-                            console.log(`Connection lost. Reconnecting... (attempt ${newAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-                            
-                            reconnectTimeoutRef.current = setTimeout(() => {
-                                console.log('Attempting to reconnect to host...');
-                                joinRoom(roomCodeRef.current);
-                            }, 2000 * newAttempts); // Exponential backoff: 2s, 4s, 6s
+                            if (newAttempts <= MAX_RECONNECT_ATTEMPTS) {
+                                console.log(`Connection lost. Reconnecting... (attempt ${newAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                                
+                                reconnectTimeoutRef.current = setTimeout(() => {
+                                    console.log('Attempting to reconnect to host...');
+                                    joinRoom(roomCodeRef.current);
+                                }, 2000 * newAttempts); // Linear backoff: 2s, 4s, 6s
+                                
+                                return newAttempts;
+                            } else {
+                                alert('Disconnected from host. Maximum reconnection attempts reached.');
+                                return 0; // Reset for future connections
+                            }
+                        });
                         } else {
                             alert('Disconnected from host. Maximum reconnection attempts reached.');
                             setReconnectAttempts(0); // Reset for future connections
