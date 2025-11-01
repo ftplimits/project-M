@@ -538,8 +538,8 @@ const dice = [
             };
             
             const broadcastState = (type, data) => {
-                if (!isConnectedRef.current) {
-                    console.log(`Cannot broadcast ${type}: not connected`);
+                if (!isConnectedRef.current || !roomCodeRef.current) {
+                    console.log(`Cannot broadcast ${type}: not connected or no room`);
                     return;
                 }
                 
@@ -673,7 +673,7 @@ const dice = [
                 const roomCode = code.toUpperCase();
                 
                 // Generate unique player ID
-                const playerId = 'P' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5).toUpperCase();
+                const playerId = 'P' + Date.now().toString(36) + Math.random().toString(36).substring(2, 7).toUpperCase();
                 
                 // Initialize PeerJS with ICE servers
                 peer = new Peer(playerId, {
@@ -833,7 +833,11 @@ const dice = [
                         if (isHostRef.current) {
                             clientConnections.forEach((conn, peerId) => {
                                 if (peerId !== fromPeer && conn.open) {
-                                    conn.send(message);
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying dice roll to ${peerId}:`, err);
+                                    }
                                 }
                             });
                         }
@@ -853,7 +857,11 @@ const dice = [
                         if (isHostRef.current) {
                             clientConnections.forEach((conn, peerId) => {
                                 if (peerId !== fromPeer && conn.open) {
-                                    conn.send(message);
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying avatar bounce to ${peerId}:`, err);
+                                    }
                                 }
                             });
                         }
@@ -876,7 +884,11 @@ const dice = [
                         if (isHostRef.current) {
                             clientConnections.forEach((conn, peerId) => {
                                 if (peerId !== fromPeer && conn.open) {
-                                    conn.send(message);
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying pointer update to ${peerId}:`, err);
+                                    }
                                 }
                             });
                         }
@@ -890,7 +902,11 @@ const dice = [
                         if (isHostRef.current) {
                             clientConnections.forEach((conn, peerId) => {
                                 if (peerId !== fromPeer && conn.open) {
-                                    conn.send(message);
+                                    try {
+                                        conn.send(message);
+                                    } catch (err) {
+                                        console.error(`Error relaying handout to ${peerId}:`, err);
+                                    }
                                 }
                             });
                         }
