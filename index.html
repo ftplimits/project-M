@@ -1050,7 +1050,7 @@ const dice = [
             // Sync tokens when they change (only if host) - THROTTLED
             useEffect(() => {
                 tokensRef.current = tokens;
-                if (isHost && isConnected && throttledTokenBroadcast.current) {
+                if (isConnected && throttledTokenBroadcast.current) {
                     throttledTokenBroadcast.current(tokens);
                 }
             }, [tokens, isHost, isConnected]);
