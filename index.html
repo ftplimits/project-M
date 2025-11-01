@@ -2557,6 +2557,8 @@ const handleHandoutUpload = (e) => {
 
             const handleGridWheel = (e) => {
                 if (!activeScene.grid?.enabled) return;
+                if (!viewportRef.current) return;
+                
                 e.preventDefault();
                 if (zoomAnimationRef.current) {
                     cancelAnimationFrame(zoomAnimationRef.current);
@@ -2564,7 +2566,6 @@ const handleHandoutUpload = (e) => {
                 }
 
                 // Get mouse position relative to viewport element
-                if (!viewportRef.current) return;
                 const rect = viewportRef.current.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
