@@ -176,6 +176,11 @@
     <script type="text/babel">
         const { useState, useRef, useEffect } = React;
 
+        // Constants
+        const DEFAULT_HOST_NAME = 'Host';
+        const AUTO_FADE_DURATION = 3000; // 3 seconds
+        const MESSAGE_DELIVERY_DELAY = 500; // 500ms for message delivery before disconnect
+
         const throttle = (func, limit) => {
     let inThrottle;
     return function(...args) {
@@ -630,8 +635,8 @@ useEffect(() => {
                 // Show "Creating game, Please wait..." popup immediately
                 setShowCreatingDialog(true);
                 
-                // Use "Host" as default name (no prompt)
-                const hostName = 'Host';
+                // Use default host name (no prompt)
+                const hostName = DEFAULT_HOST_NAME;
                 setPlayerName(hostName);
                 console.log('Creating peer as Host');
                 
@@ -673,10 +678,10 @@ useEffect(() => {
                                 // Show "Session created! Link copied to clipboard" message
                                 setSessionCreatedMessage(true);
                                 
-                                // Auto-fade after 3 seconds
+                                // Auto-fade after configured duration
                                 setTimeout(() => {
                                     setSessionCreatedMessage(false);
-                                }, 3000);
+                                }, AUTO_FADE_DURATION);
                             })
                             .catch(err => {
                                 console.warn('Could not copy shareable link to clipboard:', err);
@@ -684,14 +689,14 @@ useEffect(() => {
                                 setSessionCreatedMessage(true);
                                 setTimeout(() => {
                                     setSessionCreatedMessage(false);
-                                }, 3000);
+                                }, AUTO_FADE_DURATION);
                             });
                     } else {
                         // Browser doesn't support clipboard API
                         setSessionCreatedMessage(true);
                         setTimeout(() => {
                             setSessionCreatedMessage(false);
-                        }, 3000);
+                        }, AUTO_FADE_DURATION);
                     }
                     
                     // Close multiplayer menu if open
@@ -1155,7 +1160,7 @@ useEffect(() => {
                         setShowWaitingDialog(false);
                         setDeniedMessage(true);
                         
-                        // Auto-close after 3 seconds and disconnect
+                        // Auto-close after configured duration and disconnect
                         setTimeout(() => {
                             setDeniedMessage(false);
                             if (peer) {
@@ -1165,7 +1170,7 @@ useEffect(() => {
                             setIsConnected(false);
                             // Clean up URL parameter
                             window.history.replaceState({}, document.title, window.location.pathname);
-                        }, 3000);
+                        }, AUTO_FADE_DURATION);
                         break;
 
                     default:
@@ -1185,16 +1190,23 @@ useEffect(() => {
                     data: { approved: true }
                 });
                 
-                // Add player to players list
+                // Add player to players list and prepare updated list
                 const newPlayer = { id: peerId, name: name, isHost: false };
+                let updatedPlayers;
+                
                 setPlayers(prev => {
                     if (prev.find(p => p.id === peerId)) return prev;
-                    const updated = [...prev, newPlayer];
+                    updatedPlayers = [...prev, newPlayer];
+                    return updatedPlayers;
+                });
+                
+                // Send state after player list is updated
+                // Use setTimeout to ensure state update has completed
+                setTimeout(() => {
+                    // Broadcast updated player list to all players
+                    broadcastState('PLAYER_LIST', playersRef.current);
                     
-                    // Broadcast updated player list
-                    broadcastState('PLAYER_LIST', updated);
-                    
-                    // Send FULL_STATE to newly admitted player
+                    // Send FULL_STATE to newly admitted player with current game state
                     conn.send({
                         type: 'FULL_STATE',
                         data: {
@@ -1207,12 +1219,10 @@ useEffect(() => {
                             dicePresets,
                             characterSheets,
                             diceModifiers,
-                            players: updated
+                            players: playersRef.current
                         }
                     });
-                    
-                    return updated;
-                });
+                }, 0);
                 
                 // Remove from pending requests
                 setPendingJoinRequests(prev => {
@@ -1243,10 +1253,10 @@ useEffect(() => {
                     data: { approved: false }
                 });
                 
-                // Close connection
+                // Close connection after ensuring message is delivered
                 setTimeout(() => {
                     conn.close();
-                }, 100);
+                }, MESSAGE_DELIVERY_DELAY);
                 
                 // Remove from pending requests
                 setPendingJoinRequests(prev => {
