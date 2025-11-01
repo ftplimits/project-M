@@ -481,7 +481,94 @@ useEffect(() => {
     };
 }, []);
 
-// ADD THIS NEW USEEFFECT HERE
+// Auto-join from URL parameter
+useEffect(() => {
+    // Check for room parameter in URL on mount
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    
+    if (roomParam && !isConnected && !peer) {
+        console.log('Found room parameter in URL:', roomParam);
+        
+        // Prompt user for their name
+        const name = prompt('Enter your name to join the room:', playerName) || playerName;
+        if (!name || name.trim() === '') {
+            alert('Please enter a valid name!');
+            // Clean up URL even if user cancels
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+        }
+        setPlayerName(name);
+        
+        // Create peer and join room
+        const newPeer = new Peer({
+            host: '0.peerjs.com',
+            port: 443,
+            path: '/',
+            secure: true,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' }
+                ]
+            }
+        });
+        
+        newPeer.on('open', (id) => {
+            setMyPeerId(id);
+            setPeer(newPeer);
+            
+            const conn = newPeer.connect(roomParam.trim());
+            
+            conn.on('open', () => {
+                console.log('Auto-joined room from URL!');
+                connectionsRef.current.push(conn);
+                setConnections([...connectionsRef.current]);
+                setIsConnected(true);
+                setIsHost(false);
+                setRoomCode(roomParam.trim());
+                
+                // Send player info to host
+                conn.send({
+                    type: 'PLAYER_JOIN',
+                    data: { id: id, name: name, isHost: false }
+                });
+                
+                // Clean up URL parameter after successful join
+                window.history.replaceState({}, document.title, window.location.pathname);
+            });
+
+            conn.on('data', (message) => {
+                handleIncomingMessage(message, conn);
+            });
+
+            conn.on('close', () => {
+                console.log('Disconnected from host');
+                setIsConnected(false);
+                alert('Disconnected from host!');
+            });
+
+            conn.on('error', (err) => {
+                console.error('Auto-join connection error:', err);
+                alert('Failed to connect to room. The room may not exist or the link may be invalid.');
+                // Clean up URL parameter on error
+                window.history.replaceState({}, document.title, window.location.pathname);
+            });
+        });
+        
+        newPeer.on('error', (err) => {
+            console.error('Auto-join peer error:', err);
+            alert(`Connection error: ${err.type}\n\nDetails: ${err.message || 'Unknown error'}\n\nPlease try again or check your internet connection.`);
+            // Clean up URL parameter on error
+            window.history.replaceState({}, document.title, window.location.pathname);
+        });
+    }
+}, []); // Only run once on mount
+
+// Initialize throttled broadcast
 useEffect(() => {
     // Initialize throttled broadcast (only send network updates every 50ms)
     throttledTokenBroadcast.current = throttle((updatedTokens) => {
@@ -558,11 +645,12 @@ useEffect(() => {
                     setPlayers([{ id: id, name: name, isHost: true }]);
                     setPeer(newPeer);
                     
-                    // Automatically copy room code to clipboard
+                    // Automatically copy shareable link to clipboard
+                    const shareableLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
                     if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(id)
+                        navigator.clipboard.writeText(shareableLink)
                             .then(() => {
-                                console.log('Room code copied to clipboard:', id);
+                                console.log('Shareable link copied to clipboard:', shareableLink);
                                 
                                 // Show clipboard notification
                                 if (clipboardNotificationTimeoutRef.current) {
@@ -577,7 +665,7 @@ useEffect(() => {
                                 }, 3000);
                             })
                             .catch(err => {
-                                console.warn('Could not copy room code to clipboard:', err);
+                                console.warn('Could not copy shareable link to clipboard:', err);
                             });
                     }
                     
@@ -2988,6 +3076,84 @@ const handleHandoutUpload = (e) => {
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            {isHost && (
+                                                <div style={{
+                                                    marginBottom: '20px',
+                                                    padding: '15px',
+                                                    backgroundColor: '#2a2a2a',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid #444'
+                                                }}>
+                                                    <div style={{
+                                                        color: '#e0e0e0',
+                                                        fontSize: '12px',
+                                                        marginBottom: '5px',
+                                                        fontFamily: 'Arial, sans-serif'
+                                                    }}>
+                                                        Shareable Link:
+                                                    </div>
+                                                    <div style={{
+                                                        display: 'flex',
+                                                        gap: '8px',
+                                                        alignItems: 'center'
+                                                    }}>
+                                                        <div style={{
+                                                            color: '#4ecdc4',
+                                                            fontSize: '11px',
+                                                            fontFamily: 'monospace',
+                                                            backgroundColor: '#1a1a1a',
+                                                            padding: '8px',
+                                                            borderRadius: '4px',
+                                                            border: '1px solid #4ecdc4',
+                                                            flex: 1,
+                                                            wordBreak: 'break-all',
+                                                            overflowWrap: 'break-word'
+                                                        }}>
+                                                            {`${window.location.origin}${window.location.pathname}?room=${roomCode}`}
+                                                        </div>
+                                                        <button
+                                                            onClick={() => {
+                                                                const shareableLink = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+                                                                navigator.clipboard.writeText(shareableLink).then(() => {
+                                                                    alert('Shareable link copied to clipboard!');
+                                                                }).catch(() => {
+                                                                    // Fallback for older browsers
+                                                                    const textArea = document.createElement('textarea');
+                                                                    textArea.value = shareableLink;
+                                                                    document.body.appendChild(textArea);
+                                                                    textArea.select();
+                                                                    document.execCommand('copy');
+                                                                    document.body.removeChild(textArea);
+                                                                    alert('Shareable link copied to clipboard!');
+                                                                });
+                                                            }}
+                                                            style={{
+                                                                padding: '8px 12px',
+                                                                backgroundColor: '#4ecdc4',
+                                                                color: '#000',
+                                                                border: 'none',
+                                                                borderRadius: '4px',
+                                                                fontSize: '12px',
+                                                                fontWeight: 'bold',
+                                                                cursor: 'pointer',
+                                                                fontFamily: 'Arial, sans-serif',
+                                                                whiteSpace: 'nowrap',
+                                                                transition: 'background-color 0.2s'
+                                                            }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#3dbdb3';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#4ecdc4';
+                                                            }}
+                                                            title="Copy shareable link to clipboard"
+                                                        >
+                                                            🔗 Copy Link
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             <div style={{
                                                 marginBottom: '20px',
