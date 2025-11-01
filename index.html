@@ -256,6 +256,15 @@
             const throttledTokenBroadcast = useRef(null);
             const isHostRef = useRef(false);
             const isConnectedRef = useRef(false);
+            
+            // NEW ADMISSION SYSTEM STATE
+            const [pendingJoinRequests, setPendingJoinRequests] = useState([]);
+            const [showAdmitDialog, setShowAdmitDialog] = useState(false);
+            const [currentJoinRequest, setCurrentJoinRequest] = useState(null);
+            const [showCreatingDialog, setShowCreatingDialog] = useState(false);
+            const [showWaitingDialog, setShowWaitingDialog] = useState(false);
+            const [sessionCreatedMessage, setSessionCreatedMessage] = useState(false);
+            const [deniedMessage, setDeniedMessage] = useState(false);
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -491,16 +500,15 @@ useEffect(() => {
         console.log('Found room parameter in URL:', roomParam);
         
         // Prompt user for their name
-        const name = prompt('Enter your name to join the room:', playerName) || playerName;
+        const name = prompt('Enter your name:', 'Player');
         if (!name || name.trim() === '') {
-            alert('Please enter a valid name!');
-            // Clean up URL even if user cancels
+            // User cancelled - clean up URL and abort
             window.history.replaceState({}, document.title, window.location.pathname);
             return;
         }
-        setPlayerName(name);
+        setPlayerName(name.trim());
         
-        // Create peer and join room
+        // Create peer and connect
         const newPeer = new Peer({
             host: '0.peerjs.com',
             port: 443,
@@ -524,20 +532,22 @@ useEffect(() => {
             const conn = newPeer.connect(roomParam.trim());
             
             conn.on('open', () => {
-                console.log('Auto-joined room from URL!');
+                console.log('Connected to host, sending JOIN_REQUEST');
                 connectionsRef.current.push(conn);
                 setConnections([...connectionsRef.current]);
-                setIsConnected(true);
                 setIsHost(false);
                 setRoomCode(roomParam.trim());
                 
-                // Send player info to host
+                // Show "Waiting for Host to admit..." popup
+                setShowWaitingDialog(true);
+                
+                // Send JOIN_REQUEST to host instead of auto-joining
                 conn.send({
-                    type: 'PLAYER_JOIN',
-                    data: { id: id, name: name, isHost: false }
+                    type: 'JOIN_REQUEST',
+                    data: { name: name.trim(), peerId: id }
                 });
                 
-                // Clean up URL parameter after successful join
+                // Clean up URL parameter after connection established
                 window.history.replaceState({}, document.title, window.location.pathname);
             });
 
@@ -548,12 +558,16 @@ useEffect(() => {
             conn.on('close', () => {
                 console.log('Disconnected from host');
                 setIsConnected(false);
-                alert('Disconnected from host!');
+                setShowWaitingDialog(false);
+                if (!deniedMessage) {
+                    alert('Disconnected from host!');
+                }
             });
 
             conn.on('error', (err) => {
                 console.error('Auto-join connection error:', err);
                 alert('Failed to connect to room. The room may not exist or the link may be invalid.');
+                setShowWaitingDialog(false);
                 // Clean up URL parameter on error
                 window.history.replaceState({}, document.title, window.location.pathname);
             });
@@ -607,6 +621,135 @@ useEffect(() => {
                             console.error('Error sending to peer:', err);
                         }
                     }
+                });
+            };
+
+            const createSession = () => {
+                console.log('createSession called');
+                
+                // Show "Creating game, Please wait..." popup immediately
+                setShowCreatingDialog(true);
+                
+                // Use "Host" as default name (no prompt)
+                const hostName = 'Host';
+                setPlayerName(hostName);
+                console.log('Creating peer as Host');
+                
+                const newPeer = new Peer({
+                    host: '0.peerjs.com',
+                    port: 443,
+                    path: '/',
+                    secure: true,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' },
+                            { urls: 'stun:stun3.l.google.com:19302' },
+                            { urls: 'stun:stun4.l.google.com:19302' }
+                        ]
+                    }
+                });
+                
+                newPeer.on('open', (id) => {
+                    console.log('Host peer opened with ID:', id);
+                    setMyPeerId(id);
+                    setRoomCode(id);
+                    setIsHost(true);
+                    setIsConnected(true);
+                    setPlayers([{ id: id, name: hostName, isHost: true }]);
+                    setPeer(newPeer);
+                    
+                    // Hide creating dialog
+                    setShowCreatingDialog(false);
+                    
+                    // Generate and copy shareable link to clipboard
+                    const shareableLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(shareableLink)
+                            .then(() => {
+                                console.log('Shareable link copied to clipboard:', shareableLink);
+                                
+                                // Show "Session created! Link copied to clipboard" message
+                                setSessionCreatedMessage(true);
+                                
+                                // Auto-fade after 3 seconds
+                                setTimeout(() => {
+                                    setSessionCreatedMessage(false);
+                                }, 3000);
+                            })
+                            .catch(err => {
+                                console.warn('Could not copy shareable link to clipboard:', err);
+                                // Still show success message even if clipboard fails
+                                setSessionCreatedMessage(true);
+                                setTimeout(() => {
+                                    setSessionCreatedMessage(false);
+                                }, 3000);
+                            });
+                    } else {
+                        // Browser doesn't support clipboard API
+                        setSessionCreatedMessage(true);
+                        setTimeout(() => {
+                            setSessionCreatedMessage(false);
+                        }, 3000);
+                    }
+                    
+                    // Close multiplayer menu if open
+                    setShowMultiplayerMenu(false);
+                });
+
+                newPeer.on('connection', (conn) => {
+                    console.log('New player connecting:', conn.peer);
+                    
+                    conn.on('open', () => {
+                        // Don't automatically add player or send state
+                        // Wait for JOIN_REQUEST instead
+                        connectionsRef.current.push(conn);
+                        setConnections([...connectionsRef.current]);
+                    });
+
+                    conn.on('data', (message) => {
+                        handleIncomingMessage(message, conn);
+                    });
+
+                    conn.on('close', () => {
+                        console.log('Player disconnected:', conn.peer);
+                        connectionsRef.current = connectionsRef.current.filter(c => c.peer !== conn.peer);
+                        setConnections([...connectionsRef.current]);
+                        
+                        // Remove from players if they were admitted
+                        setPlayers(prev => {
+                            const updated = prev.filter(p => p.id !== conn.peer);
+                            if (updated.length !== prev.length) {
+                                broadcastState('PLAYER_LIST', updated);
+                            }
+                            return updated;
+                        });
+                        
+                        // Remove from pending requests if they disconnected before being admitted
+                        setPendingJoinRequests(prev => {
+                            const updated = prev.filter(req => req.peerId !== conn.peer);
+                            
+                            // If current request was for this player, show next request
+                            if (currentJoinRequest && currentJoinRequest.peerId === conn.peer) {
+                                if (updated.length > 0) {
+                                    setCurrentJoinRequest(updated[0]);
+                                    setShowAdmitDialog(true);
+                                } else {
+                                    setCurrentJoinRequest(null);
+                                    setShowAdmitDialog(false);
+                                }
+                            }
+                            
+                            return updated;
+                        });
+                    });
+                });
+
+                newPeer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    setShowCreatingDialog(false);
+                    alert(`Connection error: ${err.type}\n\nDetails: ${err.message || 'Unknown error'}\n\nPlease try again or check your internet connection.`);
                 });
             };
 
@@ -976,10 +1119,150 @@ useEffect(() => {
                             broadcastState('AVATAR_BOUNCE', message.data);
                         }
                         break;
+                    
+                    case 'JOIN_REQUEST':
+                        // Host receives join request from player
+                        if (isHostRef.current) {
+                            console.log('Host received JOIN_REQUEST:', message.data);
+                            const { name, peerId } = message.data;
+                            
+                            // Add to pending requests queue
+                            setPendingJoinRequests(prev => {
+                                const newRequests = [...prev, { name, peerId, conn }];
+                                
+                                // If this is the first request, show dialog immediately
+                                if (prev.length === 0) {
+                                    setCurrentJoinRequest({ name, peerId, conn });
+                                    setShowAdmitDialog(true);
+                                }
+                                
+                                return newRequests;
+                            });
+                        }
+                        break;
+                    
+                    case 'JOIN_APPROVED':
+                        // Player receives approval from host
+                        console.log('Player received JOIN_APPROVED');
+                        setShowWaitingDialog(false);
+                        setIsConnected(true);
+                        // Connection is now established, will receive FULL_STATE next
+                        break;
+                    
+                    case 'JOIN_DENIED':
+                        // Player receives denial from host
+                        console.log('Player received JOIN_DENIED');
+                        setShowWaitingDialog(false);
+                        setDeniedMessage(true);
+                        
+                        // Auto-close after 3 seconds and disconnect
+                        setTimeout(() => {
+                            setDeniedMessage(false);
+                            if (peer) {
+                                peer.destroy();
+                            }
+                            setPeer(null);
+                            setIsConnected(false);
+                            // Clean up URL parameter
+                            window.history.replaceState({}, document.title, window.location.pathname);
+                        }, 3000);
+                        break;
 
                     default:
                         console.log('Unknown message type:', message.type);
                 }
+            };
+
+            const admitPlayer = () => {
+                if (!currentJoinRequest) return;
+                
+                const { name, peerId, conn } = currentJoinRequest;
+                console.log('Admitting player:', name, peerId);
+                
+                // Send JOIN_APPROVED to player
+                conn.send({
+                    type: 'JOIN_APPROVED',
+                    data: { approved: true }
+                });
+                
+                // Add player to players list
+                const newPlayer = { id: peerId, name: name, isHost: false };
+                setPlayers(prev => {
+                    if (prev.find(p => p.id === peerId)) return prev;
+                    const updated = [...prev, newPlayer];
+                    
+                    // Broadcast updated player list
+                    broadcastState('PLAYER_LIST', updated);
+                    
+                    // Send FULL_STATE to newly admitted player
+                    conn.send({
+                        type: 'FULL_STATE',
+                        data: {
+                            scenes,
+                            avatars,
+                            tokens,
+                            drawings,
+                            activeSceneIndex,
+                            gridTransform,
+                            dicePresets,
+                            characterSheets,
+                            diceModifiers,
+                            players: updated
+                        }
+                    });
+                    
+                    return updated;
+                });
+                
+                // Remove from pending requests
+                setPendingJoinRequests(prev => {
+                    const updated = prev.filter(req => req.peerId !== peerId);
+                    
+                    // Show next request if any
+                    if (updated.length > 0) {
+                        setCurrentJoinRequest(updated[0]);
+                        setShowAdmitDialog(true);
+                    } else {
+                        setCurrentJoinRequest(null);
+                        setShowAdmitDialog(false);
+                    }
+                    
+                    return updated;
+                });
+            };
+            
+            const denyPlayer = () => {
+                if (!currentJoinRequest) return;
+                
+                const { name, peerId, conn } = currentJoinRequest;
+                console.log('Denying player:', name, peerId);
+                
+                // Send JOIN_DENIED to player
+                conn.send({
+                    type: 'JOIN_DENIED',
+                    data: { approved: false }
+                });
+                
+                // Close connection
+                setTimeout(() => {
+                    conn.close();
+                }, 100);
+                
+                // Remove from pending requests
+                setPendingJoinRequests(prev => {
+                    const updated = prev.filter(req => req.peerId !== peerId);
+                    
+                    // Show next request if any
+                    if (updated.length > 0) {
+                        setCurrentJoinRequest(updated[0]);
+                        setShowAdmitDialog(true);
+                    } else {
+                        setCurrentJoinRequest(null);
+                        setShowAdmitDialog(false);
+                    }
+                    
+                    return updated;
+                });
             };
 
             const disconnectFromRoom = () => {
@@ -3236,16 +3519,22 @@ const handleHandoutUpload = (e) => {
                                     M
                                 </div>
 
-                                {/* Multiplayer Button */}
+                                {/* Create Session / Connected Button */}
                                 <button
-                                    onClick={() => setShowMultiplayerMenu(true)}
+                                    onClick={() => {
+                                        if (isConnected) {
+                                            setShowMultiplayerMenu(true);
+                                        } else {
+                                            createSession();
+                                        }
+                                    }}
                                     className={`px-3 py-1.5 font-bold rounded text-sm transition-all border-2 flex items-center gap-1.5 ${
                                         isConnected
                                             ? 'bg-green-600 text-white border-green-500 shadow-lg'
-                                            : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600 hover:border-amber-700'
+                                            : 'bg-amber-600 text-zinc-900 border-amber-700 hover:bg-amber-500'
                                     }`}
                                     style={{ fontFamily: 'Georgia, serif' }}
-                                    title={isConnected ? `Connected: ${players.length} players` : 'Start Multiplayer'}
+                                    title={isConnected ? `Connected: ${players.length} players` : 'Create Session'}
                                 >
                                     {isConnected ? (
                                         <>
@@ -3253,7 +3542,7 @@ const handleHandoutUpload = (e) => {
                                             {players.length}
                                         </>
                                     ) : (
-                                        '🌐 Multiplayer'
+                                        '🌐 Create Session'
                                     )}
                                 </button>
 
@@ -5647,6 +5936,281 @@ const handleHandoutUpload = (e) => {
                                 >
                                     Click anywhere to close
                                 </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Creating Game Dialog */}
+                    {showCreatingDialog && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <div style={{
+                                backgroundColor: '#1a1a1a',
+                                border: '3px solid #d4af37',
+                                borderRadius: '12px',
+                                padding: '40px 60px',
+                                boxShadow: '0 8px 32px rgba(212, 175, 55, 0.4)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{
+                                    fontSize: '20px',
+                                    fontWeight: 'bold',
+                                    color: '#d4af37',
+                                    fontFamily: 'Georgia, serif',
+                                    marginBottom: '15px'
+                                }}>
+                                    Creating game, Please wait...
+                                </div>
+                                <div style={{
+                                    fontSize: '32px',
+                                    animation: 'spin 1s linear infinite'
+                                }}>
+                                    ⏳
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Session Created Message */}
+                    {sessionCreatedMessage && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            animation: 'fadeIn 0.3s ease-in'
+                        }}>
+                            <div style={{
+                                backgroundColor: '#1a1a1a',
+                                border: '3px solid #d4af37',
+                                borderRadius: '12px',
+                                padding: '40px 60px',
+                                boxShadow: '0 8px 32px rgba(212, 175, 55, 0.4)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{
+                                    fontSize: '24px',
+                                    marginBottom: '10px'
+                                }}>
+                                    ✅
+                                </div>
+                                <div style={{
+                                    fontSize: '20px',
+                                    fontWeight: 'bold',
+                                    color: '#d4af37',
+                                    fontFamily: 'Georgia, serif'
+                                }}>
+                                    Session created!
+                                </div>
+                                <div style={{
+                                    fontSize: '16px',
+                                    color: '#4ecdc4',
+                                    fontFamily: 'Arial, sans-serif',
+                                    marginTop: '8px'
+                                }}>
+                                    Link copied to clipboard
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Waiting for Host Dialog */}
+                    {showWaitingDialog && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <div style={{
+                                backgroundColor: '#1a1a1a',
+                                border: '3px solid #d4af37',
+                                borderRadius: '12px',
+                                padding: '40px 60px',
+                                boxShadow: '0 8px 32px rgba(212, 175, 55, 0.4)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{
+                                    fontSize: '20px',
+                                    fontWeight: 'bold',
+                                    color: '#d4af37',
+                                    fontFamily: 'Georgia, serif',
+                                    marginBottom: '15px'
+                                }}>
+                                    Waiting for Host to admit...
+                                </div>
+                                <div style={{
+                                    fontSize: '32px',
+                                    animation: 'pulse 2s ease-in-out infinite'
+                                }}>
+                                    ⏳
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Denied Message */}
+                    {deniedMessage && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <div style={{
+                                backgroundColor: '#1a1a1a',
+                                border: '3px solid #dc3545',
+                                borderRadius: '12px',
+                                padding: '40px 60px',
+                                boxShadow: '0 8px 32px rgba(220, 53, 69, 0.4)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{
+                                    fontSize: '24px',
+                                    marginBottom: '10px'
+                                }}>
+                                    ❌
+                                </div>
+                                <div style={{
+                                    fontSize: '20px',
+                                    fontWeight: 'bold',
+                                    color: '#dc3545',
+                                    fontFamily: 'Georgia, serif'
+                                }}>
+                                    Host denied your request
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Admit/Deny Dialog */}
+                    {showAdmitDialog && currentJoinRequest && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <div style={{
+                                backgroundColor: '#1a1a1a',
+                                border: '3px solid #d4af37',
+                                borderRadius: '12px',
+                                padding: '40px 50px',
+                                boxShadow: '0 8px 32px rgba(212, 175, 55, 0.4)',
+                                textAlign: 'center',
+                                minWidth: '400px'
+                            }}>
+                                <div style={{
+                                    fontSize: '22px',
+                                    fontWeight: 'bold',
+                                    color: '#d4af37',
+                                    fontFamily: 'Georgia, serif',
+                                    marginBottom: '30px'
+                                }}>
+                                    {currentJoinRequest.name} wants to join
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    gap: '15px',
+                                    justifyContent: 'center'
+                                }}>
+                                    <button
+                                        onClick={admitPlayer}
+                                        style={{
+                                            padding: '15px 40px',
+                                            backgroundColor: '#d4af37',
+                                            color: '#000',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            fontSize: '18px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            fontFamily: 'Georgia, serif',
+                                            transition: 'transform 0.1s, background-color 0.2s',
+                                            boxShadow: '0 4px 12px rgba(212, 175, 55, 0.4)'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.transform = 'scale(1.05)';
+                                            e.currentTarget.style.backgroundColor = '#f5c842';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.transform = 'scale(1)';
+                                            e.currentTarget.style.backgroundColor = '#d4af37';
+                                        }}
+                                    >
+                                        Admit
+                                    </button>
+                                    <button
+                                        onClick={denyPlayer}
+                                        style={{
+                                            padding: '15px 40px',
+                                            backgroundColor: '#dc3545',
+                                            color: '#fff',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            fontSize: '18px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            fontFamily: 'Georgia, serif',
+                                            transition: 'transform 0.1s, background-color 0.2s',
+                                            boxShadow: '0 4px 12px rgba(220, 53, 69, 0.4)'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.transform = 'scale(1.05)';
+                                            e.currentTarget.style.backgroundColor = '#c82333';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.transform = 'scale(1)';
+                                            e.currentTarget.style.backgroundColor = '#dc3545';
+                                        }}
+                                    >
+                                        Deny
+                                    </button>
+                                </div>
+                                {pendingJoinRequests.length > 1 && (
+                                    <div style={{
+                                        marginTop: '20px',
+                                        color: '#888',
+                                        fontSize: '14px',
+                                        fontFamily: 'Arial, sans-serif'
+                                    }}>
+                                        {pendingJoinRequests.length - 1} more player(s) waiting...
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
