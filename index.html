@@ -10,9 +10,8 @@
     <meta name="author" content="ftplimits">
     <title>Monomyth VTT - Multiplayer</title>
     
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <!-- PeerJS Library -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -177,21 +176,10 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Initialize Firebase
-        // Note: API keys for Firebase are meant to be public in client apps
-        // Security is enforced through Firebase Security Rules, not by hiding the API key
-        const firebaseConfig = {
-            apiKey: "AIzaSyBoegTLDPhiOktG_lJWNVBPhcK7ULJ9fxM",
-            authDomain: "monomyth-974f8.firebaseapp.com",
-            databaseURL: "https://monomyth-974f8-default-rtdb.firebaseio.com",
-            projectId: "monomyth-974f8",
-            storageBucket: "monomyth-974f8.firebasestorage.app",
-            messagingSenderId: "536374738575",
-            appId: "1:536374738575:web:e9f4bccf775db52a957afa"
-        };
-
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
+        // Initialize PeerJS with robust ICE server configuration
+        let peer = null;
+        let hostConnection = null; // For clients: connection to host
+        const clientConnections = new Map(); // For host: connections to clients
 
         const { useState, useRef, useEffect } = React;
 
@@ -550,107 +538,68 @@ const dice = [
             };
             
             const broadcastState = (type, data) => {
-                if (!roomCodeRef.current || !isConnectedRef.current) {
-                    console.log(`Cannot broadcast ${type}: no room (${roomCodeRef.current}) or not connected (${isConnectedRef.current})`);
+                if (!isConnectedRef.current) {
+                    console.log(`Cannot broadcast ${type}: not connected`);
                     return;
                 }
                 
-                console.log(`Broadcasting ${type} to Firebase (room: ${roomCodeRef.current})`);
+                const message = { type, data };
                 
-                // Map different types to Firebase paths
-                switch(type) {
-                    case 'TOKEN_UPDATE':
-                        database.ref(`rooms/${roomCodeRef.current}/gameState/tokens`).set(data)
-                            .catch(error => console.error('Error syncing tokens:', error));
-                        break;
-                    case 'DRAWING_UPDATE':
-                        database.ref(`rooms/${roomCodeRef.current}/gameState/drawings`).set(data)
-                            .catch(error => console.error('Error syncing drawings:', error));
-                        break;
-                    case 'AVATAR_UPDATE':
-                        database.ref(`rooms/${roomCodeRef.current}/gameState/avatars`).set(data)
-                            .catch(error => console.error('Error syncing avatars:', error));
-                        break;
-                    case 'SCENE_CHANGE':
-                        database.ref(`rooms/${roomCodeRef.current}/gameState/activeSceneIndex`).set(data)
-                            .catch(error => console.error('Error syncing scene:', error));
-                        break;
-                    case 'SCENE_IMAGE_UPDATE':
-                        database.ref(`rooms/${roomCodeRef.current}/gameState/scenes`).set(data)
-                            .catch(error => console.error('Error syncing scenes:', error));
-                        break;
-                    case 'CHARACTER_SHEETS_UPDATE':
-                        database.ref(`rooms/${roomCodeRef.current}/gameState/characterSheets`).set(data)
-                            .catch(error => console.error('Error syncing character sheets:', error));
-                        break;
-                    case 'GRID_TRANSFORM':
-                        database.ref(`rooms/${roomCodeRef.current}/gameState/gridTransform`).set(data)
-                            .catch(error => console.error('Error syncing grid transform:', error));
-                        break;
-                    case 'DICE_ROLL':
-                        // For dice rolls, push to a list instead of set
-                        database.ref(`rooms/${roomCodeRef.current}/diceRolls`).push(data)
-                            .catch(error => console.error('Error syncing dice roll:', error));
-                        break;
-                    case 'HANDOUT_SHOW':
-                        // For handouts, push to a list
-                        database.ref(`rooms/${roomCodeRef.current}/handouts`).push(data)
-                            .catch(error => console.error('Error syncing handout:', error));
-                        break;
-                    default:
-                        console.warn('Unknown broadcast type:', type);
+                if (isHostRef.current) {
+                    // Host broadcasts to all connected clients
+                    console.log(`Broadcasting ${type} to ${clientConnections.size} clients`);
+                    clientConnections.forEach((conn, peerId) => {
+                        if (conn.open) {
+                            try {
+                                conn.send(message);
+                            } catch (err) {
+                                console.error(`Error sending to client ${peerId}:`, err);
+                            }
+                        }
+                    });
+                } else {
+                    // Client sends to host
+                    if (hostConnection && hostConnection.open) {
+                        try {
+                            hostConnection.send(message);
+                        } catch (err) {
+                            console.error('Error sending to host:', err);
+                        }
+                    }
                 }
             };
 
 
 
             const createRoom = () => {
-                console.log('createRoom called - HOST flow with Firebase');
+                console.log('createRoom called - HOST flow with PeerJS');
                 
                 const roomCode = generateRoomCode();
                 console.log('Generated room code:', roomCode);
                 
-                setMyPeerId(roomCode);
-                setRoomCode(roomCode);
-                setIsHost(true);
-                setIsConnected(true);
-                setConnectionStatus('hosting');
-                
-                // Create room in Firebase
-                const roomRef = database.ref(`rooms/${roomCode}`);
-                
-                roomRef.set({
-                    host: roomCode,
-                    createdAt: firebase.database.ServerValue.TIMESTAMP,
-                    players: {
-                        [roomCode]: {
-                            name: playerName || 'Game Master',
-                            isHost: true,
-                            joinedAt: firebase.database.ServerValue.TIMESTAMP
-                        }
-                    },
-                    gameState: {
-                        tokens: tokens,
-                        drawings: drawings,
-                        scenes: scenes,
-                        avatars: avatars,
-                        activeSceneIndex: activeSceneIndex,
-                        gridTransform: gridTransform,
-                        dicePresets: dicePresets,
-                        characterSheets: characterSheets,
-                        diceModifiers: diceModifiers
+                // Initialize PeerJS with ICE servers for better connectivity
+                peer = new Peer(roomCode, {
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
                     }
-                }).then(() => {
-                    console.log('Firebase room created:', roomCode);
-                    
-                    // Set up listeners for this room
-                    setupFirebaseListeners(roomCode);
+                });
+                
+                peer.on('open', (id) => {
+                    console.log('PeerJS host initialized with ID:', id);
+                    setMyPeerId(id);
+                    setRoomCode(id);
+                    setIsHost(true);
+                    setIsConnected(true);
+                    setConnectionStatus('hosting');
                     
                     // Copy to clipboard
                     if (navigator.clipboard) {
-                        navigator.clipboard.writeText(roomCode)
+                        navigator.clipboard.writeText(id)
                             .then(() => {
-                                console.log('Room code copied:', roomCode);
+                                console.log('Room code copied:', id);
                                 setClipboardNotification(true);
                                 setTimeout(() => setClipboardNotification(false), 3000);
                             })
@@ -661,10 +610,55 @@ const dice = [
                     setShowConnectionPopup(false);
                     setConnectionFlow(null);
                     
-                    setPlayers([{ id: roomCode, name: playerName || 'Game Master', isHost: true }]);
-                }).catch(error => {
-                    console.error('Error creating Firebase room:', error);
-                    alert('Failed to create room. Please try again.');
+                    setPlayers([{ id: id, name: playerName || 'Game Master', isHost: true }]);
+                });
+                
+                peer.on('connection', (conn) => {
+                    console.log('New client connecting:', conn.peer);
+                    
+                    conn.on('open', () => {
+                        console.log('Connection opened with client:', conn.peer);
+                        clientConnections.set(conn.peer, conn);
+                        
+                        // Send initial game state to new client
+                        conn.send({
+                            type: 'INITIAL_STATE',
+                            data: {
+                                tokens: tokens,
+                                drawings: drawings,
+                                scenes: scenes,
+                                avatars: avatars,
+                                activeSceneIndex: activeSceneIndex,
+                                gridTransform: gridTransform,
+                                dicePresets: dicePresets,
+                                characterSheets: characterSheets,
+                                diceModifiers: diceModifiers
+                            }
+                        });
+                    });
+                    
+                    conn.on('data', (data) => {
+                        handlePeerMessage(data, conn.peer);
+                    });
+                    
+                    conn.on('close', () => {
+                        console.log('Client disconnected:', conn.peer);
+                        clientConnections.delete(conn.peer);
+                        setPlayers(prev => prev.filter(p => p.id !== conn.peer));
+                    });
+                    
+                    conn.on('error', (err) => {
+                        console.error('Connection error with client:', conn.peer, err);
+                    });
+                });
+                
+                peer.on('error', (err) => {
+                    console.error('PeerJS error:', err);
+                    if (err.type === 'unavailable-id') {
+                        alert('Room code already in use. Please try again.');
+                    } else {
+                        alert('Failed to create room: ' + err.message);
+                    }
                 });
             };
 
@@ -677,193 +671,257 @@ const dice = [
                 }
                 
                 const roomCode = code.toUpperCase();
-                const roomRef = database.ref(`rooms/${roomCode}`);
                 
-                // Check if room exists
-                roomRef.once('value').then(snapshot => {
-                    if (!snapshot.exists()) {
-                        alert('Room not found. Please check the code.');
-                        return;
+                // Generate unique player ID
+                const playerId = 'P' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5).toUpperCase();
+                
+                // Initialize PeerJS with ICE servers
+                peer = new Peer(playerId, {
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:global.stun.twilio.com:3478' }
+                        ]
                     }
+                });
+                
+                peer.on('open', (id) => {
+                    console.log('PeerJS client initialized with ID:', id);
+                    setMyPeerId(id);
                     
-                    console.log('Room found, joining...');
+                    // Connect to host
+                    hostConnection = peer.connect(roomCode, { reliable: true });
                     
-                    // Generate unique player ID (timestamp + random to avoid collisions)
-                    const playerId = 'P' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5).toUpperCase();
-                    
-                    setMyPeerId(playerId);
-                    setRoomCode(roomCode);
-                    setIsHost(false);
-                    setIsConnected(true);
-                    setConnectionStatus('connected');
-                    
-                    // Add player to room
-                    roomRef.child(`players/${playerId}`).set({
-                        name: playerName || 'Player',
-                        isHost: false,
-                        joinedAt: firebase.database.ServerValue.TIMESTAMP
-                    }).then(() => {
-                        console.log('Joined room as player:', playerId);
+                    hostConnection.on('open', () => {
+                        console.log('Connected to host:', roomCode);
+                        setRoomCode(roomCode);
+                        setIsHost(false);
+                        setIsConnected(true);
+                        setConnectionStatus('connected');
                         
-                        // Set up listeners for this room
-                        setupFirebaseListeners(roomCode);
+                        // Send player info to host
+                        hostConnection.send({
+                            type: 'PLAYER_JOIN',
+                            data: {
+                                id: id,
+                                name: playerName || 'Player'
+                            }
+                        });
                         
                         // Close connection popup
                         setShowConnectionPopup(false);
                         setConnectionFlow(null);
-                    }).catch(error => {
-                        console.error('Error joining room:', error);
-                        alert('Failed to join room. Please try again.');
                     });
-                }).catch(error => {
-                    console.error('Error checking room:', error);
-                    alert('Connection error. Please try again.');
+                    
+                    hostConnection.on('data', (data) => {
+                        handlePeerMessage(data, roomCode);
+                    });
+                    
+                    hostConnection.on('close', () => {
+                        console.log('Disconnected from host');
+                        setIsConnected(false);
+                        setConnectionStatus('disconnected');
+                        alert('Disconnected from host');
+                    });
+                    
+                    hostConnection.on('error', (err) => {
+                        console.error('Connection error:', err);
+                        alert('Failed to connect to host. Please check the room code.');
+                    });
+                });
+                
+                peer.on('error', (err) => {
+                    console.error('PeerJS error:', err);
+                    if (err.type === 'peer-unavailable') {
+                        alert('Room not found. Please check the code.');
+                    } else {
+                        alert('Connection error: ' + err.message);
+                    }
                 });
             };
 
-            const setupFirebaseListeners = (roomCode) => {
-                const roomRef = database.ref(`rooms/${roomCode}`);
+            const handlePeerMessage = (message, fromPeer) => {
+                console.log('Received peer message:', message.type, 'from:', fromPeer);
                 
-                // Listen for game state changes
-                // Note: Host broadcasts changes, all clients (including host) receive updates
-                // React's state management prevents unnecessary re-renders for unchanged data
-                roomRef.child('gameState').on('value', (snapshot) => {
-                    if (!snapshot.exists()) return;
-                    
-                    const state = snapshot.val();
-                    console.log('Firebase state update received:', state);
-                    
-                    // Update local state from Firebase (source of truth)
-                    if (state.tokens) setTokens(state.tokens);
-                    if (state.drawings) setDrawings(state.drawings);
-                    if (state.scenes) setScenes(state.scenes);
-                    if (state.avatars) setAvatars(state.avatars);
-                    if (state.activeSceneIndex !== undefined) setActiveSceneIndex(state.activeSceneIndex);
-                    if (state.gridTransform) setGridTransform(state.gridTransform);
-                    if (state.dicePresets) setDicePresets(state.dicePresets);
-                    if (state.characterSheets) setCharacterSheets(state.characterSheets);
-                    if (state.diceModifiers) setDiceModifiers(state.diceModifiers);
-                });
-                
-                // Listen for player list changes
-                roomRef.child('players').on('value', (snapshot) => {
-                    if (!snapshot.exists()) return;
-                    
-                    const playersData = snapshot.val();
-                    const playersList = Object.keys(playersData).map(id => ({
-                        id: id,
-                        name: playersData[id].name,
-                        isHost: playersData[id].isHost
-                    }));
-                    
-                    console.log('Players updated:', playersList);
-                    setPlayers(playersList);
-                });
-                
-                // Listen for dice rolls
-                roomRef.child('diceRolls').on('child_added', (snapshot) => {
-                    const rollData = snapshot.val();
-                    if (!rollData) return;
-                    
-                    console.log('Received dice roll:', rollData);
-                    
-                    // Add to roll log
-                    addDiceRoll(rollData);
-                    
-                    // Show animation
-                    if (rollData.type) {
-                        setSpinningDie(rollData.type);
-                        setTimeout(() => setSpinningDie(null), 500);
-                    }
-                    
-                    // Show notification
-                    const formula = rollData.presetName || 
-                        `${rollData.count}${rollData.type}${rollData.modifier !== 0 ? (rollData.modifier > 0 ? '+' + rollData.modifier : rollData.modifier) : ''}`;
-                    
-                    if (diceNotificationTimeoutRef.current) {
-                        clearTimeout(diceNotificationTimeoutRef.current);
-                    }
-                    
-                    setDiceNotification({
-                        playerName: rollData.playerName,
-                        formula: formula,
-                        result: rollData.total
-                    });
-                    
-                    diceNotificationTimeoutRef.current = setTimeout(() => {
-                        setDiceNotification(null);
-                        diceNotificationTimeoutRef.current = null;
-                    }, 3000);
-                });
-                
-                // Listen for avatar bounces
-                roomRef.child('avatarBounces').on('child_added', (snapshot) => {
-                    const bounceData = snapshot.val();
-                    if (!bounceData) return;
-                    
-                    const { avatarId } = bounceData;
-                    setBouncingAvatarIds(prev => {
-                        if (prev.includes(avatarId)) return prev;
-                        return [...prev, avatarId];
-                    });
-                    setTimeout(() => {
-                        setBouncingAvatarIds(prev => prev.filter(id => id !== avatarId));
-                    }, 500);
-                });
-                
-                // Listen for pointer updates
-                roomRef.child('pointers').on('value', (snapshot) => {
-                    if (!snapshot.exists()) {
-                        setActivePointers({});
-                        return;
-                    }
-                    
-                    const pointersData = snapshot.val();
-                    const pointers = {};
-                    
-                    Object.keys(pointersData).forEach(playerId => {
-                        if (playerId !== myPeerId) { // Don't show our own pointer
-                            const pointerData = pointersData[playerId];
-                            if (pointerData.active) {
-                                pointers[pointerData.playerName] = {
-                                    x: pointerData.x,
-                                    y: pointerData.y
-                                };
+                switch(message.type) {
+                    case 'INITIAL_STATE':
+                        // Client receives initial game state from host
+                        const state = message.data;
+                        if (state.tokens) setTokens(state.tokens);
+                        if (state.drawings) setDrawings(state.drawings);
+                        if (state.scenes) setScenes(state.scenes);
+                        if (state.avatars) setAvatars(state.avatars);
+                        if (state.activeSceneIndex !== undefined) setActiveSceneIndex(state.activeSceneIndex);
+                        if (state.gridTransform) setGridTransform(state.gridTransform);
+                        if (state.dicePresets) setDicePresets(state.dicePresets);
+                        if (state.characterSheets) setCharacterSheets(state.characterSheets);
+                        if (state.diceModifiers) setDiceModifiers(state.diceModifiers);
+                        break;
+                        
+                    case 'PLAYER_JOIN':
+                        // Host receives player join notification
+                        if (isHostRef.current) {
+                            const playerData = message.data;
+                            setPlayers(prev => {
+                                // Check if player already exists
+                                if (prev.find(p => p.id === playerData.id)) return prev;
+                                return [...prev, { 
+                                    id: playerData.id, 
+                                    name: playerData.name, 
+                                    isHost: false 
+                                }];
+                            });
+                        }
+                        break;
+                        
+                    case 'TOKEN_UPDATE':
+                        if (!isHostRef.current) setTokens(message.data);
+                        break;
+                        
+                    case 'DRAWING_UPDATE':
+                        if (!isHostRef.current) setDrawings(message.data);
+                        break;
+                        
+                    case 'AVATAR_UPDATE':
+                        if (!isHostRef.current) setAvatars(message.data);
+                        break;
+                        
+                    case 'SCENE_CHANGE':
+                        if (!isHostRef.current) setActiveSceneIndex(message.data);
+                        break;
+                        
+                    case 'SCENE_IMAGE_UPDATE':
+                        if (!isHostRef.current) setScenes(message.data);
+                        break;
+                        
+                    case 'CHARACTER_SHEETS_UPDATE':
+                        if (!isHostRef.current) setCharacterSheets(message.data);
+                        break;
+                        
+                    case 'GRID_TRANSFORM':
+                        if (!isHostRef.current) setGridTransform(message.data);
+                        break;
+                        
+                    case 'DICE_ROLL':
+                        const rollData = message.data;
+                        addDiceRoll(rollData);
+                        
+                        if (rollData.type) {
+                            setSpinningDie(rollData.type);
+                            setTimeout(() => setSpinningDie(null), 500);
+                        }
+                        
+                        const formula = rollData.presetName || 
+                            `${rollData.count}${rollData.type}${rollData.modifier !== 0 ? (rollData.modifier > 0 ? '+' + rollData.modifier : rollData.modifier) : ''}`;
+                        
+                        if (diceNotificationTimeoutRef.current) {
+                            clearTimeout(diceNotificationTimeoutRef.current);
+                        }
+                        
+                        setDiceNotification({
+                            playerName: rollData.playerName,
+                            formula: formula,
+                            result: rollData.total
+                        });
+                        
+                        diceNotificationTimeoutRef.current = setTimeout(() => {
+                            setDiceNotification(null);
+                            diceNotificationTimeoutRef.current = null;
+                        }, 3000);
+                        
+                        // Host relays to all other clients
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    conn.send(message);
+                                }
+                            });
+                        }
+                        break;
+                        
+                    case 'AVATAR_BOUNCE':
+                        const { avatarId } = message.data;
+                        setBouncingAvatarIds(prev => {
+                            if (prev.includes(avatarId)) return prev;
+                            return [...prev, avatarId];
+                        });
+                        setTimeout(() => {
+                            setBouncingAvatarIds(prev => prev.filter(id => id !== avatarId));
+                        }, 500);
+                        
+                        // Host relays to all other clients
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    conn.send(message);
+                                }
+                            });
+                        }
+                        break;
+                        
+                    case 'POINTER_UPDATE':
+                        if (!isHostRef.current) {
+                            const { playerName, x, y, active } = message.data;
+                            if (active) {
+                                setActivePointers(prev => ({ ...prev, [playerName]: { x, y } }));
+                            } else {
+                                setActivePointers(prev => {
+                                    const updated = { ...prev };
+                                    delete updated[playerName];
+                                    return updated;
+                                });
                             }
                         }
-                    });
-                    
-                    setActivePointers(pointers);
-                });
-                
-                // Listen for handouts
-                roomRef.child('handouts').on('child_added', (snapshot) => {
-                    const handoutData = snapshot.val();
-                    if (!handoutData) return;
-                    
-                    setHandoutImage(handoutData.src);
-                    setHandoutVisible(true);
-                });
+                        
+                        // Host relays to all other clients
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    conn.send(message);
+                                }
+                            });
+                        }
+                        break;
+                        
+                    case 'HANDOUT_SHOW':
+                        setHandoutImage(message.data.src);
+                        setHandoutVisible(true);
+                        
+                        // Host relays to all other clients
+                        if (isHostRef.current) {
+                            clientConnections.forEach((conn, peerId) => {
+                                if (peerId !== fromPeer && conn.open) {
+                                    conn.send(message);
+                                }
+                            });
+                        }
+                        break;
+                        
+                    default:
+                        console.warn('Unknown message type:', message.type);
+                }
             };
 
 
 
             const disconnectFromRoom = () => {
-                if (roomCode && myPeerId) {
-                    console.log('Disconnecting from room:', roomCode);
-                    
-                    // Remove player from room
-                    database.ref(`rooms/${roomCode}/players/${myPeerId}`).remove();
-                    
-                    // If host, optionally delete entire room
-                    if (isHost) {
-                        database.ref(`rooms/${roomCode}`).remove()
-                            .then(() => console.log('Room deleted'))
-                            .catch(error => console.error('Error deleting room:', error));
-                    }
-                    
-                    // Remove listeners
-                    database.ref(`rooms/${roomCode}`).off();
+                console.log('Disconnecting from room');
+                
+                // Close all connections
+                if (hostConnection) {
+                    hostConnection.close();
+                    hostConnection = null;
+                }
+                
+                clientConnections.forEach((conn) => {
+                    conn.close();
+                });
+                clientConnections.clear();
+                
+                // Destroy peer
+                if (peer) {
+                    peer.destroy();
+                    peer = null;
                 }
                 
                 setIsConnected(false);
@@ -964,12 +1022,12 @@ const dice = [
                                 setBouncingAvatarIds(prev => prev.filter(id => id !== selectedAvatar.id));
                             }, 500);
                             
-                            // Broadcast bounce to all players via Firebase
+                            // Broadcast bounce to all players via PeerJS
                             if (isConnected && roomCode) {
-                                database.ref(`rooms/${roomCode}/avatarBounces`).push({
+                                broadcastState('AVATAR_BOUNCE', {
                                     avatarId: selectedAvatar.id,
                                     timestamp: Date.now()
-                                }).catch(error => console.error('Error broadcasting avatar bounce:', error));
+                                });
                             }
                         } else {
                             // Trigger flip animation
@@ -1569,12 +1627,12 @@ const handleAvatarUpload = (e) => {
                         setBouncingAvatarIds(prev => prev.filter(id => id !== avatarId));
                     }, 500);
                     
-                    // Broadcast bounce to all players via Firebase
+                    // Broadcast bounce to all players via PeerJS
                     if (isConnected && roomCode) {
-                        database.ref(`rooms/${roomCode}/avatarBounces`).push({
+                        broadcastState('AVATAR_BOUNCE', {
                             avatarId: avatarId,
                             timestamp: Date.now()
-                        }).catch(error => console.error('Error broadcasting avatar bounce:', error));
+                        });
                     }
                 }, 200);
             };
@@ -2171,14 +2229,7 @@ const handleHandoutUpload = (e) => {
                         };
                         
                         if (isConnectedRef.current) {
-                            if (isHostRef.current) {
-                                broadcastState('POINTER_UPDATE', pointerData);
-                            } else {
-                                connectionsRef.current[0]?.send({
-                                    type: 'POINTER_UPDATE',
-                                    data: pointerData
-                                });
-                            }
+                            broadcastState('POINTER_UPDATE', pointerData);
                         }
                     }
                 };
@@ -2187,7 +2238,7 @@ const handleHandoutUpload = (e) => {
                     if (isPointerActive) {
                         setPointerPosition({ x: e.clientX, y: e.clientY });
                         
-                        // Broadcast pointer movement via Firebase
+                        // Broadcast pointer movement via PeerJS
                         const pointerData = {
                             playerName: playerName,
                             x: e.clientX,
@@ -2196,8 +2247,7 @@ const handleHandoutUpload = (e) => {
                         };
                         
                         if (isConnectedRef.current && roomCode) {
-                            database.ref(`rooms/${roomCode}/pointers/${myPeerId}`).set(pointerData)
-                                .catch(error => console.error('Error updating pointer:', error));
+                            broadcastState('POINTER_UPDATE', pointerData);
                         }
                     }
                 };
@@ -2207,10 +2257,12 @@ const handleHandoutUpload = (e) => {
                     if (e.button === 1) {
                         setIsPointerActive(false);
                         
-                        // Broadcast pointer deactivation via Firebase
+                        // Broadcast pointer deactivation via PeerJS
                         if (isConnectedRef.current && roomCode) {
-                            database.ref(`rooms/${roomCode}/pointers/${myPeerId}`).remove()
-                                .catch(error => console.error('Error removing pointer:', error));
+                            broadcastState('POINTER_UPDATE', {
+                                playerName: playerName,
+                                active: false
+                            });
                         }
                     }
                 };
