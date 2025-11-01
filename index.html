@@ -283,7 +283,6 @@
             const throttledAvatarBroadcast = useRef(null);
             const throttledSceneBroadcast = useRef(null);
             const throttledSheetBroadcast = useRef(null);
-            const throttledGridTransformBroadcast = useRef(null);
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -533,12 +532,6 @@ const dice = [
                 throttledSheetBroadcast.current = throttle((data) => {
                     if (isHostRef.current && isConnectedRef.current) {
                         broadcastState('CHARACTER_SHEETS_UPDATE', data);
-                    }
-                }, THROTTLE_INTERVAL);
-                
-                throttledGridTransformBroadcast.current = throttle((data) => {
-                    if (isHostRef.current && isConnectedRef.current) {
-                        broadcastState('GRID_TRANSFORM', data);
                     }
                 }, THROTTLE_INTERVAL);
             }, []); // Empty dependency array - only initialize once on mount
@@ -906,6 +899,7 @@ const dice = [
             }, [avatars]);
 
             // Sync scene changes (only if host)
+            // Note: NOT throttled - scene switching should be immediate for all players
             useEffect(() => {
                 if (isHost && isConnected) {
                     broadcastState('SCENE_CHANGE', activeSceneIndex);
