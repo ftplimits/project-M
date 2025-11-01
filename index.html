@@ -438,7 +438,7 @@
                     }
                     autoSave();
                     
-                    // Disconnect from Firebase room
+                    // Disconnect from multiplayer room
                     disconnectFromRoom();
                 };
                 
@@ -1117,7 +1117,7 @@ const dice = [
                     diceNotificationTimeoutRef.current = null;
                 }, 3000);
                 
-                // Broadcast dice roll to all players via Firebase
+                // Broadcast dice roll to all players via PeerJS
                 if (isConnectedRef.current && roomCode) {
                     broadcastState('DICE_ROLL', rollData);
                 }
