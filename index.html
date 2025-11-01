@@ -2944,12 +2944,11 @@ const handleHandoutUpload = (e) => {
                         const deltaY = draggedTokenWithMeasurement.y - tokenDragStart.startY;
                         const distanceInPixels = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
                         const gridSize = activeScene.grid?.size || 50;
+                        const distanceInSquares = Math.round(distanceInPixels / gridSize * 10) / 10;
                         const distanceInFeet = Math.round(distanceInSquares * 5);
-                        
-                        // Draw label at midpoint
+                        const label = `${distanceInFeet} ft`;                       
                         const midX = (startScreenX + currentScreenX) / 2;
-                        const midY = (startScreenY + currentScreenY) / 2 - 20; // Offset above line
-                        
+                        const midY = (startScreenY + currentScreenY) / 2 - 20;                         
                         const label = `${distanceInSquares} sq`;
                         ctx.font = 'bold 14px Arial';
                         ctx.textAlign = 'center';
