@@ -559,7 +559,11 @@ const dice = [
                     return;
                 }
                 
-                const message = { type, data };
+                const message = { 
+    type, 
+    data,
+    sourceId: myPeerId  // ADD THIS LINE
+};
                 
                 if (isHostRef.current) {
                     // Host broadcasts to all connected clients
