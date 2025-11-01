@@ -1,17 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    MONOMYTH VTT - V 0.72  
+    MONOMYTH VTT - V 0.71   
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Monomyth VTT - A multiplayer virtual tabletop for RPG gaming">
-    <meta name="author" content="ftplimits">
     <title>Monomyth VTT - Multiplayer</title>
     
-    <!-- PeerJS Library -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- PeerJS CDN for WebRTC P2P -->
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -176,16 +174,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Initialize PeerJS with robust ICE server configuration
-        let peer = null;
-        let hostConnection = null; // For clients: connection to host
-        const clientConnections = new Map(); // For host: connections to clients
-
-        // Connection resilience constants
-        const MAX_RECONNECT_ATTEMPTS = 3;
-        const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-        const RECONNECT_BASE_DELAY = 2000; // 2 seconds
-
         const { useState, useRef, useEffect } = React;
 
         const throttle = (func, limit) => {
@@ -198,8 +186,6 @@
         }
     };
 };
-
-
 
         const Upload = ({ size = 24, className = "" }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -249,39 +235,27 @@
 
         const TheatreCanvas = () => {
             // MULTIPLAYER STATE
+            const [peer, setPeer] = useState(null);
             const [myPeerId, setMyPeerId] = useState('');
             const [isHost, setIsHost] = useState(false);
+            const [connections, setConnections] = useState([]);
             const [players, setPlayers] = useState([]);
             const [roomCode, setRoomCode] = useState('');
             const [joinCode, setJoinCode] = useState('');
             const [isConnected, setIsConnected] = useState(false);
             const [showMultiplayerMenu, setShowMultiplayerMenu] = useState(false);
-            const [showConnectionPopup, setShowConnectionPopup] = useState(false);
-            const [connectionStatus, setConnectionStatus] = useState('disconnected'); // 'disconnected', 'connected', 'hosting'
-            const [connectionFlow, setConnectionFlow] = useState(null); // null, 'join', 'host'
-            const [joinInputCode, setJoinInputCode] = useState('');
-            const [connectionMessage, setConnectionMessage] = useState('');
             const [playerName, setPlayerName] = useState('Player');
+            const connectionsRef = useRef([]);
             const [diceNotification, setDiceNotification] = useState(null);
             const [clipboardNotification, setClipboardNotification] = useState(false);
-            const [lastHeartbeat, setLastHeartbeat] = useState(null); // Foundation for future connection quality monitoring
-            const [reconnectAttempts, setReconnectAttempts] = useState(0);
             const playersRef = useRef([]);
             const tokensRef = useRef([]);
             const draggedTokenRef = useRef(null); // Track which token we're actively dragging
             const diceNotificationTimeoutRef = useRef(null);
             const clipboardNotificationTimeoutRef = useRef(null);
+            const throttledTokenBroadcast = useRef(null);
             const isHostRef = useRef(false);
             const isConnectedRef = useRef(false);
-            const roomCodeRef = useRef('');
-            const myPeerIdRef = useRef('');
-            const throttledTokenBroadcast = useRef(null);
-            const throttledDrawingBroadcast = useRef(null);
-            const throttledAvatarBroadcast = useRef(null);
-            const throttledSceneBroadcast = useRef(null);
-            const throttledSheetBroadcast = useRef(null);
-            const heartbeatIntervalRef = useRef(null);
-            const reconnectTimeoutRef = useRef(null);
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -308,8 +282,11 @@
             const importInputRef = useRef(null);
             const tokenInputRef = useRef(null);
             const gridImageInputRef = useRef(null);
+            
+
             const [bouncingAvatarIds, setBouncingAvatarIds] = useState([]);
             const clickTimeoutRef = useRef(null);
+
             const [gridTransform, setGridTransform] = useState({
                 zoom: 1.5,
                 panX: 0,
@@ -318,7 +295,6 @@
             const [isPanning, setIsPanning] = useState(false);
             const [panStart, setPanStart] = useState({ x: 0, y: 0 });
             const zoomAnimationRef = useRef(null);
-            const gridTransformRef = useRef({ zoom: 1.5, panX: 0, panY: 0 });
 
             const [drawingTool, setDrawingTool] = useState(null);
             const [drawingColor, setDrawingColor] = useState('#ffffff');
@@ -413,12 +389,6 @@
                 scheduleAutoSave();
             }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers]);
 
-            // Sync gridTransformRef with gridTransform state
-            // This ensures handleGridWheel always reads fresh values without recreating the function
-            useEffect(() => {
-                gridTransformRef.current = gridTransform;
-            }, [gridTransform]);
-
             // Auto-load on startup
             useEffect(() => {
                 const autoSaveData = localStorage.getItem(AUTOSAVE_KEY);
@@ -454,9 +424,6 @@
                         clearTimeout(autoSaveTimeoutRef.current);
                     }
                     autoSave();
-                    
-                    // Disconnect from multiplayer room
-                    disconnectFromRoom();
                 };
                 
                 window.addEventListener('beforeunload', handleBeforeUnload);
@@ -496,18 +463,6 @@ const dice = [
                 console.log('isConnectedRef updated to:', isConnected);
             }, [isConnected]);
 
-            // Sync roomCodeRef with roomCode state
-            useEffect(() => {
-                roomCodeRef.current = roomCode;
-                console.log('roomCodeRef updated to:', roomCode);
-            }, [roomCode]);
-
-            // Sync myPeerIdRef with myPeerId state
-            useEffect(() => {
-                myPeerIdRef.current = myPeerId;
-                console.log('myPeerIdRef updated to:', myPeerId);
-            }, [myPeerId]);
-
             // Cleanup dice notification timeout on unmount
             useEffect(() => {
                 return () => {
@@ -517,477 +472,358 @@ const dice = [
                 };
             }, []);
 
-            // Initialize throttled broadcast functions
-            // Note: Only initialized once on mount. Host/connected checks happen
-            // in the calling useEffect hooks, not inside these throttled functions.
-            useEffect(() => {
-                const THROTTLE_INTERVAL = 50;
-                
-                throttledTokenBroadcast.current = throttle((data) => {
-                    broadcastState('TOKEN_UPDATE', data);
-                }, THROTTLE_INTERVAL);
-                
-                throttledDrawingBroadcast.current = throttle((data) => {
-                    broadcastState('DRAWING_UPDATE', data);
-                }, THROTTLE_INTERVAL);
-                
-                throttledAvatarBroadcast.current = throttle((data) => {
-                    broadcastState('AVATAR_UPDATE', data);
-                }, THROTTLE_INTERVAL);
-                
-                throttledSceneBroadcast.current = throttle((data) => {
-                    broadcastState('SCENE_IMAGE_UPDATE', data);
-                }, THROTTLE_INTERVAL);
-                
-                throttledSheetBroadcast.current = throttle((data) => {
-                    broadcastState('CHARACTER_SHEETS_UPDATE', data);
-                }, THROTTLE_INTERVAL);
-            }, []); // Empty dependency array - only initialize once on mount
+            // Cleanup dice notification timeout on unmount
+useEffect(() => {
+    return () => {
+        if (diceNotificationTimeoutRef.current) {
+            clearTimeout(diceNotificationTimeoutRef.current);
+        }
+    };
+}, []);
 
-
+// ADD THIS NEW USEEFFECT HERE
+useEffect(() => {
+    // Initialize throttled broadcast (only send network updates every 50ms)
+    throttledTokenBroadcast.current = throttle((updatedTokens) => {
+        if (!isHostRef.current && isConnectedRef.current && connectionsRef.current[0]) {
+            connectionsRef.current[0].send({
+                type: 'TOKEN_UPDATE',
+                data: updatedTokens
+            });
+        }
+    }, 50); // 50ms = 20 updates per second max
+}, []);
 
 // ===== MULTIPLAYER FUNCTIONS =====
 
             // ===== MULTIPLAYER FUNCTIONS =====
-
-            // Generate 8-character room code
-            const generateRoomCode = () => {
-                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                let code = '';
-                for (let i = 0; i < 8; i++) {
-                    code += chars.charAt(Math.floor(Math.random() * chars.length));
-                }
-                return code;
-            };
             
             const broadcastState = (type, data) => {
-                if (!isConnectedRef.current || !roomCodeRef.current) {
-                    console.log(`Cannot broadcast ${type}: not connected or no room`);
+                if (!isHostRef.current || connectionsRef.current.length === 0) {
+                    console.log(`Cannot broadcast ${type}: isHost=${isHostRef.current}, connections=${connectionsRef.current.length}`);
                     return;
                 }
                 
-                const message = { 
-    type, 
-    data,
-    sourceId: myPeerIdRef.current  // Use ref for current value
-};
+                console.log(`Broadcasting ${type} to ${connectionsRef.current.length} player(s)`);
                 
-                if (isHostRef.current) {
-                    // Host broadcasts to all connected clients
-                    console.log(`Broadcasting ${type} to ${clientConnections.size} clients`);
-                    clientConnections.forEach((conn, peerId) => {
-                        if (conn.open) {
-                            try {
-                                conn.send(message);
-                            } catch (err) {
-                                console.error(`Error sending to client ${peerId}:`, err);
-                            }
-                        }
-                    });
-                } else {
-                    // Client sends to host
-                    if (hostConnection && hostConnection.open) {
+                const message = {
+                    type: type,
+                    data: data,
+                    timestamp: Date.now()
+                };
+
+                connectionsRef.current.forEach(conn => {
+                    if (conn && conn.open) {
                         try {
-                            hostConnection.send(message);
+                            conn.send(message);
                         } catch (err) {
-                            console.error('Error sending to host:', err);
+                            console.error('Error sending to peer:', err);
                         }
                     }
-                }
+                });
             };
 
-
-
             const createRoom = () => {
-                console.log('createRoom called - HOST flow with PeerJS');
+                console.log('createRoom called');
+                const name = prompt('Enter your name:', playerName) || playerName;
+                if (!name || name.trim() === '') {
+                    alert('Please enter a valid name!');
+                    return;
+                }
+                setPlayerName(name);
+                console.log('Creating peer with name:', name);
                 
-                const roomCode = generateRoomCode();
-                console.log('Generated room code:', roomCode);
-                
-                // Initialize PeerJS with ICE servers for better connectivity
-                peer = new Peer(roomCode, {
+                const newPeer = new Peer({
+                    host: '0.peerjs.com',
+                    port: 443,
+                    path: '/',
+                    secure: true,
                     config: {
                         iceServers: [
-                            // Google STUN servers (primary)
                             { urls: 'stun:stun.l.google.com:19302' },
                             { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun2.l.google.com:19302' },
                             { urls: 'stun:stun3.l.google.com:19302' },
-                            { urls: 'stun:stun4.l.google.com:19302' },
-                            // Twilio STUN server (fallback)
-                            { urls: 'stun:global.stun.twilio.com:3478' }
+                            { urls: 'stun:stun4.l.google.com:19302' }
                         ]
                     }
                 });
                 
-                peer.on('open', (id) => {
-                    console.log('PeerJS host initialized with ID:', id);
+                newPeer.on('open', (id) => {
+                    console.log('Host peer opened with ID:', id);
                     setMyPeerId(id);
                     setRoomCode(id);
                     setIsHost(true);
                     setIsConnected(true);
-                    setConnectionStatus('hosting');
+                    setPlayers([{ id: id, name: name, isHost: true }]);
+                    setPeer(newPeer);
                     
-                    // Copy to clipboard
-                    if (navigator.clipboard) {
+                    // Automatically copy room code to clipboard
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(id)
                             .then(() => {
-                                console.log('Room code copied:', id);
+                                console.log('Room code copied to clipboard:', id);
+                                
+                                // Show clipboard notification
+                                if (clipboardNotificationTimeoutRef.current) {
+                                    clearTimeout(clipboardNotificationTimeoutRef.current);
+                                }
+                                
                                 setClipboardNotification(true);
-                                setTimeout(() => setClipboardNotification(false), 3000);
+                                
+                                clipboardNotificationTimeoutRef.current = setTimeout(() => {
+                                    setClipboardNotification(false);
+                                    clipboardNotificationTimeoutRef.current = null;
+                                }, 3000);
                             })
-                            .catch(err => console.warn('Clipboard copy failed:', err));
+                            .catch(err => {
+                                console.warn('Could not copy room code to clipboard:', err);
+                            });
                     }
                     
-                    // Close connection popup
-                    setShowConnectionPopup(false);
-                    setConnectionFlow(null);
-                    
-                    setPlayers([{ id: id, name: playerName || 'Game Master', isHost: true }]);
-                    
-                    // Start heartbeat for connection monitoring
-                    heartbeatIntervalRef.current = setInterval(() => {
-                        if (isConnectedRef.current && isHostRef.current && clientConnections.size > 0) {
-                            const heartbeatMsg = { type: 'HEARTBEAT', data: { timestamp: Date.now() } };
-                            clientConnections.forEach((conn, peerId) => {
-                                if (conn.open) {
-                                    try {
-                                        conn.send(heartbeatMsg);
-                                    } catch (err) {
-                                        console.error(`Heartbeat failed for ${peerId}:`, err);
-                                    }
-                                }
-                            });
-                        }
-                    }, HEARTBEAT_INTERVAL); // Send heartbeat every 30 seconds
+                    // Give React a moment to update state, then close modal
+                    setTimeout(() => {
+                        setShowMultiplayerMenu(false);
+                    }, 100);
                 });
-                
-                peer.on('connection', (conn) => {
-                    console.log('New client connecting:', conn.peer);
+
+                newPeer.on('connection', (conn) => {
+                    console.log('New player connecting:', conn.peer);
                     
                     conn.on('open', () => {
-                        console.log('Connection opened with client:', conn.peer);
-                        clientConnections.set(conn.peer, conn);
+                        connectionsRef.current.push(conn);
+                        setConnections([...connectionsRef.current]);
                         
-                        // Send initial game state to new client
+                        // Send full state to new player
                         conn.send({
-                            type: 'INITIAL_STATE',
+                            type: 'FULL_STATE',
                             data: {
-                                tokens: tokens,
-                                drawings: drawings,
-                                scenes: scenes,
-                                avatars: avatars,
-                                activeSceneIndex: activeSceneIndex,
-                                gridTransform: gridTransform,
-                                dicePresets: dicePresets,
-                                characterSheets: characterSheets,
-                                diceModifiers: diceModifiers
+                                scenes,
+                                avatars,
+                                tokens,
+                                drawings,
+                                activeSceneIndex,
+                                gridTransform,
+                                dicePresets,
+                                characterSheets,
+                                diceModifiers,
+                                players: playersRef.current
                             }
                         });
                     });
-                    
-                    conn.on('data', (data) => {
-                        handlePeerMessage(data, conn.peer);
+
+                    conn.on('data', (message) => {
+                        handleIncomingMessage(message, conn);
                     });
-                    
+
                     conn.on('close', () => {
-                        console.log('Client disconnected:', conn.peer);
-                        clientConnections.delete(conn.peer);
-                        setPlayers(prev => prev.filter(p => p.id !== conn.peer));
-                    });
-                    
-                    conn.on('error', (err) => {
-                        console.error('Connection error with client:', conn.peer, err);
+                        console.log('Player disconnected:', conn.peer);
+                        connectionsRef.current = connectionsRef.current.filter(c => c.peer !== conn.peer);
+                        setConnections([...connectionsRef.current]);
+                        setPlayers(prev => {
+                            const updated = prev.filter(p => p.id !== conn.peer);
+                            broadcastState('PLAYER_LIST', updated);
+                            return updated;
+                        });
                     });
                 });
-                
-                peer.on('error', (err) => {
-                    console.error('PeerJS error:', err);
-                    
-                    // Clear heartbeat interval on error
-                    if (heartbeatIntervalRef.current) {
-                        clearInterval(heartbeatIntervalRef.current);
-                        heartbeatIntervalRef.current = null;
-                    }
-                    
-                    if (err.type === 'unavailable-id') {
-                        alert('Room code already in use. Please try again.');
-                    } else {
-                        alert('Failed to create room: ' + err.message);
-                    }
+
+                newPeer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    alert(`Connection error: ${err.type}\n\nDetails: ${err.message || 'Unknown error'}\n\nPlease try again or check your internet connection.`);
                 });
             };
 
-            const joinRoom = (code) => {
-                console.log('joinRoom called with code:', code);
-                
-                if (!code || code.length !== 8) {
-                    alert('Please enter a valid 8-character room code.');
+            const joinRoom = () => {
+                if (!joinCode.trim()) {
+                    alert('Please enter a room code!');
                     return;
                 }
+
+                const name = prompt('Enter your name:', playerName) || playerName;
+                setPlayerName(name);
                 
-                const roomCode = code.toUpperCase();
-                
-                // Generate unique player ID
-                const playerId = 'P' + Date.now().toString(36) + Math.random().toString(36).substring(2, 7).toUpperCase();
-                
-                // Initialize PeerJS with ICE servers
-                peer = new Peer(playerId, {
+                const newPeer = new Peer({
+                    host: '0.peerjs.com',
+                    port: 443,
+                    path: '/',
+                    secure: true,
                     config: {
                         iceServers: [
-                            // Google STUN servers (primary)
                             { urls: 'stun:stun.l.google.com:19302' },
                             { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun2.l.google.com:19302' },
                             { urls: 'stun:stun3.l.google.com:19302' },
-                            { urls: 'stun:stun4.l.google.com:19302' },
-                            // Twilio STUN server (fallback)
-                            { urls: 'stun:global.stun.twilio.com:3478' }
+                            { urls: 'stun:stun4.l.google.com:19302' }
                         ]
                     }
                 });
                 
-                peer.on('open', (id) => {
-                    console.log('PeerJS client initialized with ID:', id);
+                newPeer.on('open', (id) => {
                     setMyPeerId(id);
+                    setPeer(newPeer);
                     
-                    // Connect to host
-                    hostConnection = peer.connect(roomCode, { reliable: true });
+                    const conn = newPeer.connect(joinCode.trim());
                     
-                    hostConnection.on('open', () => {
-                        console.log('Connected to host:', roomCode);
-                        setRoomCode(roomCode);
-                        setIsHost(false);
+                    conn.on('open', () => {
+                        console.log('Connected to host!');
+                        connectionsRef.current.push(conn);
+                        setConnections([...connectionsRef.current]);
                         setIsConnected(true);
-                        setConnectionStatus('connected');
-                        setReconnectAttempts(0);
+                        setIsHost(false);
+                        setRoomCode(joinCode.trim());
+                        
+                        console.log('Sending PLAYER_JOIN with id:', id, 'name:', name);
                         
                         // Send player info to host
-                        hostConnection.send({
+                        conn.send({
                             type: 'PLAYER_JOIN',
-                            data: {
-                                id: id,
-                                name: playerName || 'Player'
-                            }
+                            data: { id: id, name: name, isHost: false }
                         });
-                        
-                        // Close connection popup
-                        setShowConnectionPopup(false);
-                        setConnectionFlow(null);
                     });
-                    
-                    hostConnection.on('data', (data) => {
-                        handlePeerMessage(data, roomCode);
+
+                    conn.on('data', (message) => {
+                        handleIncomingMessage(message, conn);
                     });
-                    
-                    hostConnection.on('close', () => {
+
+                    conn.on('close', () => {
                         console.log('Disconnected from host');
                         setIsConnected(false);
-                        setConnectionStatus('disconnected');
-                        
-                        // Attempt auto-reconnect
-                        setReconnectAttempts(prev => {
-                            const newAttempts = prev + 1;
-                            
-                            if (newAttempts <= MAX_RECONNECT_ATTEMPTS) {
-                                console.log(`Connection lost. Reconnecting... (attempt ${newAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-                                
-                                // Clear any existing timeout before setting a new one
-                                if (reconnectTimeoutRef.current) {
-                                    clearTimeout(reconnectTimeoutRef.current);
-                                }
-                                
-                                reconnectTimeoutRef.current = setTimeout(() => {
-                                    console.log('Attempting to reconnect to host...');
-                                    
-                                    // Clean up existing peer before reconnecting
-                                    if (peer) {
-                                        peer.destroy();
-                                        peer = null;
-                                    }
-                                    
-                                    joinRoom(roomCodeRef.current);
-                                }, RECONNECT_BASE_DELAY * newAttempts); // Linear backoff delays: 2s (attempt 1), 4s (attempt 2), 6s (attempt 3)
-                                
-                                return newAttempts;
-                            } else {
-                                alert('Disconnected from host. Maximum reconnection attempts reached.');
-                                return 0; // Reset for future connections
-                            }
-                        });
+                        alert('Disconnected from host!');
                     });
-                    
-                    hostConnection.on('error', (err) => {
+
+                    conn.on('error', (err) => {
                         console.error('Connection error:', err);
-                        alert('Failed to connect to host. Please check the room code.');
+                        alert('Failed to connect to room. Check the room code!');
                     });
-                });
-                
-                peer.on('error', (err) => {
-                    console.error('PeerJS error:', err);
-                    if (err.type === 'peer-unavailable') {
-                        alert('Room not found. Please check the code.');
-                    } else {
-                        alert('Connection error: ' + err.message);
-                    }
                 });
             };
 
-            const handlePeerMessage = (message, fromPeer) => {
-                console.log('Received peer message:', message.type, 'from:', fromPeer);
-                
-                switch(message.type) {
-                    case 'INITIAL_STATE':
-                        // Client receives initial game state from host
-                        const state = message.data;
-                        if (state.tokens) setTokens(state.tokens);
-                        if (state.drawings) setDrawings(state.drawings);
-                        if (state.scenes) setScenes(state.scenes);
-                        if (state.avatars) setAvatars(state.avatars);
-                        if (state.activeSceneIndex !== undefined) setActiveSceneIndex(state.activeSceneIndex);
-                        if (state.gridTransform) setGridTransform(state.gridTransform);
-                        if (state.dicePresets) setDicePresets(state.dicePresets);
-                        if (state.characterSheets) setCharacterSheets(state.characterSheets);
-                        if (state.diceModifiers) setDiceModifiers(state.diceModifiers);
+            const handleIncomingMessage = (message, conn) => {
+                if (!message || !message.type) return;
+
+                switch (message.type) {
+                    case 'FULL_STATE':
+                        // Receive full state from host
+                        console.log('Received FULL_STATE, players:', message.data.players);
+                        setScenes(message.data.scenes || scenes);
+                        setAvatars(message.data.avatars || []);
+                        setTokens(message.data.tokens || []);
+                        setDrawings(message.data.drawings || []);
+                        setActiveSceneIndex(message.data.activeSceneIndex || 0);
+                        setGridTransform(message.data.gridTransform || { zoom: 1, panX: 0, panY: 0 });
+                        setDicePresets(message.data.dicePresets || dicePresets);
+                        setCharacterSheets(message.data.characterSheets || []);
+                        setDiceModifiers(message.data.diceModifiers || {});
+                        setPlayers(message.data.players || []);
                         break;
-                        
+
                     case 'PLAYER_JOIN':
-                        // Host receives player join notification
+                        console.log('Checking if host... isHostRef.current:', isHostRef.current);
                         if (isHostRef.current) {
-                            const playerData = message.data;
+                            console.log('Host received PLAYER_JOIN:', message.data);
+                            const newPlayer = message.data;
                             setPlayers(prev => {
-                                // Check if player already exists
-                                if (prev.find(p => p.id === playerData.id)) return prev;
-                                return [...prev, { 
-                                    id: playerData.id, 
-                                    name: playerData.name, 
-                                    isHost: false 
-                                }];
+                                if (prev.find(p => p.id === newPlayer.id)) return prev;
+                                const updated = [...prev, newPlayer];
+                                
+                                console.log('Updated players list:', updated);
+                                
+                                // Broadcast updated player list to all players
+                                broadcastState('PLAYER_LIST', updated);
+                                
+                                // Also send updated FULL_STATE to the new player to ensure they have everything
+                                conn.send({
+                                    type: 'FULL_STATE',
+                                    data: {
+                                        scenes,
+                                        avatars,
+                                        tokens,
+                                        drawings,
+                                        activeSceneIndex,
+                                        gridTransform,
+                                        dicePresets,
+                                        characterSheets,
+                                        diceModifiers,
+                                        players: updated
+                                    }
+                                });
+                                
+                                return updated;
                             });
+                        } else {
+                            console.log('Not host, ignoring PLAYER_JOIN');
                         }
                         break;
-                        
+
+                    case 'PLAYER_LIST':
+                        console.log('Received PLAYER_LIST:', message.data);
+                        setPlayers(message.data);
+                        break;
+
                     case 'TOKEN_UPDATE':
-    if (message.sourceId === myPeerIdRef.current) {
-        break; // Ignore own updates
-    }
-    // Ignore updates for tokens we're currently dragging
-    const incomingTokens = message.data;
-    const filteredTokens = draggedTokenRef.current 
-        ? incomingTokens.map(token => 
-            token.id === draggedTokenRef.current ? tokensRef.current.find(t => t.id === token.id) || token : token
-          )
-        : incomingTokens;
-    
-    // Update our own state
-    setTokens(filteredTokens);
-    
-    // If we're the host, relay to all other players
-    if (isHostRef.current) {
-        clientConnections.forEach((conn, peerId) => {
-            if (peerId !== fromPeer && conn.open) {
-                try {
-                    conn.send(message);
-                } catch (err) {
-                    console.error(`Error relaying token update to ${peerId}:`, err);
-                }
-            }
-        });
-    }
-    break;
+                        // JITTER FIX: Only update tokens we're not actively dragging
+                        if (draggedTokenRef.current) {
+                            // Merge incoming tokens with our current dragging token
+                            setTokens(prevTokens => {
+                                return message.data.map(incomingToken => {
+                                    // If this is the token we're dragging, keep our local position
+                                    if (incomingToken.id === draggedTokenRef.current) {
+                                        const localToken = prevTokens.find(t => t.id === incomingToken.id);
+                                        return localToken || incomingToken;
+                                    }
+                                    // For all other tokens, use the network position
+                                    return incomingToken;
+                                });
+                            });
+                        } else {
+                            // Not dragging anything, accept all updates
+                            setTokens(message.data);
+                        }
                         
+                        // REMOVED: Duplicate broadcast - useEffect handles broadcasting when tokens change
+                        // The setTokens above triggers the useEffect which will broadcast to other players
+                        break;
+
                     case 'DRAWING_UPDATE':
-                        // Update our own state (both host and players)
                         setDrawings(message.data);
+                        break;
+
+                    case 'POINTER_UPDATE':
+                        // Update active pointers with remote player's pointer
+                        setActivePointers(prev => {
+                            const updated = { ...prev };
+                            if (message.data.active) {
+                                updated[message.data.playerName] = {
+                                    x: message.data.x,
+                                    y: message.data.y
+                                };
+                            } else {
+                                delete updated[message.data.playerName];
+                            }
+                            return updated;
+                        });
                         
-                        // If we're the host, relay to all other players
+                        // If host, re-broadcast to all other players
                         if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying drawing update to ${peerId}:`, err);
-                                    }
-                                }
-                            });
+                            broadcastState('POINTER_UPDATE', message.data);
                         }
                         break;
-                        
-                    case 'AVATAR_UPDATE':
-                        // Update our own state (both host and players)
-                        setAvatars(message.data);
-                        
-                        // If we're the host, relay to all other players
-                        if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying avatar update to ${peerId}:`, err);
-                                    }
-                                }
-                            });
-                        }
-                        break;
-                        
-                    case 'SCENE_CHANGE':
-                        if (!isHostRef.current) setActiveSceneIndex(message.data);
-                        break;
-                        
-                    case 'SCENE_IMAGE_UPDATE':
-                        // Update our own state (both host and players)
-                        setScenes(message.data);
-                        
-                        // If we're the host, relay to all other players
-                        if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying scene update to ${peerId}:`, err);
-                                    }
-                                }
-                            });
-                        }
-                        break;
-                        
-                    case 'CHARACTER_SHEETS_UPDATE':
-                        // Update our own state (both host and players)
-                        setCharacterSheets(message.data);
-                        
-                        // If we're the host, relay to all other players
-                        if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying character sheet update to ${peerId}:`, err);
-                                    }
-                                }
-                            });
-                        }
-                        break;
-                        
-                    case 'GRID_TRANSFORM':
-                        if (!isHostRef.current) setGridTransform(message.data);
-                        break;
-                        
+
                     case 'DICE_ROLL':
+                        console.log('Received DICE_ROLL:', message.data);
+                        addDiceRoll(message.data);
+                        setSpinningDie(message.data.type);
+                        setTimeout(() => setSpinningDie(null), 500);
+                        
+                        // Show dice notification for remote rolls
                         const rollData = message.data;
-                        addDiceRoll(rollData);
-                        
-                        if (rollData.type) {
-                            setSpinningDie(rollData.type);
-                            setTimeout(() => setSpinningDie(null), 500);
-                        }
-                        
                         const formula = rollData.presetName || 
                             `${rollData.count}${rollData.type}${rollData.modifier !== 0 ? (rollData.modifier > 0 ? '+' + rollData.modifier : rollData.modifier) : ''}`;
                         
+                        console.log('Setting dice notification:', { playerName: rollData.playerName, formula, result: rollData.total });
+                        
+                        // Clear any existing timeout
                         if (diceNotificationTimeoutRef.current) {
                             clearTimeout(diceNotificationTimeoutRef.current);
                         }
@@ -1003,21 +839,41 @@ const dice = [
                             diceNotificationTimeoutRef.current = null;
                         }, 3000);
                         
-                        // Host relays to all other clients
+                        // If host, re-broadcast to all other players
                         if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying dice roll to ${peerId}:`, err);
-                                    }
-                                }
-                            });
+                            console.log('Host re-broadcasting DICE_ROLL to other players');
+                            broadcastState('DICE_ROLL', rollData);
                         }
                         break;
-                        
+
+                    case 'SCENE_CHANGE':
+                        setActiveSceneIndex(message.data);
+                        break;
+
+                    case 'AVATAR_UPDATE':
+                        setAvatars(message.data);
+                        break;
+
+                    case 'GRID_TRANSFORM':
+                        setGridTransform(message.data);
+                        break;
+
+                    case 'SCENE_IMAGE_UPDATE':
+                        setScenes(message.data);
+                        break;
+
+                    case 'CHARACTER_SHEETS_UPDATE':
+                        setCharacterSheets(message.data);
+                        break;
+                    
+                    case 'HANDOUT_SHOW':
+                        // Display handout for all players
+                        setHandoutImage(message.data.src);
+                        setHandoutVisible(true);
+                        break;
+                    
                     case 'AVATAR_BOUNCE':
+                        // Trigger bounce animation for all players
                         const { avatarId } = message.data;
                         setBouncingAvatarIds(prev => {
                             if (prev.includes(avatarId)) return prev;
@@ -1027,161 +883,72 @@ const dice = [
                             setBouncingAvatarIds(prev => prev.filter(id => id !== avatarId));
                         }, 500);
                         
-                        // Host relays to all other clients
+                        // If host, re-broadcast to all other players
                         if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying avatar bounce to ${peerId}:`, err);
-                                    }
-                                }
-                            });
+                            broadcastState('AVATAR_BOUNCE', message.data);
                         }
                         break;
-                        
-                    case 'POINTER_UPDATE':
-                        // Process pointer update (for display)
-                        const { playerName, x, y, active } = message.data;
-                        if (active) {
-                            setActivePointers(prev => ({ ...prev, [playerName]: { x, y } }));
-                        } else {
-                            setActivePointers(prev => {
-                                const updated = { ...prev };
-                                delete updated[playerName];
-                                return updated;
-                            });
-                        }
-                        
-                        // Host relays to all other clients
-                        if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying pointer update to ${peerId}:`, err);
-                                    }
-                                }
-                            });
-                        }
-                        break;
-                        
-                    case 'HANDOUT_SHOW':
-                        setHandoutImage(message.data.src);
-                        setHandoutVisible(true);
-                        
-                        // Host relays to all other clients
-                        if (isHostRef.current) {
-                            clientConnections.forEach((conn, peerId) => {
-                                if (peerId !== fromPeer && conn.open) {
-                                    try {
-                                        conn.send(message);
-                                    } catch (err) {
-                                        console.error(`Error relaying handout to ${peerId}:`, err);
-                                    }
-                                }
-                            });
-                        }
-                        break;
-                    
-                    case 'HEARTBEAT':
-                        // Update last heartbeat timestamp
-                        setLastHeartbeat(Date.now());
-                        console.debug('Heartbeat received from host');
-                        break;
-                        
+
                     default:
-                        console.warn('Unknown message type:', message.type);
+                        console.log('Unknown message type:', message.type);
                 }
             };
-
-
 
             const disconnectFromRoom = () => {
-                console.log('Disconnecting from room');
-                
-                // Close all connections
-                if (hostConnection) {
-                    hostConnection.close();
-                    hostConnection = null;
-                }
-                
-                clientConnections.forEach((conn) => {
-                    conn.close();
-                });
-                clientConnections.clear();
-                
-                // Destroy peer
                 if (peer) {
                     peer.destroy();
-                    peer = null;
                 }
-                
-                // Clear heartbeat interval
-                if (heartbeatIntervalRef.current) {
-                    clearInterval(heartbeatIntervalRef.current);
-                    heartbeatIntervalRef.current = null;
-                }
-                
-                // Clear reconnect timeout
-                if (reconnectTimeoutRef.current) {
-                    clearTimeout(reconnectTimeoutRef.current);
-                    reconnectTimeoutRef.current = null;
-                }
-                
+                connectionsRef.current = [];
+                setConnections([]);
                 setIsConnected(false);
                 setIsHost(false);
-                setRoomCode('');
-                setMyPeerId('');
                 setPlayers([]);
-                setReconnectAttempts(0);
+                setRoomCode('');
+                setPeer(null);
             };
 
-            // Sync tokens when they change - THROTTLED
+            // Sync tokens when they change (only if host)
             useEffect(() => {
                 tokensRef.current = tokens;
-                if (isConnected && throttledTokenBroadcast.current) {
-                    throttledTokenBroadcast.current(tokens);
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_UPDATE', tokens);
                 }
-            }, [tokens, isConnected]);
+            }, [tokens, isHost, isConnected]);
 
-            // Sync drawings when they change - THROTTLED
+            // Sync drawings when they change (only if host)
             useEffect(() => {
-                if (isConnected && throttledDrawingBroadcast.current) {
-                    throttledDrawingBroadcast.current(drawings);
+                if (isHost && isConnected) {
+                    broadcastState('DRAWING_UPDATE', drawings);
                 }
-            }, [drawings, isConnected]);
+            }, [drawings, isHost, isConnected]);
 
-            // Sync avatars when they change - THROTTLED
+            // Sync avatars when they change (only if host)
             useEffect(() => {
-                if (isConnected && throttledAvatarBroadcast.current) {
-                    throttledAvatarBroadcast.current(avatars);
+                if (isHost && isConnected) {
+                    broadcastState('AVATAR_UPDATE', avatars);
                 }
-            }, [avatars, isConnected]);
+            }, [avatars, isHost, isConnected]);
 
             // Sync scene changes (only if host)
-            // Note: NOT throttled - scene switching should be immediate for all players
             useEffect(() => {
                 if (isHost && isConnected) {
                     broadcastState('SCENE_CHANGE', activeSceneIndex);
                 }
             }, [activeSceneIndex, isHost, isConnected]);
 
-            // Sync character sheets when they change - THROTTLED
+            // Sync character sheets when they change (only if host)
             useEffect(() => {
-                if (isConnected && throttledSheetBroadcast.current) {
-                    throttledSheetBroadcast.current(characterSheets);
+                if (isHost && isConnected) {
+                    broadcastState('CHARACTER_SHEETS_UPDATE', characterSheets);
                 }
-            }, [characterSheets, isConnected]);
+            }, [characterSheets, isHost, isConnected]);
 
-            // Sync scenes when they change (for grid and other scene properties) - THROTTLED
+            // Sync scenes when they change (for grid and other scene properties) (only if host)
             useEffect(() => {
-                if (isConnected && throttledSceneBroadcast.current) {
-                    throttledSceneBroadcast.current(scenes);
+                if (isHost && isConnected) {
+                    broadcastState('SCENE_IMAGE_UPDATE', scenes);
                 }
-            }, [scenes, isConnected]);
+            }, [scenes]);
 
             // Automatic avatar animations - adds life to the table!
             useEffect(() => {
@@ -1228,13 +995,30 @@ const dice = [
                             });
                             setTimeout(() => {
                                 setBouncingAvatarIds(prev => prev.filter(id => id !== selectedAvatar.id));
-                            }, 500);                           
+                            }, 500);
                             
+                            // Broadcast bounce to all players
+                            if (isConnected) {
+                                if (isHostRef.current) {
+                                    broadcastState('AVATAR_BOUNCE', { avatarId: selectedAvatar.id });
+                                } else {
+                                    // Players send bounce to host
+                                    connectionsRef.current.forEach(conn => {
+                                        if (conn && conn.open) {
+                                            conn.send({
+                                                type: 'AVATAR_BOUNCE',
+                                                data: { avatarId: selectedAvatar.id }
+                                            });
+                                        }
+                                    });
+                                }
+                            }
                         } else {
                             // Trigger flip animation
                             setAvatars(prev => prev.map(av => 
                                 av.id === selectedAvatar.id ? { ...av, flipped: !av.flipped } : av
-                            ));                           
+                            ));
+                            // Flip syncs automatically via the avatars useEffect
                         }
                         
                         // Schedule next animation
@@ -1253,7 +1037,7 @@ const dice = [
                         clearTimeout(timeoutRef.current);
                     }
                 };
-            }, [avatars.length, isConnected]); // Only re-run when avatar COUNT changes
+            }, [avatars, isConnected]); // Re-run when avatars change
 
             // ===== EXISTING FUNCTIONS (with multiplayer hooks) =====
 
@@ -1317,9 +1101,17 @@ const dice = [
                     diceNotificationTimeoutRef.current = null;
                 }, 3000);
                 
-                // Broadcast dice roll to all players via PeerJS
-                if (isConnectedRef.current && roomCode) {
-                    broadcastState('DICE_ROLL', rollData);
+                // Broadcast dice roll to all players
+                if (isConnectedRef.current) {
+                    if (isHostRef.current) {
+                        broadcastState('DICE_ROLL', rollData);
+                    } else {
+                        // Send to host who will broadcast
+                        connectionsRef.current[0]?.send({
+                            type: 'DICE_ROLL',
+                            data: rollData
+                        });
+                    }
                 }
                 
                 setSpinningDie(die.type);
@@ -1364,8 +1156,15 @@ const dice = [
                     diceNotificationTimeoutRef.current = null;
                 }, 3000);
                 
-                if (isConnectedRef.current && roomCode) {
-                    broadcastState('DICE_ROLL', rollData);
+                if (isConnectedRef.current) {
+                    if (isHostRef.current) {
+                        broadcastState('DICE_ROLL', rollData);
+                    } else {
+                        connectionsRef.current[0]?.send({
+                            type: 'DICE_ROLL',
+                            data: rollData
+                        });
+                    }
                 }
                 
                 setSpinningDie(die.type);
@@ -1410,8 +1209,15 @@ const dice = [
                     diceNotificationTimeoutRef.current = null;
                 }, 3000);
                 
-                if (isConnectedRef.current && roomCode) {
-                    broadcastState('DICE_ROLL', rollData);
+                if (isConnectedRef.current) {
+                    if (isHostRef.current) {
+                        broadcastState('DICE_ROLL', rollData);
+                    } else {
+                        connectionsRef.current[0]?.send({
+                            type: 'DICE_ROLL',
+                            data: rollData
+                        });
+                    }
                 }
                 
                 setSpinningDie(die.type);
@@ -1639,8 +1445,15 @@ const dice = [
                 }, 3000);
                 
                 // Broadcast dice roll
-                if (isConnectedRef.current && roomCode) {
-                    broadcastState('DICE_ROLL', rollData);
+                if (isConnectedRef.current) {
+                    if (isHostRef.current) {
+                        broadcastState('DICE_ROLL', rollData);
+                    } else {
+                        connectionsRef.current[0]?.send({
+                            type: 'DICE_ROLL',
+                            data: rollData
+                        });
+                    }
                 }
                 
                 // Spin the first dice type for animation
@@ -1827,12 +1640,21 @@ const handleAvatarUpload = (e) => {
                         setBouncingAvatarIds(prev => prev.filter(id => id !== avatarId));
                     }, 500);
                     
-                    // Broadcast bounce to all players via PeerJS
-                    if (isConnected && roomCode) {
-                        broadcastState('AVATAR_BOUNCE', {
-                            avatarId: avatarId,
-                            timestamp: Date.now()
-                        });
+                    // Broadcast bounce to all players
+                    if (isConnected) {
+                        if (isHostRef.current) {
+                            broadcastState('AVATAR_BOUNCE', { avatarId });
+                        } else {
+                            // Players send bounce to host
+                            connectionsRef.current.forEach(conn => {
+                                if (conn && conn.open) {
+                                    conn.send({
+                                        type: 'AVATAR_BOUNCE',
+                                        data: { avatarId }
+                                    });
+                                }
+                            });
+                        }
                     }
                 }, 200);
             };
@@ -2040,7 +1862,9 @@ const handleAvatarUpload = (e) => {
     );
     
     // Update local state immediately (smooth visual feedback)
-    setTokens(updatedTokens);    
+    setTokens(updatedTokens);
+    tokensRef.current = updatedTokens;
+    
     // Throttled network update (50ms max = 20 updates/sec instead of 60+)
     if (throttledTokenBroadcast.current) {
         throttledTokenBroadcast.current(updatedTokens);
@@ -2078,7 +1902,7 @@ const handleAvatarUpload = (e) => {
         if (draggedTokenRef.current) {
             setTimeout(() => {
                 draggedTokenRef.current = null;
-            }, 150);
+            }, 100); // 100ms delay to ensure in-flight messages are still ignored
         }
     };
 
@@ -2309,9 +2133,9 @@ const handleHandoutUpload = (e) => {
                 const wheelSpeed = 0.0018;
                 const zoomFactor = Math.exp(-delta * wheelSpeed);
                 const clamp = (v, a = 0.2, b = 6) => Math.max(a, Math.min(b, v));
-                const startZoom = gridTransformRef.current.zoom;
-                const startPanX = gridTransformRef.current.panX;
-                const startPanY = gridTransformRef.current.panY;
+                const startZoom = gridTransform.zoom;
+                const startPanX = gridTransform.panX;
+                const startPanY = gridTransform.panY;
                 const mouseX = e.clientX;
                 const mouseY = e.clientY - GRID_OFFSET_Y;
                 const worldX = (mouseX - startPanX) / startZoom;
@@ -2396,7 +2220,7 @@ const handleHandoutUpload = (e) => {
                         document.removeEventListener('contextmenu', handleGridContextMenu);
                     };
                 }
-            }, [activeScene.grid?.enabled]);
+            }, [activeScene.grid?.enabled, gridTransform.zoom]);
 
             useEffect(() => {
                 const handleClick = () => {
@@ -2427,7 +2251,14 @@ const handleHandoutUpload = (e) => {
                         };
                         
                         if (isConnectedRef.current) {
-                            broadcastState('POINTER_UPDATE', pointerData);
+                            if (isHostRef.current) {
+                                broadcastState('POINTER_UPDATE', pointerData);
+                            } else {
+                                connectionsRef.current[0]?.send({
+                                    type: 'POINTER_UPDATE',
+                                    data: pointerData
+                                });
+                            }
                         }
                     }
                 };
@@ -2436,7 +2267,7 @@ const handleHandoutUpload = (e) => {
                     if (isPointerActive) {
                         setPointerPosition({ x: e.clientX, y: e.clientY });
                         
-                        // Broadcast pointer movement via PeerJS
+                        // Broadcast pointer movement
                         const pointerData = {
                             playerName: playerName,
                             x: e.clientX,
@@ -2444,8 +2275,15 @@ const handleHandoutUpload = (e) => {
                             active: true
                         };
                         
-                        if (isConnectedRef.current && roomCode) {
-                            broadcastState('POINTER_UPDATE', pointerData);
+                        if (isConnectedRef.current) {
+                            if (isHostRef.current) {
+                                broadcastState('POINTER_UPDATE', pointerData);
+                            } else {
+                                connectionsRef.current[0]?.send({
+                                    type: 'POINTER_UPDATE',
+                                    data: pointerData
+                                });
+                            }
                         }
                     }
                 };
@@ -2455,12 +2293,23 @@ const handleHandoutUpload = (e) => {
                     if (e.button === 1) {
                         setIsPointerActive(false);
                         
-                        // Broadcast pointer deactivation via PeerJS
-                        if (isConnectedRef.current && roomCode) {
-                            broadcastState('POINTER_UPDATE', {
-                                playerName: playerName,
-                                active: false
-                            });
+                        // Broadcast pointer deactivation
+                        const pointerData = {
+                            playerName: playerName,
+                            x: e.clientX,
+                            y: e.clientY,
+                            active: false
+                        };
+                        
+                        if (isConnectedRef.current) {
+                            if (isHostRef.current) {
+                                broadcastState('POINTER_UPDATE', pointerData);
+                            } else {
+                                connectionsRef.current[0]?.send({
+                                    type: 'POINTER_UPDATE',
+                                    data: pointerData
+                                });
+                            }
                         }
                     }
                 };
@@ -2899,10 +2748,7 @@ const handleHandoutUpload = (e) => {
 
                                     {/* Continue Button */}
                                     <button
-                                        onClick={() => {
-                                            setShowSplash(false);
-                                            setShowConnectionPopup(true);
-                                        }}
+                                        onClick={() => setShowSplash(false)}
                                         style={{
                                             marginTop: '40px',
                                             padding: '12px 40px',
@@ -2936,365 +2782,7 @@ const handleHandoutUpload = (e) => {
                         </div>
                     )}
 
-                    {/* Connection Popup - Shown after Beta Splash */}
-                    {showConnectionPopup && (
-                        <>
-                            <div 
-                                style={{
-                                    position: 'fixed',
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    bottom: 0,
-                                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                                    zIndex: 5000,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}
-                            >
-                                <div 
-                                    style={{
-                                        position: 'relative',
-                                        backgroundColor: '#1a1a1a',
-                                        border: '4px solid #d4af37',
-                                        borderRadius: '16px',
-                                        padding: '50px',
-                                        minWidth: '700px',
-                                        boxShadow: '0 12px 48px rgba(0,0,0,0.95)',
-                                        overflow: 'hidden'
-                                    }}
-                                >
-                                    {/* Large M Background */}
-                                    <div
-                                        style={{
-                                            position: 'absolute',
-                                            top: '50%',
-                                            left: '50%',
-                                            transform: 'translate(-50%, -50%)',
-                                            fontSize: '500px',
-                                            fontWeight: 'bold',
-                                            fontFamily: 'Times New Roman, serif',
-                                            color: '#d4af37',
-                                            opacity: '0.08',
-                                            lineHeight: '1',
-                                            zIndex: 1,
-                                            userSelect: 'none',
-                                            pointerEvents: 'none'
-                                        }}
-                                    >
-                                        M
-                                    </div>
-
-                                    {/* Content */}
-                                    <div style={{ position: 'relative', zIndex: 2 }}>
-                                        {/* Banner */}
-                                        <div
-                                            style={{
-                                                fontSize: '36px',
-                                                fontWeight: 'bold',
-                                                fontFamily: 'Georgia, serif',
-                                                color: '#d4af37',
-                                                marginBottom: '40px',
-                                                textAlign: 'center',
-                                                letterSpacing: '2px',
-                                                textShadow: '0 0 15px rgba(212, 175, 55, 0.5)'
-                                            }}
-                                        >
-                                            Monomyth VTT
-                                        </div>
-
-                                        {/* Connection Flow Selection */}
-                                        {!connectionFlow && (
-                                            <div style={{
-                                                display: 'flex',
-                                                gap: '20px',
-                                                justifyContent: 'center'
-                                            }}>
-                                                {/* JOIN Button */}
-                                                <button
-                                                    onClick={() => setConnectionFlow('join')}
-                                                    style={{
-                                                        flex: 1,
-                                                        padding: '30px 20px',
-                                                        backgroundColor: '#2a2a2a',
-                                                        border: '3px solid #d4af37',
-                                                        borderRadius: '12px',
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.2s',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'center',
-                                                        gap: '15px'
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
-                                                        e.currentTarget.style.borderColor = '#f5c842';
-                                                        e.currentTarget.style.transform = 'translateY(-4px)';
-                                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(212, 175, 55, 0.4)';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
-                                                        e.currentTarget.style.borderColor = '#d4af37';
-                                                        e.currentTarget.style.transform = 'translateY(0)';
-                                                        e.currentTarget.style.boxShadow = 'none';
-                                                    }}
-                                                >
-                                                    <div style={{
-                                                        fontSize: '48px',
-                                                        fontWeight: 'bold',
-                                                        color: '#d4af37',
-                                                        fontFamily: 'Georgia, serif',
-                                                        letterSpacing: '2px'
-                                                    }}>
-                                                        JOIN
-                                                    </div>
-                                                    <div style={{
-                                                        fontSize: '14px',
-                                                        color: '#aaa',
-                                                        fontFamily: 'Arial, sans-serif',
-                                                        textAlign: 'center',
-                                                        lineHeight: '1.4'
-                                                    }}>
-                                                        Enter code provided by GM
-                                                    </div>
-                                                </button>
-
-                                                {/* HOST Button */}
-                                                <button
-                                                    onClick={() => {
-                                                        setConnectionFlow('host');
-                                                        createRoom();
-                                                    }}
-                                                    style={{
-                                                        flex: 1,
-                                                        padding: '30px 20px',
-                                                        backgroundColor: '#2a2a2a',
-                                                        border: '3px solid #d4af37',
-                                                        borderRadius: '12px',
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.2s',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'center',
-                                                        gap: '15px'
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
-                                                        e.currentTarget.style.borderColor = '#f5c842';
-                                                        e.currentTarget.style.transform = 'translateY(-4px)';
-                                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(212, 175, 55, 0.4)';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
-                                                        e.currentTarget.style.borderColor = '#d4af37';
-                                                        e.currentTarget.style.transform = 'translateY(0)';
-                                                        e.currentTarget.style.boxShadow = 'none';
-                                                    }}
-                                                >
-                                                    <div style={{
-                                                        fontSize: '48px',
-                                                        fontWeight: 'bold',
-                                                        color: '#d4af37',
-                                                        fontFamily: 'Georgia, serif',
-                                                        letterSpacing: '2px'
-                                                    }}>
-                                                        HOST
-                                                    </div>
-                                                    <div style={{
-                                                        fontSize: '14px',
-                                                        color: '#aaa',
-                                                        fontFamily: 'Arial, sans-serif',
-                                                        textAlign: 'center',
-                                                        lineHeight: '1.4'
-                                                    }}>
-                                                        Generate a code for your players
-                                                    </div>
-                                                </button>
-
-                                                {/* SETUP Button */}
-                                                <button
-                                                    onClick={() => setShowConnectionPopup(false)}
-                                                    style={{
-                                                        flex: 1,
-                                                        padding: '30px 20px',
-                                                        backgroundColor: '#2a2a2a',
-                                                        border: '3px solid #d4af37',
-                                                        borderRadius: '12px',
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.2s',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'center',
-                                                        gap: '15px'
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
-                                                        e.currentTarget.style.borderColor = '#f5c842';
-                                                        e.currentTarget.style.transform = 'translateY(-4px)';
-                                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(212, 175, 55, 0.4)';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
-                                                        e.currentTarget.style.borderColor = '#d4af37';
-                                                        e.currentTarget.style.transform = 'translateY(0)';
-                                                        e.currentTarget.style.boxShadow = 'none';
-                                                    }}
-                                                >
-                                                    <div style={{
-                                                        fontSize: '48px',
-                                                        fontWeight: 'bold',
-                                                        color: '#d4af37',
-                                                        fontFamily: 'Georgia, serif',
-                                                        letterSpacing: '2px'
-                                                    }}>
-                                                        SETUP
-                                                    </div>
-                                                    <div style={{
-                                                        fontSize: '14px',
-                                                        color: '#aaa',
-                                                        fontFamily: 'Arial, sans-serif',
-                                                        textAlign: 'center',
-                                                        lineHeight: '1.4'
-                                                    }}>
-                                                        Prepare for upcoming game
-                                                    </div>
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {/* JOIN Flow */}
-                                        {connectionFlow === 'join' && (
-                                            <div style={{
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'center',
-                                                gap: '20px'
-                                            }}>
-                                                {connectionMessage === 'Connecting, please wait...' ? (
-                                                    <div style={{
-                                                        fontSize: '18px',
-                                                        color: '#d4af37',
-                                                        fontFamily: 'Georgia, serif',
-                                                        textAlign: 'center',
-                                                        padding: '40px'
-                                                    }}>
-                                                        {connectionMessage}
-                                                    </div>
-                                                ) : (
-                                                    <>
-                                                        <input
-                                                            type="text"
-                                                            placeholder="ENTER 8-CHARACTER CODE"
-                                                            value={joinInputCode}
-                                                            onChange={(e) => setJoinInputCode(e.target.value.toUpperCase())}
-                                                            maxLength={8}
-                                                            style={{
-                                                                width: '100%',
-                                                                padding: '20px',
-                                                                backgroundColor: '#2a2a2a',
-                                                                color: '#d4af37',
-                                                                border: '3px solid #d4af37',
-                                                                borderRadius: '8px',
-                                                                fontSize: '24px',
-                                                                fontWeight: 'bold',
-                                                                fontFamily: 'monospace',
-                                                                textAlign: 'center',
-                                                                letterSpacing: '4px',
-                                                                textTransform: 'uppercase'
-                                                            }}
-                                                            autoFocus
-                                                        />
-                                                        
-                                                        {connectionMessage && (
-                                                            <div style={{
-                                                                color: '#dc3545',
-                                                                fontSize: '14px',
-                                                                fontFamily: 'Arial, sans-serif',
-                                                                textAlign: 'center'
-                                                            }}>
-                                                                {connectionMessage}
-                                                            </div>
-                                                        )}
-
-                                                        <div style={{
-                                                            display: 'flex',
-                                                            gap: '15px',
-                                                            width: '100%'
-                                                        }}>
-                                                            <button
-                                                                onClick={() => {
-                                                                    setConnectionFlow(null);
-                                                                    setJoinInputCode('');
-                                                                    setConnectionMessage('');
-                                                                }}
-                                                                style={{
-                                                                    flex: 1,
-                                                                    padding: '15px 30px',
-                                                                    backgroundColor: '#444',
-                                                                    color: '#e0e0e0',
-                                                                    border: '2px solid #666',
-                                                                    borderRadius: '8px',
-                                                                    fontSize: '16px',
-                                                                    fontWeight: 'bold',
-                                                                    fontFamily: 'Arial, sans-serif',
-                                                                    cursor: 'pointer',
-                                                                    transition: 'all 0.2s'
-                                                                }}
-                                                                onMouseEnter={(e) => {
-                                                                    e.currentTarget.style.backgroundColor = '#555';
-                                                                }}
-                                                                onMouseLeave={(e) => {
-                                                                    e.currentTarget.style.backgroundColor = '#444';
-                                                                }}
-                                                            >
-                                                                Back
-                                                            </button>
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (joinInputCode.length === 8) {
-                                                                        joinRoom(joinInputCode);
-                                                                    }
-                                                                }}
-                                                                disabled={joinInputCode.length !== 8}
-                                                                style={{
-                                                                    flex: 1,
-                                                                    padding: '15px 30px',
-                                                                    backgroundColor: joinInputCode.length === 8 ? '#28a745' : '#2a2a2a',
-                                                                    color: joinInputCode.length === 8 ? '#fff' : '#666',
-                                                                    border: `2px solid ${joinInputCode.length === 8 ? '#1e7e34' : '#444'}`,
-                                                                    borderRadius: '8px',
-                                                                    fontSize: '16px',
-                                                                    fontWeight: 'bold',
-                                                                    fontFamily: 'Arial, sans-serif',
-                                                                    cursor: joinInputCode.length === 8 ? 'pointer' : 'not-allowed',
-                                                                    transition: 'all 0.2s'
-                                                                }}
-                                                                onMouseEnter={(e) => {
-                                                                    if (joinInputCode.length === 8) {
-                                                                        e.currentTarget.style.backgroundColor = '#218838';
-                                                                    }
-                                                                }}
-                                                                onMouseLeave={(e) => {
-                                                                    if (joinInputCode.length === 8) {
-                                                                        e.currentTarget.style.backgroundColor = '#28a745';
-                                                                    }
-                                                                }}
-                                                            >
-                                                                Connect
-                                                            </button>
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                    )}
-
-                    {/* Old Multiplayer Menu - Keep for debugging/fallback */}
+                    {/* Multiplayer Menu */}
                     {showMultiplayerMenu && (
                         <>
                             <div 
@@ -3412,7 +2900,7 @@ const handleHandoutUpload = (e) => {
                                                     }}
                                                 />
                                                 <button
-                                                    onClick={() => joinRoom(joinCode)}
+                                                    onClick={joinRoom}
                                                     style={{
                                                         width: '100%',
                                                         padding: '12px',
@@ -3598,40 +3086,26 @@ const handleHandoutUpload = (e) => {
                                     M
                                 </div>
 
-                                {/* Connection Status Indicator (non-clickable) */}
-                                <div
-                                    className={`px-3 py-1.5 font-bold rounded text-sm border-2 flex items-center gap-1.5 ${
-                                        connectionStatus === 'hosting'
-                                            ? 'bg-blue-600 text-white border-blue-500 shadow-lg'
-                                            : connectionStatus === 'connected'
+                                {/* Multiplayer Button */}
+                                <button
+                                    onClick={() => setShowMultiplayerMenu(true)}
+                                    className={`px-3 py-1.5 font-bold rounded text-sm transition-all border-2 flex items-center gap-1.5 ${
+                                        isConnected
                                             ? 'bg-green-600 text-white border-green-500 shadow-lg'
-                                            : 'bg-zinc-700 text-amber-500 border-amber-600'
+                                            : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600 hover:border-amber-700'
                                     }`}
                                     style={{ fontFamily: 'Georgia, serif' }}
-                                    title={
-                                        connectionStatus === 'hosting'
-                                            ? `Hosting: ${players.length} player(s) - Code: ${roomCode}`
-                                            : connectionStatus === 'connected'
-                                            ? `Connected: ${players.length} player(s)`
-                                            : 'Disconnected'
-                                    }
+                                    title={isConnected ? `Connected: ${players.length} players` : 'Start Multiplayer'}
                                 >
-                                    {connectionStatus === 'hosting' ? (
+                                    {isConnected ? (
                                         <>
                                             <span className="connection-pulse">🌐</span>
-                                            Hosting
-                                        </>
-                                    ) : connectionStatus === 'connected' ? (
-                                        <>
-                                            <span className="connection-pulse">🌐</span>
-                                            Connected
+                                            {players.length}
                                         </>
                                     ) : (
-                                        <>
-                                            🌐 Disconnected
-                                        </>
+                                        '🌐 Multiplayer'
                                     )}
-                                </div>
+                                </button>
 
                                 <div className="flex gap-2 items-center">
                                     <button
