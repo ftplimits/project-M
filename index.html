@@ -249,6 +249,12 @@
             });
         };
 
+        // Token-specific downscaling function (512x512 instead of 2048x2048)
+        // Tokens are displayed at 50-100px on screen, so 512x512 is more than enough
+        const downscaleToken = (file) => {
+            return downscaleImage(file, 512, 512);
+        };
+
         const Upload = ({ size = 24, className = "" }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -658,15 +664,17 @@ useEffect(() => {
 
 // Initialize throttled broadcast
 useEffect(() => {
-    // Initialize throttled broadcast (only send network updates every 50ms)
-    throttledTokenBroadcast.current = throttle((updatedTokens) => {
+    // Initialize throttled broadcast (only send network updates every 100ms)
+    throttledTokenBroadcast.current = throttle((tokenData) => {
         if (!isHostRef.current && isConnectedRef.current && connectionsRef.current[0]) {
+            // Check if this is a single token move (has id, x, y) or full update (array)
+            const messageType = tokenData.id !== undefined ? 'TOKEN_MOVE' : 'TOKEN_UPDATE';
             connectionsRef.current[0].send({
-                type: 'TOKEN_UPDATE',
-                data: updatedTokens
+                type: messageType,
+                data: tokenData
             });
         }
-    }, 50); // 50ms = 20 updates per second max
+    }, 100); // 100ms = 10 updates per second max (50% reduction in network traffic)
 }, []);
 
 // ===== MULTIPLAYER FUNCTIONS =====
@@ -1097,6 +1105,39 @@ useEffect(() => {
                         // The setTokens above triggers the useEffect which will broadcast to other players
                         break;
 
+                    case 'TOKEN_MOVE':
+                        // Update only the specific token that moved (more efficient than TOKEN_UPDATE)
+                        const movedToken = message.data;
+                        
+                        // Don't update if we're currently dragging this token
+                        if (draggedTokenRef.current === movedToken.id) {
+                            break;
+                        }
+                        
+                        setTokens(prev => prev.map(t => 
+                            t.id === movedToken.id 
+                                ? { ...t, x: movedToken.x, y: movedToken.y }
+                                : t
+                        ));
+                        tokensRef.current = tokensRef.current.map(t =>
+                            t.id === movedToken.id
+                                ? { ...t, x: movedToken.x, y: movedToken.y }
+                                : t
+                        );
+                        
+                        // If host, relay to all OTHER players (not sender)
+                        if (isHostRef.current) {
+                            connectionsRef.current.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'TOKEN_MOVE',
+                                        data: movedToken
+                                    });
+                                }
+                            });
+                        }
+                        break;
+
                     case 'DRAWING_UPDATE':
                         setDrawings(message.data);
                         break;
@@ -1425,7 +1466,8 @@ useEffect(() => {
             // Sync tokens when they change (only if host)
             useEffect(() => {
                 tokensRef.current = tokens;
-                if (isHost && isConnected) {
+                // Skip broadcasting during token drag (TOKEN_MOVE handles position updates)
+                if (isHost && isConnected && !draggedTokenRef.current) {
                     broadcastState('TOKEN_UPDATE', tokens);
                 }
             }, [tokens, isHost, isConnected]);
@@ -2395,9 +2437,31 @@ const handleAvatarUpload = async (e) => {
     setTokens(updatedTokens);
     tokensRef.current = updatedTokens;
     
-    // Throttled network update (50ms max = 20 updates/sec instead of 60+)
-    if (throttledTokenBroadcast.current) {
-        throttledTokenBroadcast.current(updatedTokens);
+    // Send only the moved token (not the entire array) for better performance
+    const movedToken = updatedTokens.find(t => t.id === draggedToken);
+    if (movedToken && isConnectedRef.current) {
+        if (isHostRef.current) {
+            // Host broadcasts TOKEN_MOVE to all players directly (not throttled for host)
+            connectionsRef.current.forEach(c => {
+                if (c.open) {
+                    c.send({
+                        type: 'TOKEN_MOVE',
+                        data: {
+                            id: movedToken.id,
+                            x: movedToken.x,
+                            y: movedToken.y
+                        }
+                    });
+                }
+            });
+        } else if (connectionsRef.current[0] && throttledTokenBroadcast.current) {
+            // Player sends TOKEN_MOVE to host (throttled)
+            throttledTokenBroadcast.current({
+                id: movedToken.id,
+                x: movedToken.x,
+                y: movedToken.y
+            });
+        }
     }
 }
 
@@ -2461,8 +2525,8 @@ const handleAvatarUpload = async (e) => {
     if (!file || !file.type.startsWith('image/')) return;
     
     try {
-        // Downscale image before using
-        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        // Downscale token to 512x512 (tokens are small on screen, this is more than enough)
+        const downscaledDataUrl = await downscaleToken(file);
         
         const size = 50; // Base size
         const centerClientX = window.innerWidth / 2;
