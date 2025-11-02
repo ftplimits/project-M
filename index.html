@@ -322,6 +322,7 @@
             const diceNotificationTimeoutRef = useRef(null);
             const clipboardNotificationTimeoutRef = useRef(null);
             const throttledTokenBroadcast = useRef(null);
+            const throttledHostTokenBroadcast = useRef(null);
             const isHostRef = useRef(false);
             const isConnectedRef = useRef(false);
             
@@ -664,7 +665,7 @@ useEffect(() => {
 
 // Initialize throttled broadcast
 useEffect(() => {
-    // Initialize throttled broadcast (only send network updates every 100ms)
+    // Initialize throttled broadcast for players (only send network updates every 100ms)
     throttledTokenBroadcast.current = throttle((tokenData) => {
         if (!isHostRef.current && isConnectedRef.current && connectionsRef.current[0]) {
             // Check if this is a single token move (has id, x, y) or full update (array)
@@ -675,6 +676,20 @@ useEffect(() => {
             });
         }
     }, 100); // 100ms = 10 updates per second max (50% reduction in network traffic)
+    
+    // Initialize throttled broadcast for host
+    throttledHostTokenBroadcast.current = throttle((tokenData) => {
+        if (isHostRef.current && isConnectedRef.current) {
+            connectionsRef.current.forEach(c => {
+                if (c.open) {
+                    c.send({
+                        type: 'TOKEN_MOVE',
+                        data: tokenData
+                    });
+                }
+            });
+        }
+    }, 100); // Same throttle rate for host
 }, []);
 
 // ===== MULTIPLAYER FUNCTIONS =====
@@ -2440,27 +2455,18 @@ const handleAvatarUpload = async (e) => {
     // Send only the moved token (not the entire array) for better performance
     const movedToken = updatedTokens.find(t => t.id === draggedToken);
     if (movedToken && isConnectedRef.current) {
-        if (isHostRef.current) {
-            // Host broadcasts TOKEN_MOVE to all players directly (not throttled for host)
-            connectionsRef.current.forEach(c => {
-                if (c.open) {
-                    c.send({
-                        type: 'TOKEN_MOVE',
-                        data: {
-                            id: movedToken.id,
-                            x: movedToken.x,
-                            y: movedToken.y
-                        }
-                    });
-                }
-            });
+        const tokenMoveData = {
+            id: movedToken.id,
+            x: movedToken.x,
+            y: movedToken.y
+        };
+        
+        if (isHostRef.current && throttledHostTokenBroadcast.current) {
+            // Host broadcasts TOKEN_MOVE to all players (throttled)
+            throttledHostTokenBroadcast.current(tokenMoveData);
         } else if (connectionsRef.current[0] && throttledTokenBroadcast.current) {
             // Player sends TOKEN_MOVE to host (throttled)
-            throttledTokenBroadcast.current({
-                id: movedToken.id,
-                x: movedToken.x,
-                y: movedToken.y
-            });
+            throttledTokenBroadcast.current(tokenMoveData);
         }
     }
 }
