@@ -247,12 +247,10 @@
                 
                 reader.readAsDataURL(file);
             });
-        };
-
-        // Token-specific downscaling function (512x512 instead of 2048x2048)
-        // Tokens are displayed at 50-100px on screen, so 512x512 is more than enough
+        };      
+      
         const downscaleToken = (file) => {
-            return downscaleImage(file, 512, 512);
+            return downscaleImage(file, 256, 256);
         };
 
         // Grid map downscaling with custom quality
@@ -2629,7 +2627,7 @@ const handleAvatarUpload = async (e) => {
     if (!file || !file.type.startsWith('image/')) return;
     
     try {
-        // Downscale token to 512x512 (tokens are small on screen, this is more than enough)
+       
         const downscaledDataUrl = await downscaleToken(file);
         
         const size = 50; // Base size
