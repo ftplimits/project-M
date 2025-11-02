@@ -255,6 +255,61 @@
             return downscaleImage(file, 512, 512);
         };
 
+        // Grid map downscaling with custom quality
+        const downscaleImageWithQuality = (file, maxWidth, maxHeight, quality) => {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const reader = new FileReader();
+                
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                
+                reader.onload = (e) => {
+                    img.onerror = () => reject(new Error('Failed to load image'));
+                    
+                    img.onload = () => {
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        // Calculate new dimensions (preserve aspect ratio)
+                        if (width > maxWidth || height > maxHeight) {
+                            const ratio = Math.min(maxWidth / width, maxHeight / height);
+                            width = Math.round(width * ratio);
+                            height = Math.round(height * ratio);
+                            
+                            console.log(`Downscaling grid map from ${img.width}x${img.height} to ${width}x${height} at ${quality * 100}% quality for performance`);
+                        } else {
+                            console.log(`Grid map ${img.width}x${img.height} is within limits, no downscaling needed`);
+                        }
+                        
+                        // Create canvas and resize
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Use better image smoothing
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        
+                        // Draw resized image
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Use JPEG for grid maps (better compression)
+                        const format = 'image/jpeg';
+                        
+                        console.log(`Saving grid map as ${format} with quality ${quality}`);
+                        
+                        const dataUrl = canvas.toDataURL(format, quality);
+                        resolve(dataUrl);
+                    };
+                    
+                    img.src = e.target.result;
+                };
+                
+                reader.readAsDataURL(file);
+            });
+        };
+
         const Upload = ({ size = 24, className = "" }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -385,6 +440,15 @@
             const [currentDrawing, setCurrentDrawing] = useState(null);
             const [isDrawing, setIsDrawing] = useState(false);
             const drawCanvasRef = useRef(null);
+            
+            // Multi-layer canvas refs for performance optimization
+            const mapCanvasRef = useRef(null);
+            const gridCanvasRef = useRef(null);
+            const tokenCanvasRef = useRef(null);
+            const uiCanvasRef = useRef(null);
+            
+            // Image cache for canvas rendering performance
+            const imageCache = useRef(new Map());
 
             const [tokens, setTokens] = useState([]);
             const [draggedToken, setDraggedToken] = useState(null);
@@ -430,6 +494,11 @@
             const LOCAL_STORAGE_KEY = 'monomyth_vtt_export_v1';
             const AUTOSAVE_KEY = 'monomyth_vtt_autosave_v1';
             const AUTOSAVE_DELAY = 3000; // 3 seconds
+            
+            // Performance optimization constants
+            const GRID_MAP_MAX_WIDTH = 1024;
+            const GRID_MAP_MAX_HEIGHT = 1024;
+            const GRID_MAP_QUALITY = 0.75; // 75% JPEG quality for grid maps
             
             // Auto-save timeout ref
             const autoSaveTimeoutRef = useRef(null);
@@ -2125,8 +2194,13 @@ const handleGridImageUpload = async (e) => {
     if (!file || !file.type.startsWith('image/')) return;
     
     try {
-        // Downscale image before using
-        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        // Downscale grid maps for performance
+        const downscaledDataUrl = await downscaleImageWithQuality(
+            file, 
+            GRID_MAP_MAX_WIDTH, 
+            GRID_MAP_MAX_HEIGHT, 
+            GRID_MAP_QUALITY
+        );
         
         // Load the downscaled image to get dimensions
         const img = new Image();
@@ -3132,6 +3206,238 @@ const handleHandoutUpload = async (e) => {
                     }
                 }
             }, [drawings, currentDrawing, activeScene.grid?.enabled, gridTransform, tokenDragStart, draggedToken, tokens]);
+
+            // ==== MULTI-LAYER CANVAS RENDERING ====
+            
+            // Layer 1: Map Canvas - renders static map images (redraws only on map change)
+            useEffect(() => {
+                const canvas = mapCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                
+                // Render grid images (map backgrounds) with caching
+                const gridImages = (activeScene.images || []).filter(img => img.isGridImage);
+                
+                if (gridImages.length === 0) return;
+                
+                // Load and render images using cache
+                const renderImages = async () => {
+                    ctx.clearRect(0, 0, width, height);
+                    
+                    for (const image of gridImages) {
+                        const displayX = image.x * gridTransform.zoom + gridTransform.panX;
+                        const displayY = image.y * gridTransform.zoom + gridTransform.panY;
+                        const displayWidth = image.width * gridTransform.zoom;
+                        const displayHeight = image.height * gridTransform.zoom;
+                        
+                        // Check cache first
+                        let img = imageCache.current.get(image.src);
+                        if (!img) {
+                            img = new Image();
+                            img.src = image.src;
+                            imageCache.current.set(image.src, img);
+                            
+                            // Wait for new image to load
+                            if (!img.complete) {
+                                await new Promise((resolve, reject) => {
+                                    img.onload = resolve;
+                                    img.onerror = reject;
+                                });
+                            }
+                        }
+                        
+                        if (img.complete) {
+                            ctx.drawImage(img, displayX, displayY, displayWidth, displayHeight);
+                        }
+                    }
+                };
+                
+                renderImages().catch(err => console.error('Map rendering error:', err));
+            }, [activeScene.images, activeScene.grid?.enabled, gridTransform]);
+            
+            // Layer 2: Grid Canvas - renders grid lines (redraws on pan/zoom only)
+            useEffect(() => {
+                const canvas = gridCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                
+                const gridSize = activeScene.grid.size * gridTransform.zoom;
+                const offsetX = gridTransform.panX % gridSize;
+                const offsetY = gridTransform.panY % gridSize;
+                
+                ctx.strokeStyle = activeScene.grid.color;
+                ctx.lineWidth = 1.5 * gridTransform.zoom;
+                ctx.globalAlpha = 0.9;
+                ctx.beginPath();
+                
+                // Viewport culling: only draw visible grid lines
+                const startX = Math.floor(-gridTransform.panX / gridSize) * gridSize;
+                const startY = Math.floor(-gridTransform.panY / gridSize) * gridSize;
+                const endX = startX + width / gridTransform.zoom + gridSize * 2;
+                const endY = startY + height / gridTransform.zoom + gridSize * 2;
+                
+                // Vertical lines
+                for (let x = startX; x <= endX; x += activeScene.grid.size) {
+                    const screenX = x * gridTransform.zoom + gridTransform.panX;
+                    ctx.moveTo(screenX, 0);
+                    ctx.lineTo(screenX, height);
+                }
+                
+                // Horizontal lines
+                for (let y = startY; y <= endY; y += activeScene.grid.size) {
+                    const screenY = y * gridTransform.zoom + gridTransform.panY;
+                    ctx.moveTo(0, screenY);
+                    ctx.lineTo(width, screenY);
+                }
+                
+                ctx.stroke();
+            }, [activeScene.grid, gridTransform]);
+            
+            // Layer 4: Token Canvas - renders tokens (redraws when tokens move)
+            useEffect(() => {
+                const canvas = tokenCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                
+                // Render tokens using image cache
+                const renderTokens = async () => {
+                    for (const token of tokens) {
+                        const baseSize = token.size || 50;
+                        const sizeMultiplier = token.sizeMultiplier || 1;
+                        const actualSize = baseSize * sizeMultiplier;
+                        const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
+                        const transformedY = token.y * gridTransform.zoom + gridTransform.panY;
+                        const transformedSize = actualSize * gridTransform.zoom;
+                        
+                        // Check cache first
+                        let img = imageCache.current.get(token.src);
+                        if (!img) {
+                            img = new Image();
+                            img.src = token.src;
+                            imageCache.current.set(token.src, img);
+                            
+                            // Wait for new image to load
+                            if (!img.complete) {
+                                await new Promise((resolve) => {
+                                    img.onload = resolve;
+                                    img.onerror = resolve; // Continue on error
+                                });
+                            }
+                        }
+                        
+                        if (img.complete) {
+                            ctx.save();
+                            ctx.globalAlpha = token.locked ? 0.5 : 1.0;
+                            
+                            // Draw token as circle (clip to circle)
+                            ctx.beginPath();
+                            ctx.arc(
+                                transformedX + transformedSize / 2, 
+                                transformedY + transformedSize / 2, 
+                                transformedSize / 2, 
+                                0, 
+                                2 * Math.PI
+                            );
+                            ctx.closePath();
+                            ctx.clip();
+                            
+                            ctx.drawImage(img, transformedX, transformedY, transformedSize, transformedSize);
+                            ctx.restore();
+                            
+                            // Draw token name label
+                            if (token.name) {
+                                ctx.save();
+                                const labelY = transformedY + transformedSize - 8;
+                                const fontSize = Math.max(12, transformedSize * 0.16);
+                                ctx.font = `bold ${fontSize}px Times New Roman, serif`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                
+                                // Measure text for background
+                                const text = token.name || 'Token';
+                                const metrics = ctx.measureText(text);
+                                const padding = 6;
+                                const bgX = transformedX + transformedSize / 2 - metrics.width / 2 - padding;
+                                const bgY = labelY - fontSize / 2 - 1;
+                                const bgWidth = metrics.width + padding * 2;
+                                const bgHeight = fontSize + 2;
+                                
+                                // Draw background
+                                ctx.fillStyle = 'rgba(26, 26, 26, 0.95)';
+                                ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
+                                
+                                // Draw text
+                                ctx.fillStyle = '#d4af37';
+                                ctx.fillText(text, transformedX + transformedSize / 2, labelY);
+                                ctx.restore();
+                            }
+                            
+                        }
+                    }
+                };
+                
+                renderTokens().catch(err => console.error('Token rendering error:', err));
+            }, [tokens, activeScene.grid?.enabled, gridTransform]);
+            
+            // Layer 5: UI Canvas - renders pointer and measurement (60fps when active)
+            useEffect(() => {
+                const canvas = uiCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                
+                // Clear canvas - UI elements rendered elsewhere for now
+                ctx.clearRect(0, 0, width, height);
+                
+                // NOTE: Animation loop only starts when needed (pointer active, measurement active, etc.)
+                // This saves CPU cycles when no real-time UI elements are being rendered
+            }, [activeScene.grid?.enabled]);
 
             useEffect(() => {
                 const repositionAvatars = () => {
@@ -4558,8 +4864,71 @@ const handleHandoutUpload = async (e) => {
 
                     {/* Grid Blur Layer - REMOVED: Now applied directly to theatre canvas via filter */}
 
-                    {/* Grid Images - Must render BEFORE Grid SVG for z-index to work */}
-                    {activeScene.grid?.enabled && (activeScene.images || []).filter(image => image.isGridImage).map(image => {
+                    {/* MULTI-LAYER CANVAS ARCHITECTURE - Performance optimized rendering */}
+                    {activeScene.grid?.enabled && (
+                        <>
+                            {/* Layer 1: Map Canvas - Static map images */}
+                            <canvas
+                                ref={mapCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    zIndex: 50,
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                            
+                            {/* Layer 2: Grid Canvas - Grid lines with viewport culling */}
+                            <canvas
+                                ref={gridCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    cursor: isPanning ? 'grabbing' : (drawingTool ? 'crosshair' : 'grab'),
+                                    zIndex: 60,
+                                    pointerEvents: 'all'
+                                }}
+                                onMouseDown={handleGridMouseDown}
+                            />
+                            
+                            {/* Layer 4: Token Canvas - Token rendering */}
+                            <canvas
+                                ref={tokenCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    zIndex: 80,
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                            
+                            {/* Layer 5: UI Canvas - Pointer and measurement (60fps) */}
+                            <canvas
+                                ref={uiCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    zIndex: 90,
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                        </>
+                    )}
+
+                    {/* Grid Images - LEGACY DOM RENDERING - Now handled by Map Canvas */}
+                    {activeScene.grid?.enabled && false && (activeScene.images || []).filter(image => image.isGridImage).map(image => {
     const displayX = image.x * gridTransform.zoom + gridTransform.panX;
     const displayY = image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
     const displayWidth = image.width * gridTransform.zoom;
@@ -4643,8 +5012,86 @@ const handleHandoutUpload = async (e) => {
     );
 })}
 
-                    {/* Grid SVG Layer - On top of images */}
-                    {activeScene.grid?.enabled && (
+                    {/* Grid Image Controls - Interactive overlays for canvas-rendered images */}
+                    {activeScene.grid?.enabled && (isHost || !isConnected) && (activeScene.images || []).filter(image => image.isGridImage).map(image => {
+    const displayX = image.x * gridTransform.zoom + gridTransform.panX;
+    const displayY = image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+    const displayWidth = image.width * gridTransform.zoom;
+    const displayHeight = image.height * gridTransform.zoom;
+    
+    return (
+        <div
+            key={`controls-${image.id}`}
+            className="fixed"
+            style={{
+                left: displayX,
+                top: displayY,
+                width: displayWidth,
+                height: displayHeight,
+                zIndex: 75,
+                pointerEvents: 'none'
+            }}
+        >
+            {/* Image controls - only host (or offline) can see */}
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    toggleImageLock(image.id);
+                }}
+                className="absolute top-1 left-1 p-2 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all z-10"
+                title={image.locked ? 'Unlock' : 'Lock'}
+                style={{ pointerEvents: 'auto' }}
+            >
+                {image.locked ? (
+                    <Lock size={16} className="text-red-500" />
+                ) : (
+                    <Unlock size={16} className="text-amber-500" />
+                )}
+            </button>
+
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    deleteImage(image.id);
+                }}
+                className="absolute top-1 right-1 p-2 bg-zinc-800 hover:bg-red-900 border-2 border-red-700 rounded shadow-lg transition-all z-10"
+                title="Delete"
+                style={{ pointerEvents: 'auto' }}
+            >
+                <X size={16} className="text-red-500" />
+            </button>
+
+            {!image.locked && (
+                <>
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            width: '100%',
+                            height: '100%',
+                            cursor: 'move',
+                            pointerEvents: 'auto'
+                        }}
+                        onMouseDown={(e) => {
+                            if (!image.locked) {
+                                handleImageMouseDown(e, image.id);
+                            }
+                        }}
+                    />
+                    <div
+                        onMouseDown={(e) => handleResizeMouseDown(e, image.id, 'se')}
+                        className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-600 border-2 border-amber-400 rounded-full cursor-se-resize z-10 hover:scale-125 transition-transform"
+                        style={{ pointerEvents: 'auto' }}
+                    />
+                </>
+            )}
+        </div>
+    );
+})}
+
+                    {/* Grid SVG Layer - LEGACY - Now handled by Grid Canvas */}
+                    {activeScene.grid?.enabled && false && (
                         <div
                             className="fixed pointer-events-none"
                             style={{
@@ -4716,7 +5163,8 @@ const handleHandoutUpload = async (e) => {
                         />
                     )}
 
-                    {activeScene.grid?.enabled && tokens.map(token => {
+                    {/* Tokens - LEGACY DOM RENDERING - Now handled by Token Canvas */}
+                    {activeScene.grid?.enabled && false && tokens.map(token => {
     const baseSize = token.size || 50;
     const sizeMultiplier = token.sizeMultiplier || 1;
     const actualSize = baseSize * sizeMultiplier;
@@ -4773,6 +5221,34 @@ const handleHandoutUpload = async (e) => {
     {token.name || 'Token'}
 </div>
         </div>
+    );
+})}
+
+                    {/* Token interaction overlays - Invisible hit zones for canvas-rendered tokens */}
+                    {activeScene.grid?.enabled && tokens.map(token => {
+    const baseSize = token.size || 50;
+    const sizeMultiplier = token.sizeMultiplier || 1;
+    const actualSize = baseSize * sizeMultiplier;
+    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
+    const transformedY = token.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+    const transformedSize = actualSize * gridTransform.zoom;
+    
+    return (
+        <div
+            key={token.id}
+            className="fixed"
+            style={{
+                left: transformedX,
+                top: transformedY,
+                width: transformedSize,
+                height: transformedSize,
+                zIndex: 85,
+                cursor: draggedToken === token.id ? 'grabbing' : 'grab',
+                pointerEvents: 'auto'
+            }}
+            onMouseDown={(e) => handleTokenMouseDown(e, token.id)}
+            onContextMenu={(e) => handleTokenContextMenu(e, token.id)}
+        />
     );
 })}
 
