@@ -385,6 +385,12 @@
             const [currentDrawing, setCurrentDrawing] = useState(null);
             const [isDrawing, setIsDrawing] = useState(false);
             const drawCanvasRef = useRef(null);
+            
+            // Multi-layer canvas refs for performance optimization
+            const mapCanvasRef = useRef(null);
+            const gridCanvasRef = useRef(null);
+            const tokenCanvasRef = useRef(null);
+            const uiCanvasRef = useRef(null);
 
             const [tokens, setTokens] = useState([]);
             const [draggedToken, setDraggedToken] = useState(null);
@@ -3133,6 +3139,178 @@ const handleHandoutUpload = async (e) => {
                 }
             }, [drawings, currentDrawing, activeScene.grid?.enabled, gridTransform, tokenDragStart, draggedToken, tokens]);
 
+            // ==== MULTI-LAYER CANVAS RENDERING ====
+            
+            // Layer 1: Map Canvas - renders static map images (redraws only on map change)
+            useEffect(() => {
+                const canvas = mapCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                
+                // Render grid images (map backgrounds)
+                const gridImages = (activeScene.images || []).filter(img => img.isGridImage);
+                gridImages.forEach(image => {
+                    const displayX = image.x * gridTransform.zoom + gridTransform.panX;
+                    const displayY = image.y * gridTransform.zoom + gridTransform.panY;
+                    const displayWidth = image.width * gridTransform.zoom;
+                    const displayHeight = image.height * gridTransform.zoom;
+                    
+                    const img = new Image();
+                    img.src = image.src;
+                    img.onload = () => {
+                        ctx.drawImage(img, displayX, displayY, displayWidth, displayHeight);
+                    };
+                });
+            }, [activeScene.images, activeScene.grid?.enabled, gridTransform]);
+            
+            // Layer 2: Grid Canvas - renders grid lines (redraws on pan/zoom only)
+            useEffect(() => {
+                const canvas = gridCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                
+                const gridSize = activeScene.grid.size * gridTransform.zoom;
+                const offsetX = gridTransform.panX % gridSize;
+                const offsetY = gridTransform.panY % gridSize;
+                
+                ctx.strokeStyle = activeScene.grid.color;
+                ctx.lineWidth = 1.5 * gridTransform.zoom;
+                ctx.globalAlpha = 0.9;
+                ctx.beginPath();
+                
+                // Viewport culling: only draw visible grid lines
+                const startX = Math.floor(-gridTransform.panX / gridSize) * gridSize;
+                const startY = Math.floor(-gridTransform.panY / gridSize) * gridSize;
+                const endX = startX + width / gridTransform.zoom + gridSize * 2;
+                const endY = startY + height / gridTransform.zoom + gridSize * 2;
+                
+                // Vertical lines
+                for (let x = startX; x <= endX; x += activeScene.grid.size) {
+                    const screenX = x * gridTransform.zoom + gridTransform.panX;
+                    ctx.moveTo(screenX, 0);
+                    ctx.lineTo(screenX, height);
+                }
+                
+                // Horizontal lines
+                for (let y = startY; y <= endY; y += activeScene.grid.size) {
+                    const screenY = y * gridTransform.zoom + gridTransform.panY;
+                    ctx.moveTo(0, screenY);
+                    ctx.lineTo(width, screenY);
+                }
+                
+                ctx.stroke();
+            }, [activeScene.grid, gridTransform]);
+            
+            // Layer 4: Token Canvas - renders tokens (redraws when tokens move)
+            useEffect(() => {
+                const canvas = tokenCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                
+                // Render tokens
+                tokens.forEach(token => {
+                    const baseSize = token.size || 50;
+                    const sizeMultiplier = token.sizeMultiplier || 1;
+                    const actualSize = baseSize * sizeMultiplier;
+                    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
+                    const transformedY = token.y * gridTransform.zoom + gridTransform.panY;
+                    const transformedSize = actualSize * gridTransform.zoom;
+                    
+                    const img = new Image();
+                    img.src = token.src;
+                    img.onload = () => {
+                        ctx.save();
+                        ctx.globalAlpha = token.locked ? 0.5 : 1.0;
+                        ctx.drawImage(img, transformedX, transformedY, transformedSize, transformedSize);
+                        
+                        // Draw token name
+                        if (token.name) {
+                            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                            ctx.fillRect(transformedX, transformedY + transformedSize - 24, transformedSize, 24);
+                            ctx.fillStyle = '#d4af37';
+                            ctx.font = 'bold 12px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText(token.name, transformedX + transformedSize / 2, transformedY + transformedSize - 12);
+                        }
+                        ctx.restore();
+                    };
+                });
+            }, [tokens, activeScene.grid?.enabled, gridTransform]);
+            
+            // Layer 5: UI Canvas - renders pointer and measurement (60fps)
+            useEffect(() => {
+                const canvas = uiCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                
+                let animationFrameId;
+                
+                const render = () => {
+                    ctx.clearRect(0, 0, width, height);
+                    
+                    // This layer can be updated at 60fps for smooth pointer/measurement updates
+                    // For now, it's empty but ready for real-time UI elements
+                    
+                    animationFrameId = requestAnimationFrame(render);
+                };
+                
+                render();
+                
+                return () => {
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                    }
+                };
+            }, [activeScene.grid?.enabled]);
+
             useEffect(() => {
                 const repositionAvatars = () => {
                     if (!viewportRef.current) return;
@@ -4558,8 +4736,71 @@ const handleHandoutUpload = async (e) => {
 
                     {/* Grid Blur Layer - REMOVED: Now applied directly to theatre canvas via filter */}
 
-                    {/* Grid Images - Must render BEFORE Grid SVG for z-index to work */}
-                    {activeScene.grid?.enabled && (activeScene.images || []).filter(image => image.isGridImage).map(image => {
+                    {/* MULTI-LAYER CANVAS ARCHITECTURE - Performance optimized rendering */}
+                    {activeScene.grid?.enabled && (
+                        <>
+                            {/* Layer 1: Map Canvas - Static map images */}
+                            <canvas
+                                ref={mapCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    zIndex: 50,
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                            
+                            {/* Layer 2: Grid Canvas - Grid lines with viewport culling */}
+                            <canvas
+                                ref={gridCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    cursor: isPanning ? 'grabbing' : (drawingTool ? 'crosshair' : 'grab'),
+                                    zIndex: 60,
+                                    pointerEvents: 'all'
+                                }}
+                                onMouseDown={handleGridMouseDown}
+                            />
+                            
+                            {/* Layer 4: Token Canvas - Token rendering */}
+                            <canvas
+                                ref={tokenCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    zIndex: 80,
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                            
+                            {/* Layer 5: UI Canvas - Pointer and measurement (60fps) */}
+                            <canvas
+                                ref={uiCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    zIndex: 90,
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                        </>
+                    )}
+
+                    {/* Grid Images - LEGACY DOM RENDERING - Now handled by Map Canvas */}
+                    {activeScene.grid?.enabled && false && (activeScene.images || []).filter(image => image.isGridImage).map(image => {
     const displayX = image.x * gridTransform.zoom + gridTransform.panX;
     const displayY = image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
     const displayWidth = image.width * gridTransform.zoom;
@@ -4643,8 +4884,86 @@ const handleHandoutUpload = async (e) => {
     );
 })}
 
-                    {/* Grid SVG Layer - On top of images */}
-                    {activeScene.grid?.enabled && (
+                    {/* Grid Image Controls - Interactive overlays for canvas-rendered images */}
+                    {activeScene.grid?.enabled && (isHost || !isConnected) && (activeScene.images || []).filter(image => image.isGridImage).map(image => {
+    const displayX = image.x * gridTransform.zoom + gridTransform.panX;
+    const displayY = image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+    const displayWidth = image.width * gridTransform.zoom;
+    const displayHeight = image.height * gridTransform.zoom;
+    
+    return (
+        <div
+            key={`controls-${image.id}`}
+            className="fixed"
+            style={{
+                left: displayX,
+                top: displayY,
+                width: displayWidth,
+                height: displayHeight,
+                zIndex: 75,
+                pointerEvents: 'none'
+            }}
+        >
+            {/* Image controls - only host (or offline) can see */}
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    toggleImageLock(image.id);
+                }}
+                className="absolute top-1 left-1 p-2 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all z-10"
+                title={image.locked ? 'Unlock' : 'Lock'}
+                style={{ pointerEvents: 'auto' }}
+            >
+                {image.locked ? (
+                    <Lock size={16} className="text-red-500" />
+                ) : (
+                    <Unlock size={16} className="text-amber-500" />
+                )}
+            </button>
+
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    deleteImage(image.id);
+                }}
+                className="absolute top-1 right-1 p-2 bg-zinc-800 hover:bg-red-900 border-2 border-red-700 rounded shadow-lg transition-all z-10"
+                title="Delete"
+                style={{ pointerEvents: 'auto' }}
+            >
+                <X size={16} className="text-red-500" />
+            </button>
+
+            {!image.locked && (
+                <>
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            width: '100%',
+                            height: '100%',
+                            cursor: 'move',
+                            pointerEvents: 'auto'
+                        }}
+                        onMouseDown={(e) => {
+                            if (!image.locked) {
+                                handleImageMouseDown(e, image.id);
+                            }
+                        }}
+                    />
+                    <div
+                        onMouseDown={(e) => handleResizeMouseDown(e, image.id, 'se')}
+                        className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-600 border-2 border-amber-400 rounded-full cursor-se-resize z-10 hover:scale-125 transition-transform"
+                        style={{ pointerEvents: 'auto' }}
+                    />
+                </>
+            )}
+        </div>
+    );
+})}
+
+                    {/* Grid SVG Layer - LEGACY - Now handled by Grid Canvas */}
+                    {activeScene.grid?.enabled && false && (
                         <div
                             className="fixed pointer-events-none"
                             style={{
@@ -4716,7 +5035,8 @@ const handleHandoutUpload = async (e) => {
                         />
                     )}
 
-                    {activeScene.grid?.enabled && tokens.map(token => {
+                    {/* Tokens - LEGACY DOM RENDERING - Now handled by Token Canvas */}
+                    {activeScene.grid?.enabled && false && tokens.map(token => {
     const baseSize = token.size || 50;
     const sizeMultiplier = token.sizeMultiplier || 1;
     const actualSize = baseSize * sizeMultiplier;
@@ -4773,6 +5093,34 @@ const handleHandoutUpload = async (e) => {
     {token.name || 'Token'}
 </div>
         </div>
+    );
+})}
+
+                    {/* Token interaction overlays - Invisible hit zones for canvas-rendered tokens */}
+                    {activeScene.grid?.enabled && tokens.map(token => {
+    const baseSize = token.size || 50;
+    const sizeMultiplier = token.sizeMultiplier || 1;
+    const actualSize = baseSize * sizeMultiplier;
+    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
+    const transformedY = token.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+    const transformedSize = actualSize * gridTransform.zoom;
+    
+    return (
+        <div
+            key={token.id}
+            className="fixed"
+            style={{
+                left: transformedX,
+                top: transformedY,
+                width: transformedSize,
+                height: transformedSize,
+                zIndex: 85,
+                cursor: draggedToken === token.id ? 'grabbing' : 'grab',
+                pointerEvents: 'auto'
+            }}
+            onMouseDown={(e) => handleTokenMouseDown(e, token.id)}
+            onContextMenu={(e) => handleTokenContextMenu(e, token.id)}
+        />
     );
 })}
 
