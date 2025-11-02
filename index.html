@@ -416,69 +416,16 @@
             const importInputRef = useRef(null);
             const tokenInputRef = useRef(null);
             const gridImageInputRef = useRef(null);
+            
+
             const [bouncingAvatarIds, setBouncingAvatarIds] = useState([]);
             const clickTimeoutRef = useRef(null);
-            // Put near top of TheatreCanvas component (where GRID_OFFSET_Y and gridTransform are defined)
-const gridTransformRef = useRef(gridTransform);
-useEffect(() => { gridTransformRef.current = gridTransform; }, [gridTransform]);
-            
-// Parameters you can tune:
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 5;
-const ZOOM_STEP = 1.12; // multiply/divide factor per wheel "tick"
-const ZOOM_SENSITIVITY = 0.0016; // scale applied to deltaY if you want smoother levels
 
-// Zoom-to-cursor handler
-const handleViewportWheel = (e) => {
-  // Only run when wheel is used with no ctrl/meta? adjust if you want ctrl-zoom only
-  e.preventDefault();
-
-  const viewport = viewportRef.current;
-  if (!viewport) return;
-
-  const rect = viewport.getBoundingClientRect();
-
-  // Mouse coords relative to viewport top-left (screen-space)
-  const mouseScreenX = e.clientX - rect.left;
-  const mouseScreenY = e.clientY - rect.top;
-
-  // Read current transform from ref to avoid stale closure
-  const { zoom: oldZoom, panX: oldPanX, panY: oldPanY } = gridTransformRef.current;
-
-  // Option A: Use deltaY to compute an exponential zoom factor for smooth response
-  // Positive deltaY usually means scroll down (zoom out). We map to factor.
-  const delta = e.deltaY;
-  // Option: smoother factor using sensitivity
-  const factor = Math.pow(ZOOM_STEP, -delta * ZOOM_SENSITIVITY);
-  let newZoom = oldZoom * factor;
-
-  // Clamp zoom range
-  newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
-
-  // Convert the mouse screen point to world coordinates using old transform
-  // Remember GRID_OFFSET_Y if your map drawing includes that vertical offset
-  const mouseWorldX = (mouseScreenX - oldPanX) / oldZoom;
-  const mouseWorldY = (mouseScreenY - oldPanY - GRID_OFFSET_Y) / oldZoom;
-
-  // Compute new pan so that mouseWorld maps to same screen coordinate after zoom
-  const newPanX = mouseScreenX - mouseWorldX * newZoom;
-  const newPanY = mouseScreenY - mouseWorldY * newZoom - GRID_OFFSET_Y;
-
-  // Apply the transform (use functional set to avoid race)
-  setGridTransform({ zoom: newZoom, panX: newPanX, panY: newPanY });
-  // Update ref immediately (keeps handler consistent)
-  gridTransformRef.current = { zoom: newZoom, panX: newPanX, panY: newPanY };
-};
-
-// Attach listener on mount to the viewport element and cleanup
-useEffect(() => {
-  const vp = viewportRef.current;
-  if (!vp) return;
-  // Passive must be false to allow preventDefault
-  vp.addEventListener('wheel', handleViewportWheel, { passive: false });
-  return () => vp.removeEventListener('wheel', handleViewportWheel);
-}, []); // mount once
-            
+            const [gridTransform, setGridTransform] = useState({
+                zoom: 1.5,
+                panX: 0,
+                panY: 0
+            });
             const [isPanning, setIsPanning] = useState(false);
             const [panStart, setPanStart] = useState({ x: 0, y: 0 });
             const zoomAnimationRef = useRef(null);
