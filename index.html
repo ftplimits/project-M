@@ -2524,7 +2524,7 @@ const handleAvatarUpload = async (e) => {
     
     // Grid snapping: snap to nearest grid intersection when within 25% threshold
     const gridSize = activeScene.grid?.size || 50;
-    const snapThreshold = gridSize * 0.25;
+    const snapThreshold = gridSize * 0.50;
     
     // Calculate nearest grid intersection
     const nearestGridX = Math.round(worldX / gridSize) * gridSize;
