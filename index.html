@@ -1113,13 +1113,17 @@ useEffect(() => {
                         setAvatars(message.data.avatars || []);
                         setTokens(message.data.tokens || []);
                         setDrawings(message.data.drawings || []);
-                        setActiveSceneIndex(message.data.activeSceneIndex || 0);
-                        setGridTransform(message.data.gridTransform || { zoom: 1, panX: 0, panY: 0 });
+                        setActiveSceneIndex(message.data.activeSceneIndex || 0);                        
                         setDicePresets(message.data.dicePresets || dicePresets);
                         setCharacterSheets(message.data.characterSheets || []);
                         setDiceModifiers(message.data.diceModifiers || {});
                         setPlayers(message.data.players || []);
                         break;
+
+                        if (message.data.gridTransform) {
+    setGridTransform(message.data.gridTransform);
+}
+
 
                     case 'PLAYER_JOIN':
                         console.log('Checking if host... isHostRef.current:', isHostRef.current);
