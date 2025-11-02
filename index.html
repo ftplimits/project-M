@@ -446,6 +446,9 @@
             const gridCanvasRef = useRef(null);
             const tokenCanvasRef = useRef(null);
             const uiCanvasRef = useRef(null);
+            
+            // Image cache for canvas rendering performance
+            const imageCache = useRef(new Map());
 
             const [tokens, setTokens] = useState([]);
             const [draggedToken, setDraggedToken] = useState(null);
@@ -491,6 +494,11 @@
             const LOCAL_STORAGE_KEY = 'monomyth_vtt_export_v1';
             const AUTOSAVE_KEY = 'monomyth_vtt_autosave_v1';
             const AUTOSAVE_DELAY = 3000; // 3 seconds
+            
+            // Performance optimization constants
+            const GRID_MAP_MAX_WIDTH = 1024;
+            const GRID_MAP_MAX_HEIGHT = 1024;
+            const GRID_MAP_QUALITY = 0.75; // 75% JPEG quality for grid maps
             
             // Auto-save timeout ref
             const autoSaveTimeoutRef = useRef(null);
@@ -2186,8 +2194,13 @@ const handleGridImageUpload = async (e) => {
     if (!file || !file.type.startsWith('image/')) return;
     
     try {
-        // Downscale grid maps to 1024x1024 at 75% quality for performance
-        const downscaledDataUrl = await downscaleImageWithQuality(file, 1024, 1024, 0.75);
+        // Downscale grid maps for performance
+        const downscaledDataUrl = await downscaleImageWithQuality(
+            file, 
+            GRID_MAP_MAX_WIDTH, 
+            GRID_MAP_MAX_HEIGHT, 
+            GRID_MAP_QUALITY
+        );
         
         // Load the downscaled image to get dimensions
         const img = new Image();
@@ -3214,40 +3227,44 @@ const handleHandoutUpload = async (e) => {
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.clearRect(0, 0, width, height);
                 
-                // Render grid images (map backgrounds)
+                // Render grid images (map backgrounds) with caching
                 const gridImages = (activeScene.images || []).filter(img => img.isGridImage);
-                let loadedCount = 0;
-                const totalImages = gridImages.length;
                 
-                if (totalImages === 0) return;
+                if (gridImages.length === 0) return;
                 
-                gridImages.forEach(image => {
-                    const displayX = image.x * gridTransform.zoom + gridTransform.panX;
-                    const displayY = image.y * gridTransform.zoom + gridTransform.panY;
-                    const displayWidth = image.width * gridTransform.zoom;
-                    const displayHeight = image.height * gridTransform.zoom;
+                // Load and render images using cache
+                const renderImages = async () => {
+                    ctx.clearRect(0, 0, width, height);
                     
-                    const img = new Image();
-                    img.onload = () => {
-                        // Clear and redraw all images to maintain proper order
-                        ctx.clearRect(0, 0, width, height);
-                        loadedCount++;
+                    for (const image of gridImages) {
+                        const displayX = image.x * gridTransform.zoom + gridTransform.panX;
+                        const displayY = image.y * gridTransform.zoom + gridTransform.panY;
+                        const displayWidth = image.width * gridTransform.zoom;
+                        const displayHeight = image.height * gridTransform.zoom;
                         
-                        // Redraw all loaded images in order
-                        gridImages.forEach(img2 => {
-                            const img2Element = new Image();
-                            img2Element.src = img2.src;
-                            if (img2Element.complete) {
-                                const x = img2.x * gridTransform.zoom + gridTransform.panX;
-                                const y = img2.y * gridTransform.zoom + gridTransform.panY;
-                                const w = img2.width * gridTransform.zoom;
-                                const h = img2.height * gridTransform.zoom;
-                                ctx.drawImage(img2Element, x, y, w, h);
+                        // Check cache first
+                        let img = imageCache.current.get(image.src);
+                        if (!img) {
+                            img = new Image();
+                            img.src = image.src;
+                            imageCache.current.set(image.src, img);
+                            
+                            // Wait for new image to load
+                            if (!img.complete) {
+                                await new Promise((resolve, reject) => {
+                                    img.onload = resolve;
+                                    img.onerror = reject;
+                                });
                             }
-                        });
-                    };
-                    img.src = image.src;
-                });
+                        }
+                        
+                        if (img.complete) {
+                            ctx.drawImage(img, displayX, displayY, displayWidth, displayHeight);
+                        }
+                    }
+                };
+                
+                renderImages().catch(err => console.error('Map rendering error:', err));
             }, [activeScene.images, activeScene.grid?.enabled, gridTransform]);
             
             // Layer 2: Grid Canvas - renders grid lines (redraws on pan/zoom only)
@@ -3318,9 +3335,9 @@ const handleHandoutUpload = async (e) => {
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.clearRect(0, 0, width, height);
                 
-                // Render tokens - use Promise.all to wait for all images to load
-                const tokenPromises = tokens.map(token => {
-                    return new Promise((resolve) => {
+                // Render tokens using image cache
+                const renderTokens = async () => {
+                    for (const token of tokens) {
                         const baseSize = token.size || 50;
                         const sizeMultiplier = token.sizeMultiplier || 1;
                         const actualSize = baseSize * sizeMultiplier;
@@ -3328,8 +3345,23 @@ const handleHandoutUpload = async (e) => {
                         const transformedY = token.y * gridTransform.zoom + gridTransform.panY;
                         const transformedSize = actualSize * gridTransform.zoom;
                         
-                        const img = new Image();
-                        img.onload = () => {
+                        // Check cache first
+                        let img = imageCache.current.get(token.src);
+                        if (!img) {
+                            img = new Image();
+                            img.src = token.src;
+                            imageCache.current.set(token.src, img);
+                            
+                            // Wait for new image to load
+                            if (!img.complete) {
+                                await new Promise((resolve) => {
+                                    img.onload = resolve;
+                                    img.onerror = resolve; // Continue on error
+                                });
+                            }
+                        }
+                        
+                        if (img.complete) {
                             ctx.save();
                             ctx.globalAlpha = token.locked ? 0.5 : 1.0;
                             
@@ -3376,18 +3408,14 @@ const handleHandoutUpload = async (e) => {
                                 ctx.restore();
                             }
                             
-                            resolve();
-                        };
-                        img.onerror = () => resolve(); // Continue even if image fails to load
-                        img.src = token.src;
-                    });
-                });
+                        }
+                    }
+                };
                 
-                // All images loaded
-                Promise.all(tokenPromises).catch(err => console.error('Token rendering error:', err));
+                renderTokens().catch(err => console.error('Token rendering error:', err));
             }, [tokens, activeScene.grid?.enabled, gridTransform]);
             
-            // Layer 5: UI Canvas - renders pointer and measurement (60fps)
+            // Layer 5: UI Canvas - renders pointer and measurement (60fps when active)
             useEffect(() => {
                 const canvas = uiCanvasRef.current;
                 if (!canvas || !activeScene.grid?.enabled) return;
@@ -3404,24 +3432,11 @@ const handleHandoutUpload = async (e) => {
                 const ctx = canvas.getContext('2d');
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 
-                let animationFrameId;
+                // Clear canvas - UI elements rendered elsewhere for now
+                ctx.clearRect(0, 0, width, height);
                 
-                const render = () => {
-                    ctx.clearRect(0, 0, width, height);
-                    
-                    // This layer can be updated at 60fps for smooth pointer/measurement updates
-                    // For now, it's empty but ready for real-time UI elements
-                    
-                    animationFrameId = requestAnimationFrame(render);
-                };
-                
-                render();
-                
-                return () => {
-                    if (animationFrameId) {
-                        cancelAnimationFrame(animationFrameId);
-                    }
-                };
+                // NOTE: Animation loop only starts when needed (pointer active, measurement active, etc.)
+                // This saves CPU cycles when no real-time UI elements are being rendered
             }, [activeScene.grid?.enabled]);
 
             useEffect(() => {
