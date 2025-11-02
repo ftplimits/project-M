@@ -2404,6 +2404,8 @@ const handleAvatarUpload = async (e) => {
                 const token = tokens.find(t => t.id === tokenId);
                 if (!token) return;
                 // Use consistent world-to-screen transformation matching token rendering
+                // Note: Token canvas is positioned at GRID_OFFSET_Y, so rendering uses canvas-relative coords
+                // Mouse events use window-relative coords, so we subtract GRID_OFFSET_Y to convert
                 const screenX = token.x * gridTransform.zoom + gridTransform.panX;
                 const screenY = token.y * gridTransform.zoom + gridTransform.panY;
                 setDraggedToken(tokenId);
@@ -2517,8 +2519,10 @@ const handleAvatarUpload = async (e) => {
 
         if (draggedToken) {
     // Use consistent screen-to-world transformation
+    // Convert window coords to canvas coords, then to world coords
+    const canvasY = e.clientY - GRID_OFFSET_Y;
     const worldX = (e.clientX - tokenDragOffset.x - gridTransform.panX) / gridTransform.zoom;
-    const worldY = ((e.clientY - GRID_OFFSET_Y) - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
+    const worldY = (canvasY - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
     
     // Grid snapping: snap to nearest grid intersection when within 25% threshold
     const gridSize = activeScene.grid?.size || 50;
