@@ -2843,27 +2843,36 @@ const handleHandoutUpload = async (e) => {
 
             const handleGridWheel = (e) => {
                 if (!activeScene.grid?.enabled) return;
-                if (!viewportRef.current) return;
                 
                 e.preventDefault();
+                
+                // Use tokenCanvasRef or viewportRef as the reference canvas
+                const canvas = tokenCanvasRef.current || viewportRef.current;
+                if (!canvas) return;
+                
                 if (zoomAnimationRef.current) {
                     cancelAnimationFrame(zoomAnimationRef.current);
                     zoomAnimationRef.current = null;
                 }
 
-                // Get mouse position relative to viewport element
-                const rect = viewportRef.current.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
+                // Get mouse position in screen space
+                const rect = canvas.getBoundingClientRect();
+                const mouseScreenX = e.clientX - rect.left;
+                const mouseScreenY = e.clientY - rect.top;
+                
                 const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
                 const wheelSpeed = 0.004;  
                 const zoomFactor = Math.exp(-delta * wheelSpeed);
-                const clamp = (v, a = 0.2, b = 6) => Math.max(a, Math.min(b, v));
+                const clamp = (v, a = 0.1, b = 5) => Math.max(a, Math.min(b, v));
+                
                 const startZoom = gridTransform.zoom;
                 const startPanX = gridTransform.panX;
                 const startPanY = gridTransform.panY;
-                const worldX = (mouseX - startPanX) / startZoom;
-                const worldY = (mouseY - startPanY) / startZoom;
+                
+                // Mouse position in world space BEFORE zoom (accounting for GRID_OFFSET_Y)
+                const mouseWorldX = (mouseScreenX - startPanX) / startZoom;
+                const mouseWorldY = (mouseScreenY - startPanY) / startZoom;
+                
                 const targetZoom = clamp(startZoom * zoomFactor);
                 const startTime = performance.now();
                 const duration = 240;
@@ -2875,8 +2884,11 @@ const handleHandoutUpload = async (e) => {
                     const t = Math.min(1, elapsed / duration);
                     const eased = easeInOutCubic(t);
                     const newZoom = startZoom * Math.pow(ratio, eased);
-                    const newPanX = mouseX - worldX * newZoom;
-                    const newPanY = mouseY - worldY * newZoom;
+                    
+                    // Calculate new pan to keep mouse position stable in world space
+                    const newPanX = mouseScreenX - mouseWorldX * newZoom;
+                    const newPanY = mouseScreenY - mouseWorldY * newZoom;
+                    
                     setGridTransform({
                         zoom: newZoom,
                         panX: newPanX,
@@ -3318,20 +3330,32 @@ const handleHandoutUpload = async (e) => {
                 // Grid extends from -50 to +50 cells in both directions
                 const HALF_GRID = GRID_CELLS_TOTAL / 2;
                 
-                // Vertical lines (101 lines for 100 cells)
+                // Calculate grid bounding box in WORLD coordinates
+                const gridBoundsWorldLeft = -HALF_GRID * activeScene.grid.size;
+                const gridBoundsWorldRight = HALF_GRID * activeScene.grid.size;
+                const gridBoundsWorldTop = -HALF_GRID * activeScene.grid.size;
+                const gridBoundsWorldBottom = HALF_GRID * activeScene.grid.size;
+                
+                // Convert grid bounds to SCREEN coordinates
+                const gridBoundsScreenLeft = gridBoundsWorldLeft * gridTransform.zoom + gridTransform.panX;
+                const gridBoundsScreenRight = gridBoundsWorldRight * gridTransform.zoom + gridTransform.panX;
+                const gridBoundsScreenTop = gridBoundsWorldTop * gridTransform.zoom + gridTransform.panY;
+                const gridBoundsScreenBottom = gridBoundsWorldBottom * gridTransform.zoom + gridTransform.panY;
+                
+                // Vertical lines (101 lines for 100 cells) - CLIPPED to grid bounds
                 for (let i = 0; i <= GRID_CELLS_TOTAL; i++) {
                     const worldX = (i - HALF_GRID) * activeScene.grid.size;
                     const screenX = worldX * gridTransform.zoom + gridTransform.panX;
-                    ctx.moveTo(screenX, 0);
-                    ctx.lineTo(screenX, height);
+                    ctx.moveTo(screenX, gridBoundsScreenTop);    // Clipped to grid top
+                    ctx.lineTo(screenX, gridBoundsScreenBottom); // Clipped to grid bottom
                 }
                 
-                // Horizontal lines (101 lines for 100 cells)
+                // Horizontal lines (101 lines for 100 cells) - CLIPPED to grid bounds
                 for (let i = 0; i <= GRID_CELLS_TOTAL; i++) {
                     const worldY = (i - HALF_GRID) * activeScene.grid.size;
                     const screenY = worldY * gridTransform.zoom + gridTransform.panY;
-                    ctx.moveTo(0, screenY);
-                    ctx.lineTo(width, screenY);
+                    ctx.moveTo(gridBoundsScreenLeft, screenY);   // Clipped to grid left
+                    ctx.lineTo(gridBoundsScreenRight, screenY);  // Clipped to grid right
                 }
                 
                 ctx.stroke();
