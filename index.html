@@ -555,7 +555,7 @@
                             setTokens(parsed.tokens || []);
                             setDrawings(parsed.drawings || []);
                             setActiveSceneIndex(parsed.activeSceneIndex || 0);
-                            setGridTransform(parsed.gridTransform || { zoom: 1.25, panX: 0, panY: 0 });
+                            setGridTransformSafe(parsed.gridTransform || { zoom: 1.25, panX: 0, panY: 0 });
                             setDicePresets(parsed.dicePresets || dicePresets);
                             setCharacterSheets(parsed.characterSheets || []);
                             setDiceModifiers(parsed.diceModifiers || {});
@@ -1121,7 +1121,7 @@ useEffect(() => {
                         break;
 
                         if (message.data.gridTransform) {
-    setGridTransform(message.data.gridTransform);
+    setGridTransformSafe(message.data.gridTransform);
 }
 
 
@@ -1295,7 +1295,7 @@ useEffect(() => {
                         break;
 
                     case 'GRID_TRANSFORM':
-                        setGridTransform(message.data);
+                        setGridTransformSafe(message.data);
                         break;
 
                     case 'SCENE_IMAGE_UPDATE':
@@ -2891,7 +2891,7 @@ const handleHandoutUpload = async (e) => {
                     const newPanX = mouseScreenX - mouseWorldX * newZoom;
                     const newPanY = mouseScreenY - mouseWorldY * newZoom;
                     
-                    setGridTransform({
+                    setGridTransformSafe({
                         zoom: newZoom,
                         panX: newPanX,
                         panY: newPanY
@@ -2917,7 +2917,7 @@ const handleHandoutUpload = async (e) => {
             const handleGridMouseMove = (e) => {
                 if (!activeScene.grid?.enabled || !isPanning) return;
                 e.preventDefault();
-                setGridTransform(prev => ({
+                setGridTransformSafe(prev => ({
                     ...prev,
                     panX: e.clientX - panStart.x,
                     panY: (e.clientY - GRID_OFFSET_Y) - panStart.y
@@ -3563,7 +3563,7 @@ const handleHandoutUpload = async (e) => {
                         setTokens(parsed.tokens || []);
                         setDrawings(parsed.drawings || []);
                         setActiveSceneIndex(parsed.activeSceneIndex || 0);
-                        setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
+                        setGridTransformSafe(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
                         setDicePresets(parsed.dicePresets || dicePresets);
                         setCharacterSheets(parsed.characterSheets || []);
                         setDiceModifiers(parsed.diceModifiers || {});
@@ -3631,7 +3631,7 @@ const handleHandoutUpload = async (e) => {
                             setTokens(parsed.tokens || []);
                             setDrawings(parsed.drawings || []);
                             setActiveSceneIndex(parsed.activeSceneIndex || 0);
-                            setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
+                            setGridTransformSafe(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
                             setDicePresets(parsed.dicePresets || dicePresets);
                             setCharacterSheets(parsed.characterSheets || []);
                             setDiceModifiers(parsed.diceModifiers || {});
