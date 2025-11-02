@@ -421,75 +421,13 @@
             const [bouncingAvatarIds, setBouncingAvatarIds] = useState([]);
             const clickTimeoutRef = useRef(null);
 
-            // --- Zoom-to-cursor handler (paste this inside TheatreCanvas, right after gridTransform / refs definitions) ---
-
-// Keep a ref of gridTransform so the wheel handler doesn't close over stale state
-const gridTransformRef = useRef(gridTransform);
-useEffect(() => { gridTransformRef.current = gridTransform; }, [gridTransform]);
-
-// Local interaction guard: while a user is zooming/panning locally, ignore remote camera updates
-const localViewOverrideRef = useRef(false);
-const localViewOverrideTimeout = useRef(null);
-
-// Zoom config (tune as needed)
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 5;
-const ZOOM_STEP = 1.12;           // base multiply factor per wheel delta
-const ZOOM_SENSITIVITY = 0.0016; // tune to make zoom faster/slower
-
-// Wheel handler: zoom-to-cursor and adjust pan so the point under cursor stays fixed
-const handleViewportWheel = (e) => {
-  // Only run for normal wheel events (prevent page scroll)
-  e.preventDefault();
-
-  const vp = viewportRef.current;
-  if (!vp) return;
-
-  const rect = vp.getBoundingClientRect();
-  const mouseScreenX = e.clientX - rect.left;
-  const mouseScreenY = e.clientY - rect.top;
-
-  // Use the ref'd transform to avoid stale closures
-  const { zoom: oldZoom, panX: oldPanX, panY: oldPanY } = gridTransformRef.current;
-
-  // Compute zoom factor from wheel delta (exponential for smooth feel)
-  const delta = e.deltaY;
-  const factor = Math.pow(ZOOM_STEP, -delta * ZOOM_SENSITIVITY);
-  let newZoom = oldZoom * factor;
-  newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom)); // clamp
-
-  // Convert screen point to world coords (before zoom)
-  const mouseWorldX = (mouseScreenX - oldPanX) / oldZoom;
-  const mouseWorldY = (mouseScreenY - oldPanY - GRID_OFFSET_Y) / oldZoom;
-
-  // Compute new pan so the world point remains under cursor
-  const newPanX = mouseScreenX - mouseWorldX * newZoom;
-  const newPanY = mouseScreenY - mouseWorldY * newZoom - GRID_OFFSET_Y;
-
-  // Apply transform
-  setGridTransform({ zoom: newZoom, panX: newPanX, panY: newPanY });
-  gridTransformRef.current = { zoom: newZoom, panX: newPanX, panY: newPanY };
-
-  // Set local override to prevent incoming remote camera writes from snapping us back
-  localViewOverrideRef.current = true;
-  if (localViewOverrideTimeout.current) clearTimeout(localViewOverrideTimeout.current);
-  // clear override after 300ms of no wheel events (tune as needed)
-  localViewOverrideTimeout.current = setTimeout(() => {
-    localViewOverrideRef.current = false;
-    localViewOverrideTimeout.current = null;
-  }, 300);
-};
-
-// Attach wheel listener to viewportRef once (passive:false to allow preventDefault)
-useEffect(() => {
-  const vp = viewportRef.current;
-  if (!vp) return;
-  vp.addEventListener('wheel', handleViewportWheel, { passive: false });
-  return () => {
-    vp.removeEventListener('wheel', handleViewportWheel);
-    if (localViewOverrideTimeout.current) clearTimeout(localViewOverrideTimeout.current);
-  };
-}, []);
+            const [gridTransform, setGridTransform] = useState({
+                zoom: 1.5,
+                panX: 0,
+                panY: 0
+            });
+            const [isPanning, setIsPanning] = useState(false);
+            const [panStart, setPanStart] = useState({ x: 0, y: 0 });
             const zoomAnimationRef = useRef(null);
 
             const [drawingTool, setDrawingTool] = useState(null);
@@ -6697,14 +6635,14 @@ const handleHandoutUpload = async (e) => {
                     <input
                         ref={avatarInputRef}
                         type="file"
-                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        accept="image/jpeg,image/jpg,image/webp"
                         onChange={handleAvatarUpload}
                         className="hidden"
                     />
                     <input
                         ref={tokenInputRef}
                         type="file"
-                        accept="image/png,image/jpeg,image/webp"
+                        accept="image/jpeg,image/webp"
                         onChange={handleTokenUpload}
                         className="hidden"
                     />
