@@ -2856,7 +2856,7 @@ const handleHandoutUpload = async (e) => {
                 // Get mouse position in screen space
                 const rect = canvas.getBoundingClientRect();
                 const mouseScreenX = e.clientX - rect.left;
-                const mouseScreenY = e.clientY - rect.top;
+                const mouseScreenY = e.clientY - GRID_OFFSET_Y - rect.top;
                 
                 const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
                 const wheelSpeed = 0.004;  
