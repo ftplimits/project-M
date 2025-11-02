@@ -255,6 +255,61 @@
             return downscaleImage(file, 512, 512);
         };
 
+        // Grid map downscaling with custom quality
+        const downscaleImageWithQuality = (file, maxWidth, maxHeight, quality) => {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const reader = new FileReader();
+                
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                
+                reader.onload = (e) => {
+                    img.onerror = () => reject(new Error('Failed to load image'));
+                    
+                    img.onload = () => {
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        // Calculate new dimensions (preserve aspect ratio)
+                        if (width > maxWidth || height > maxHeight) {
+                            const ratio = Math.min(maxWidth / width, maxHeight / height);
+                            width = Math.round(width * ratio);
+                            height = Math.round(height * ratio);
+                            
+                            console.log(`Downscaling grid map from ${img.width}x${img.height} to ${width}x${height} at ${quality * 100}% quality for performance`);
+                        } else {
+                            console.log(`Grid map ${img.width}x${img.height} is within limits, no downscaling needed`);
+                        }
+                        
+                        // Create canvas and resize
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Use better image smoothing
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        
+                        // Draw resized image
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Use JPEG for grid maps (better compression)
+                        const format = 'image/jpeg';
+                        
+                        console.log(`Saving grid map as ${format} with quality ${quality}`);
+                        
+                        const dataUrl = canvas.toDataURL(format, quality);
+                        resolve(dataUrl);
+                    };
+                    
+                    img.src = e.target.result;
+                };
+                
+                reader.readAsDataURL(file);
+            });
+        };
+
         const Upload = ({ size = 24, className = "" }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -2131,8 +2186,8 @@ const handleGridImageUpload = async (e) => {
     if (!file || !file.type.startsWith('image/')) return;
     
     try {
-        // Downscale image before using
-        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        // Downscale grid maps to 1024x1024 at 75% quality for performance
+        const downscaledDataUrl = await downscaleImageWithQuality(file, 1024, 1024, 0.75);
         
         // Load the downscaled image to get dimensions
         const img = new Image();
@@ -3161,6 +3216,11 @@ const handleHandoutUpload = async (e) => {
                 
                 // Render grid images (map backgrounds)
                 const gridImages = (activeScene.images || []).filter(img => img.isGridImage);
+                let loadedCount = 0;
+                const totalImages = gridImages.length;
+                
+                if (totalImages === 0) return;
+                
                 gridImages.forEach(image => {
                     const displayX = image.x * gridTransform.zoom + gridTransform.panX;
                     const displayY = image.y * gridTransform.zoom + gridTransform.panY;
@@ -3168,10 +3228,25 @@ const handleHandoutUpload = async (e) => {
                     const displayHeight = image.height * gridTransform.zoom;
                     
                     const img = new Image();
-                    img.src = image.src;
                     img.onload = () => {
-                        ctx.drawImage(img, displayX, displayY, displayWidth, displayHeight);
+                        // Clear and redraw all images to maintain proper order
+                        ctx.clearRect(0, 0, width, height);
+                        loadedCount++;
+                        
+                        // Redraw all loaded images in order
+                        gridImages.forEach(img2 => {
+                            const img2Element = new Image();
+                            img2Element.src = img2.src;
+                            if (img2Element.complete) {
+                                const x = img2.x * gridTransform.zoom + gridTransform.panX;
+                                const y = img2.y * gridTransform.zoom + gridTransform.panY;
+                                const w = img2.width * gridTransform.zoom;
+                                const h = img2.height * gridTransform.zoom;
+                                ctx.drawImage(img2Element, x, y, w, h);
+                            }
+                        });
                     };
+                    img.src = image.src;
                 });
             }, [activeScene.images, activeScene.grid?.enabled, gridTransform]);
             
@@ -3243,35 +3318,73 @@ const handleHandoutUpload = async (e) => {
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.clearRect(0, 0, width, height);
                 
-                // Render tokens
-                tokens.forEach(token => {
-                    const baseSize = token.size || 50;
-                    const sizeMultiplier = token.sizeMultiplier || 1;
-                    const actualSize = baseSize * sizeMultiplier;
-                    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
-                    const transformedY = token.y * gridTransform.zoom + gridTransform.panY;
-                    const transformedSize = actualSize * gridTransform.zoom;
-                    
-                    const img = new Image();
-                    img.src = token.src;
-                    img.onload = () => {
-                        ctx.save();
-                        ctx.globalAlpha = token.locked ? 0.5 : 1.0;
-                        ctx.drawImage(img, transformedX, transformedY, transformedSize, transformedSize);
+                // Render tokens - use Promise.all to wait for all images to load
+                const tokenPromises = tokens.map(token => {
+                    return new Promise((resolve) => {
+                        const baseSize = token.size || 50;
+                        const sizeMultiplier = token.sizeMultiplier || 1;
+                        const actualSize = baseSize * sizeMultiplier;
+                        const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
+                        const transformedY = token.y * gridTransform.zoom + gridTransform.panY;
+                        const transformedSize = actualSize * gridTransform.zoom;
                         
-                        // Draw token name
-                        if (token.name) {
-                            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                            ctx.fillRect(transformedX, transformedY + transformedSize - 24, transformedSize, 24);
-                            ctx.fillStyle = '#d4af37';
-                            ctx.font = 'bold 12px Arial';
-                            ctx.textAlign = 'center';
-                            ctx.textBaseline = 'middle';
-                            ctx.fillText(token.name, transformedX + transformedSize / 2, transformedY + transformedSize - 12);
-                        }
-                        ctx.restore();
-                    };
+                        const img = new Image();
+                        img.onload = () => {
+                            ctx.save();
+                            ctx.globalAlpha = token.locked ? 0.5 : 1.0;
+                            
+                            // Draw token as circle (clip to circle)
+                            ctx.beginPath();
+                            ctx.arc(
+                                transformedX + transformedSize / 2, 
+                                transformedY + transformedSize / 2, 
+                                transformedSize / 2, 
+                                0, 
+                                2 * Math.PI
+                            );
+                            ctx.closePath();
+                            ctx.clip();
+                            
+                            ctx.drawImage(img, transformedX, transformedY, transformedSize, transformedSize);
+                            ctx.restore();
+                            
+                            // Draw token name label
+                            if (token.name) {
+                                ctx.save();
+                                const labelY = transformedY + transformedSize - 8;
+                                const fontSize = Math.max(12, transformedSize * 0.16);
+                                ctx.font = `bold ${fontSize}px Times New Roman, serif`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                
+                                // Measure text for background
+                                const text = token.name || 'Token';
+                                const metrics = ctx.measureText(text);
+                                const padding = 6;
+                                const bgX = transformedX + transformedSize / 2 - metrics.width / 2 - padding;
+                                const bgY = labelY - fontSize / 2 - 1;
+                                const bgWidth = metrics.width + padding * 2;
+                                const bgHeight = fontSize + 2;
+                                
+                                // Draw background
+                                ctx.fillStyle = 'rgba(26, 26, 26, 0.95)';
+                                ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
+                                
+                                // Draw text
+                                ctx.fillStyle = '#d4af37';
+                                ctx.fillText(text, transformedX + transformedSize / 2, labelY);
+                                ctx.restore();
+                            }
+                            
+                            resolve();
+                        };
+                        img.onerror = () => resolve(); // Continue even if image fails to load
+                        img.src = token.src;
+                    });
                 });
+                
+                // All images loaded
+                Promise.all(tokenPromises).catch(err => console.error('Token rendering error:', err));
             }, [tokens, activeScene.grid?.enabled, gridTransform]);
             
             // Layer 5: UI Canvas - renders pointer and measurement (60fps)
