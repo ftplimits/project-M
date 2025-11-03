@@ -299,6 +299,8 @@
                         
                         const dataUrl = canvas.toDataURL(format, quality);
                         resolve(dataUrl);
+
+                        const panSpeed = 0.1; 
                     };
                     
                     img.src = e.target.result;
@@ -2908,20 +2910,20 @@ const handleHandoutUpload = async (e) => {
     if (e.button === 2) {
         e.preventDefault();
         setIsPanning(true);
-        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y });
+        setPanStart({ x: e.clientX, y: e.clientY }); // Remove - GRID_OFFSET_Y for consistency
     }
 };
 
 const handleGridMouseMove = (e) => {
     if (isPanning) {
         const deltaX = (e.clientX - panStart.x) * panSpeed;
-        const deltaY = (e.clientY - panStart.y) * panSpeed;
+        const deltaY = ((e.clientY - GRID_OFFSET_Y) - panStart.y) * panSpeed;  // Adjust for canvas offset
         setGridTransformSafe(prev => ({
             ...prev,
             panX: prev.panX + deltaX,
             panY: prev.panY + deltaY
         }));
-        setPanStart({ x: e.clientX, y: e.clientY });
+        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y });  // Keep consistent with canvas coordinates
     }
 };
             const handleGridMouseUp = (e) => {
