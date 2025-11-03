@@ -298,9 +298,7 @@
                         console.log(`Saving grid map as ${format} with quality ${quality}`);
                         
                         const dataUrl = canvas.toDataURL(format, quality);
-                        resolve(dataUrl);
-
-                        const panSpeed = 0.1; 
+                        resolve(dataUrl);                        
                     };
                     
                     img.src = e.target.result;
@@ -503,6 +501,7 @@ const setGridTransformSafe = (updater) => {
             const activeScene = scenes[activeSceneIndex];
             const GRID_OFFSET_Y = 62;
             const LOCAL_STORAGE_KEY = 'monomyth_vtt_export_v1';
+            const panSpeed = .2;
             const AUTOSAVE_KEY = 'monomyth_vtt_autosave_v1';
             const AUTOSAVE_DELAY = 3000; // 3 seconds
             
@@ -2878,8 +2877,7 @@ const handleHandoutUpload = async (e) => {
     
     const startZoom = gridTransform.zoom;
     const startPanX = gridTransform.panX;
-    const startPanY = gridTransform.panY;
-    const panSpeed = .01;
+    const startPanY = gridTransform.panY;    
     
     // Calculate new zoom instantly
     const newZoom = clampZoom(startZoom * zoomFactor);
