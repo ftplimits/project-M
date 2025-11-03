@@ -2896,17 +2896,7 @@ const handleHandoutUpload = async (e) => {
                     
                     // Calculate new pan to keep mouse position stable in world space
                     const newPanX = mouseScreenX - mouseWorldX * newZoom;
-                    const newPanY = mouseScreenY - mouseWorldY * newZoom;
-                    
-                    const gridTransformRef = useRef(gridTransform);
-
-const setGridTransformSafe = (updater) => {
-    setGridTransform(prev => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        gridTransformRef.current = next;
-        return next;
-    });
-};
+                    const newPanY = mouseScreenY - mouseWorldY * newZoom;                    
 
                     if (t < 1) {
                         zoomAnimationRef.current = requestAnimationFrame(step);
@@ -2934,11 +2924,11 @@ const setGridTransformSafe = (updater) => {
     const newPanX = Math.max(-maxPan, Math.min(maxPan, e.clientX - panStart.x));
     const newPanY = Math.max(-maxPan, Math.min(maxPan, (e.clientY - GRID_OFFSET_Y) - panStart.y));
     
-    setGridTransformSafe({
-    zoom: newZoom,
-    panX: newPanX,
-    panY: newPanY
-});
+    setGridTransformSafe(prev => ({
+        ...prev,
+        panX: newPanX,
+        panY: newPanY
+    }));
 };
 
             const handleGridMouseUp = (e) => {
