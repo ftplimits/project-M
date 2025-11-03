@@ -2882,57 +2882,18 @@ const handleHandoutUpload = async (e) => {
     const centerWorldX = (centerScreenX - startPanX) / startZoom;
     const centerWorldY = (centerScreenY - startPanY) / startZoom;
     
-    const targetZoom = clamp(startZoom * zoomFactor);
-    const startTime = performance.now();
-    const duration = 240;
-    const ratio = targetZoom / startZoom;
-    const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-    const step = (now) => {
-        const elapsed = now - startTime;
-        const t = Math.min(1, elapsed / duration);
-        const eased = easeInOutCubic(t);
-        const newZoom = startZoom * Math.pow(ratio, eased);
-        
-        // Calculate new pan to keep screen center stable in world space
-        const newPanX = centerScreenX - centerWorldX * newZoom;
-        const newPanY = centerScreenY - centerWorldY * newZoom;
-        
-        // Update the state with the new transform values (no pan clamping)
-        setGridTransformSafe({ zoom: newZoom, panX: newPanX, panY: newPanY });
-        
-        if (t < 1) {
-            zoomAnimationRef.current = requestAnimationFrame(step);
-        } else {
-            zoomAnimationRef.current = null;
-        }
-    };
-    zoomAnimationRef.current = requestAnimationFrame(step);
-};
-
-            const handleGridMouseDown = (e) => {
-    if (!activeScene.grid?.enabled) return;
-    if (e.button === 2) {
-        e.preventDefault();
-        setIsPanning(true);
-        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y });
-    }
-};
-
-const handleGridMouseMove = (e) => {
-    if (!activeScene.grid?.enabled || !isPanning) return;
-    e.preventDefault();
+    const newZoom = clamp(startZoom * zoomFactor);
     
-    const deltaX = (e.clientX - panStart.x) * panSpeed;
-    const deltaY = ((e.clientY - GRID_OFFSET_Y) - panStart.y) * panSpeed;
-    const newPanX = gridTransform.panX + deltaX;
-    const newPanY = gridTransform.panY + deltaY;
+    // Calculate new pan to keep screen center stable in world space (no clamping)
+    const newPanX = centerScreenX - centerWorldX * newZoom;
+    const newPanY = centerScreenY - centerWorldY * newZoom;
     
-    setGridTransformSafe(prev => ({
-        ...prev,
+    // Set instantly (no animation)
+    setGridTransformSafe({
+        zoom: newZoom,
         panX: newPanX,
         panY: newPanY
-    }));
+    });
 };
 
             const handleGridMouseUp = (e) => {
