@@ -2890,29 +2890,31 @@ const handleHandoutUpload = async (e) => {
     const maxPan = 10000; // Cap at ±10,000px (twice the grid size)
 
     const step = (now) => {
-        const elapsed = now - startTime;
-        const t = Math.min(1, elapsed / duration);
-        const eased = easeInOutCubic(t);
-        const newZoom = startZoom * Math.pow(ratio, eased);
-        
-        // Calculate new pan to keep mouse position stable in world space
-        const newPanX = mouseScreenX - mouseWorldX * newZoom;
-        const newPanY = mouseScreenY - mouseWorldY * newZoom;
-        const clampedPanX = Math.max(-maxPan, Math.min(maxPan, newPanX));
-        const clampedPanY = Math.max(-maxPan, Math.min(maxPan, newPanY));
-        
-        setGridTransformSafe({
-            zoom: newZoom,
-            panX: newPanX,
-            panY: newPanY
-        });
-        
-        if (t < 1) {
-            zoomAnimationRef.current = requestAnimationFrame(step);
-        } else {
-            zoomAnimationRef.current = null;
-        }
-    };
+    const elapsed = now - startTime;
+    const t = Math.min(1, elapsed / duration);
+    const eased = easeInOutCubic(t);
+    const newZoom = startZoom * Math.pow(ratio, eased);
+    
+    // Calculate new pan to keep mouse position stable in world space
+    const newPanX = mouseScreenX - mouseWorldX * newZoom;
+    const newPanY = mouseScreenY - mouseWorldY * newZoom;
+    
+    // Clamp pan values to prevent snapping during later panning
+    const clampedPanX = Math.max(-maxPan, Math.min(maxPan, newPanX));
+    const clampedPanY = Math.max(-maxPan, Math.min(maxPan, newPanY));
+    
+    setGridTransformSafe({
+        zoom: newZoom,
+        panX: clampedPanX,  // Use clamped values here
+        panY: clampedPanY
+    });
+    
+    if (t < 1) {
+        zoomAnimationRef.current = requestAnimationFrame(step);
+    } else {
+        zoomAnimationRef.current = null;
+    }
+};
     zoomAnimationRef.current = requestAnimationFrame(step);
 };
 
