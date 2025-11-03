@@ -831,9 +831,9 @@ useEffect(() => {
                             { urls: 'stun:stun2.l.google.com:19302' },
                             { urls: 'stun:stun3.l.google.com:19302' },
                             { urls: 'stun:stun4.l.google.com:19302' }
-                        ]
-                    }
-                });
+                ]
+            }
+        });
                 
                 newPeer.on('open', (id) => {
                     console.log('Host peer opened with ID:', id);
@@ -989,7 +989,7 @@ useEffect(() => {
                                 clipboardNotificationTimeoutRef.current = setTimeout(() => {
                                     setClipboardNotification(false);
                                     clipboardNotificationTimeoutRef.current = null;
-                                }, 3000);
+                                }, 2000);
                             })
                             .catch(err => {
                                 console.warn('Could not copy shareable link to clipboard:', err);
@@ -1643,7 +1643,7 @@ useEffect(() => {
                             // Trigger bounce animation
                             setBouncingAvatarIds(prev => {
                                 if (prev.includes(selectedAvatar.id)) return prev;
-                                return [...prev, selectedAvatar.id];
+                                return [...prev, avatarId];
                             });
                             setTimeout(() => {
                                 setBouncingAvatarIds(prev => prev.filter(id => id !== selectedAvatar.id));
@@ -3562,7 +3562,7 @@ const handleGridMouseMove = (e) => {
                         setTokens(parsed.tokens || []);
                         setDrawings(parsed.drawings || []);
                         setActiveSceneIndex(parsed.activeSceneIndex || 0);
-                        setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
+                        setGridTransform(parsed.gridTransform || { zoom: 1.25, panX: 0, panY: 0 });
                         setDicePresets(parsed.dicePresets || dicePresets);
                         setCharacterSheets(parsed.characterSheets || []);
                         setDiceModifiers(parsed.diceModifiers || {});
@@ -3604,66 +3604,58 @@ const handleGridMouseMove = (e) => {
             };
 
             const handleImportFile = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    try {
-                        const parsed = JSON.parse(event.target.result);
-                        if (parsed.scenes) {
-                            if (!confirm('Importing a file will replace your current scenes and state. Proceed?')) {
-                                e.target.value = '';
-                                return;
-                            }
-                            if (parsed.avatars) {
-                                setAvatars(parsed.avatars.map(a => ({ ...a, flipped: !!a.flipped })));
-                            } else {
-                                const collected = [];
-                                parsed.scenes.forEach(s => {
-                                    if (Array.isArray(s.avatars)) {
-                                        collected.push(...s.avatars);
-                                    }
-                                });
-                                if (collected.length > 0) {
-                                    setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
-                                    } else {
-                                        setAvatars([]);
-                                    }
-                                }
-                            }
-                            setScenes(parsed.scenes);
-                            setTokens(parsed.tokens || []);
-                            setDrawings(parsed.drawings || []);
-                            setActiveSceneIndex(parsed.activeSceneIndex || 0);
-                            setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
-                            setDicePresets(parsed.dicePresets || dicePresets);
-                            setCharacterSheets(parsed.characterSheets || []);
-                            setDiceModifiers(parsed.diceModifiers || {});
-                            alert('Import successful.');
-                        } else if (Array.isArray(parsed)) {
-                            if (!confirm('Importing a file will replace your current scenes. Proceed?')) {
-                                e.target.value = '';
-                                return;
-                            }
-                            const collected = [];
-                            parsed.forEach(s => {
-                                if (Array.isArray(s.avatars)) collected.push(...s.avatars);
-                            });
-                            setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
-                            setScenes(parsed);
-                            alert('Import successful (scenes only).');
-                        } else {
-                            alert('Invalid import file format.');
-                        }
-                    } catch (err) {
-                        console.error('Import failed', err);
-                        alert('Import failed (see console).');
-                    } finally {
-                        e.target.value = '';
+    try {
+        const parsed = JSON.parse(e.target.result);
+        if (parsed.scenes) {
+            if (!confirm('Importing a file will replace your current scenes and state. Proceed?')) {
+                e.target.value = '';
+                return;
+            }
+            if (parsed.avatars) {
+                setAvatars(parsed.avatars.map(a => ({ ...a, flipped: !!a.flipped })));
+            } else {
+                const collected = [];
+                parsed.scenes.forEach(s => {
+                    if (Array.isArray(s.avatars)) {
+                        collected.push(...s.avatars);
                     }
-                };
-                reader.readAsText(file);
-            };
+                });
+                if (collected.length > 0) {
+                    setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
+                } else {
+                    setAvatars([]);
+                }
+            }
+            setScenes(parsed.scenes);
+            setTokens(parsed.tokens || []);
+            setDrawings(parsed.drawings || []);
+            setActiveSceneIndex(parsed.activeSceneIndex || 0);
+            setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
+            setDicePresets(parsed.dicePresets || dicePresets);
+            setCharacterSheets(parsed.characterSheets || []);
+            setDiceModifiers(parsed.diceModifiers || {});
+            alert('Import successful.');
+        } else if (Array.isArray(parsed)) {
+            if (!confirm('Importing a file will replace your current scenes. Proceed?')) {
+                e.target.value = '';
+                return;
+            }
+            const collected = [];
+            parsed.forEach(s => {
+                if (Array.isArray(s.avatars)) collected.push(...s.avatars);
+            });
+            setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
+            setScenes(parsed);
+            alert('Import successful (scenes only).');
+        } else {
+            alert('Invalid import file format.');
+        }
+    } catch (err) {
+        console.error('Import failed', err);
+        alert('Import failed (see console).');
+    }
+    e.target.value = '';
+};
 
             return (
                 <div className="w-full h-screen bg-zinc-900 flex flex-col overflow-hidden relative">
