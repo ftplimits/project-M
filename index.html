@@ -1602,6 +1602,13 @@ useEffect(() => {
                 }
             }, [scenes]);
 
+            // Sync grid transform when it changes (only if host)
+            useEffect(() => {
+                if (isHost && isConnected) {
+                    broadcastState('GRID_TRANSFORM', gridTransform);
+                }
+            }, [gridTransform, isHost, isConnected]);
+
             // Automatic avatar animations - adds life to the table!
             useEffect(() => {
                 const remainingAvatarsRef = { current: [] };
@@ -5088,47 +5095,29 @@ const handleGridMouseMove = (e) => {
                     <Lock size={16} className="text-red-500" />
                 ) : (
                     <Unlock size={16} className="text-amber-500" />
-                )}
-            </button>
+                        )}
+                    </button>
 
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    deleteImage(image.id);
-                }}
-                className="absolute top-1 right-1 p-2 bg-zinc-800 hover:bg-red-900 border-2 border-red-700 rounded shadow-lg transition-all z-10"
-                title="Delete"
-                style={{ pointerEvents: 'auto' }}
-            >
-                <X size={16} className="text-red-500" />
-            </button>
-
-            {!image.locked && (
-                <>
-                    <div
-                        style={{
-                            position: 'absolute',
-                            left: 0,
-                            top: 0,
-                            width: '100%',
-                            height: '100%',
-                            cursor: 'move',
-                            pointerEvents: 'auto'
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            deleteImage(image.id);
                         }}
-                        onMouseDown={(e) => {
-                            if (!image.locked) {
-                                handleImageMouseDown(e, image.id);
-                            }
-                        }}
-                    />
-                    <div
-                        onMouseDown={(e) => handleResizeMouseDown(e, image.id, 'se')}
-                        className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-600 border-2 border-amber-400 rounded-full cursor-se-resize z-10 hover:scale-125 transition-transform"
+                        className="absolute top-1 right-1 p-2 bg-zinc-800 hover:bg-red-900 border-2 border-red-700 rounded shadow-lg transition-all z-10"
+                        title="Delete"
                         style={{ pointerEvents: 'auto' }}
-                    />
-                </>
-            )}
-        </div>
+                    >
+                        <X size={16} className="text-red-500" />
+                    </button>
+
+                    {!image.locked && (
+                        <div
+                            onMouseDown={(e) => handleResizeMouseDown(e, image.id, 'se')}
+                            className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-600 border-2 border-amber-400 rounded-full cursor-se-resize z-10 hover:scale-125 transition-transform"
+                            style={{ pointerEvents: 'auto' }}
+                        />
+                    )}
+                </div>
     );
 })}
 
