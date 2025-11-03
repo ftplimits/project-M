@@ -2867,8 +2867,8 @@ const handleHandoutUpload = async (e) => {
 
     // Get mouse position in screen space
     const rect = canvas.getBoundingClientRect();
-    const mouseScreenX = e.clientX - rect.left;
-    const mouseScreenY = e.clientY - rect.top;
+    const mouseScreenX = e.clientX;
+    const mouseScreenY = e.clientY;
     
     const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
     const wheelSpeed = 0.004;  
@@ -2908,20 +2908,20 @@ const handleHandoutUpload = async (e) => {
     if (e.button === 2) {
         e.preventDefault();
         setIsPanning(true);
-        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y }); // Use canvas-relative coordinates
+        setPanStart({ x: e.clientX, y: e.clientY });
     }
 };
 
 const handleGridMouseMove = (e) => {
     if (isPanning) {
         const deltaX = (e.clientX - panStart.x) * panSpeed;
-        const deltaY = ((e.clientY - GRID_OFFSET_Y) - panStart.y) * panSpeed; // Adjust for canvas offset
-        setGridTransformSafe(prev => ({
-            ...prev,
-            panX: prev.panX + deltaX,
-            panY: prev.panY + deltaY
-        }));
-        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y }); // Keep consistent with canvas coordinates
+const deltaY = (e.clientY - panStart.y) * panSpeed;
+setGridTransformSafe(prev => ({
+    ...prev,
+    panX: prev.panX + deltaX,
+    panY: prev.panY + deltaY
+}));
+setPanStart({ x: e.clientX, y: e.clientY });
     }
 };
             const handleGridMouseUp = (e) => {
@@ -3078,6 +3078,7 @@ const handleGridMouseMove = (e) => {
                 ctx.clearRect(0, 0, width, height);
                 const worldToScreenX = wx => wx * gridTransform.zoom + gridTransform.panX;
                 const worldToScreenY = wy => wy * gridTransform.zoom + gridTransform.panY;
+                ctx.moveTo(worldToScreenX(worldX), worldToScreenY(worldY) - GRID_OFFSET_Y);
 
                 drawings.forEach(drawing => {
                     const baseWidth = 3;
@@ -3388,7 +3389,8 @@ const handleGridMouseMove = (e) => {
                         const sizeMultiplier = token.sizeMultiplier || 1;
                         const actualSize = baseSize * sizeMultiplier;
                         const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
-                        const transformedY = token.y * gridTransform.zoom + gridTransform.panY;
+                        const transformedY = token.y * gridTransform.zoom + gridTransform.panY - GRID_OFFSET_Y;
+                        ctx.drawImage(img, transformedX, transformedY, transformedSize, transformedSize);
                         const transformedSize = actualSize * gridTransform.zoom;
                         
                         // Check cache first
@@ -5214,8 +5216,13 @@ const handleGridMouseMove = (e) => {
     const baseSize = token.size || 50;
     const sizeMultiplier = token.sizeMultiplier || 1;
     const actualSize = baseSize * sizeMultiplier;
-    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
-    const transformedY = token.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+    const screenX = token.x * gridTransform.zoom + gridTransform.panX;
+const screenY = token.y * gridTransform.zoom + gridTransform.panY;
+setTokenDragOffset({
+    x: e.clientX - screenX,
+    y: e.clientY - screenY
+});
+
     const transformedSize = actualSize * gridTransform.zoom;
     
     return (
@@ -5275,8 +5282,8 @@ const handleGridMouseMove = (e) => {
     const baseSize = token.size || 50;
     const sizeMultiplier = token.sizeMultiplier || 1;
     const actualSize = baseSize * sizeMultiplier;
-    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
-    const transformedY = token.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+    const worldX = (e.clientX - tokenDragOffset.x - gridTransform.panX) / gridTransform.zoom;
+    const worldY = (e.clientY - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
     const transformedSize = actualSize * gridTransform.zoom;
     
     return (
