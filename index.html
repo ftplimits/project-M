@@ -426,17 +426,6 @@
                 panX: 0,
                 panY: 0
             });
-
-            const gridTransformRef = useRef(gridTransform);
-
-const setGridTransformSafe = (updater) => {
-    setGridTransform(prev => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        gridTransformRef.current = next;
-        return next;
-    });
-};
-
             const [isPanning, setIsPanning] = useState(false);
             const [panStart, setPanStart] = useState({ x: 0, y: 0 });
             const zoomAnimationRef = useRef(null);
@@ -2867,17 +2856,16 @@ const handleHandoutUpload = async (e) => {
                 // Get mouse position in screen space
                 const rect = canvas.getBoundingClientRect();
                 const mouseScreenX = e.clientX - rect.left;
-                const mouseScreenY = e.clientY - GRID_OFFSET_Y - rect.top;
+                const mouseScreenY = e.clientY - rect.top;
                 
                 const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
                 const wheelSpeed = 0.004;  
                 const zoomFactor = Math.exp(-delta * wheelSpeed);
                 const clamp = (v, a = 0.1, b = 5) => Math.max(a, Math.min(b, v));
                 
-                const startZoom = gridTransformRef.current.zoom;
-                const startPanX = gridTransformRef.current.panX;
-                const startPanY = gridTransformRef.current.panY;
-
+                const startZoom = gridTransform.zoom;
+                const startPanX = gridTransform.panX;
+                const startPanY = gridTransform.panY;
                 
                 // Mouse position in world space BEFORE zoom (accounting for GRID_OFFSET_Y)
                 const mouseWorldX = (mouseScreenX - startPanX) / startZoom;
@@ -2899,16 +2887,11 @@ const handleHandoutUpload = async (e) => {
                     const newPanX = mouseScreenX - mouseWorldX * newZoom;
                     const newPanY = mouseScreenY - mouseWorldY * newZoom;
                     
-                    const gridTransformRef = useRef(gridTransform);
-
-const setGridTransformSafe = (updater) => {
-    setGridTransform(prev => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        gridTransformRef.current = next;
-        return next;
-    });
-};
-
+                    setGridTransform({
+                        zoom: newZoom,
+                        panX: newPanX,
+                        panY: newPanY
+                    });
                     if (t < 1) {
                         zoomAnimationRef.current = requestAnimationFrame(step);
                     } else {
@@ -2930,12 +2913,11 @@ const setGridTransformSafe = (updater) => {
             const handleGridMouseMove = (e) => {
                 if (!activeScene.grid?.enabled || !isPanning) return;
                 e.preventDefault();
-                setGridTransformSafe(prev => ({
-    ...prev,
-    panX: e.clientX - panStart.x,
-    panY: (e.clientY - GRID_OFFSET_Y) - panStart.y
-}));
-
+                setGridTransform(prev => ({
+                    ...prev,
+                    panX: e.clientX - panStart.x,
+                    panY: (e.clientY - GRID_OFFSET_Y) - panStart.y
+                }));
             };
 
             const handleGridMouseUp = (e) => {
@@ -2964,16 +2946,15 @@ const setGridTransformSafe = (updater) => {
             }, [isPanning, panStart, gridTransform.panX, gridTransform.panY, activeScene.grid?.enabled]);
 
             useEffect(() => {
-    if (activeScene.grid?.enabled) {
-        document.addEventListener('wheel', handleGridWheel, { passive: false });
-        document.addEventListener('contextmenu', handleGridContextMenu);
-        return () => {
-            document.removeEventListener('wheel', handleGridWheel);
-            document.removeEventListener('contextmenu', handleGridContextMenu);
-        };
-    }
-}, [activeScene.grid?.enabled, gridTransform.zoom]);
-
+                if (activeScene.grid?.enabled) {
+                    document.addEventListener('wheel', handleGridWheel, { passive: false });
+                    document.addEventListener('contextmenu', handleGridContextMenu);
+                    return () => {
+                        document.removeEventListener('wheel', handleGridWheel);
+                        document.removeEventListener('contextmenu', handleGridContextMenu);
+                    };
+                }
+            }, [activeScene.grid?.enabled, gridTransform.zoom]);
 
             useEffect(() => {
                 const handleClick = () => {
@@ -6654,14 +6635,14 @@ const setGridTransformSafe = (updater) => {
                     <input
                         ref={avatarInputRef}
                         type="file"
-                        accept="image/jpeg,image/jpg,image/webp"
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
                         onChange={handleAvatarUpload}
                         className="hidden"
                     />
                     <input
                         ref={tokenInputRef}
                         type="file"
-                        accept="image/jpeg,image/webp"
+                        accept="image/png,image/jpeg,image/webp"
                         onChange={handleTokenUpload}
                         className="hidden"
                     />
