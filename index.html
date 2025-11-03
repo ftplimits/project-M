@@ -5224,7 +5224,7 @@ const handleGridMouseMove = (e) => {
             className="fixed"
             style={{
                 left: transformedX,
-                top: transformedY,
+                top: transformedY + GRID_OFFSET_Y,  // <-- Add the offset
                 width: transformedSize,
                 height: transformedSize,
                 zIndex: 100,
@@ -5285,7 +5285,7 @@ const handleGridMouseMove = (e) => {
             className="fixed"
             style={{
                 left: transformedX,
-                top: transformedY,
+                top: transformedY + GRID_OFFSET_Y,  // <-- Add the offset
                 width: transformedSize,
                 height: transformedSize,
                 zIndex: 85,
