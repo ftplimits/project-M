@@ -176,8 +176,7 @@
     <script type="text/babel">
         const { useState, useRef, useEffect } = React;
 
-        // Constants
-        const panSpeed = .5;
+        // Constants        
         const DEFAULT_HOST_NAME = 'Host';
         const AUTO_FADE_DURATION = 3000; // 3 seconds
         const MESSAGE_DELIVERY_DELAY = 500; 
@@ -357,6 +356,7 @@
 
         const TheatreCanvas = () => {
             // MULTIPLAYER STATE
+            const panSpeed = .4;
             const [peer, setPeer] = useState(null);
             const [myPeerId, setMyPeerId] = useState('');
             const [isHost, setIsHost] = useState(false);
