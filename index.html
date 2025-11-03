@@ -2915,11 +2915,10 @@ const handleGridMouseMove = (e) => {
     if (!activeScene.grid?.enabled || !isPanning) return;
     e.preventDefault();
     
-    const maxPan = 10000; // Cap at ±10,000px (twice the grid size)
     const deltaX = e.clientX - panStart.x;
     const deltaY = (e.clientY - GRID_OFFSET_Y) - panStart.y;
-    const newPanX = Math.max(-maxPan, Math.min(maxPan, gridTransform.panX + deltaX));
-    const newPanY = Math.max(-maxPan, Math.min(maxPan, gridTransform.panY + deltaY));
+    const newPanX = gridTransform.panX + deltaX;
+    const newPanY = gridTransform.panY + deltaY;
     
     setGridTransformSafe(prev => ({
         ...prev,
