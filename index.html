@@ -378,7 +378,7 @@
             const throttledHostTokenBroadcast = useRef(null);
             const isHostRef = useRef(false);
             const isConnectedRef = useRef(false);
-            const panSpeed = .5; // Adjust this value: < 1.0 for slower, > 1.0 for faster
+            const panSpeed = .1; // Adjust this value: < 1.0 for slower, > 1.0 for faster
             
             // NEW ADMISSION SYSTEM STATE
             const [pendingJoinRequests, setPendingJoinRequests] = useState([]);
@@ -2865,67 +2865,35 @@ const handleHandoutUpload = async (e) => {
         zoomAnimationRef.current = null;
     }
 
-    // Get mouse position in screen space
-    const rect = canvas.getBoundingClientRect();
-    const mouseScreenX = e.clientX - rect.left;
-    const mouseScreenY = e.clientY - rect.top;
+    // Get screen center coordinates (adjusted for grid offset)
+    const centerScreenX = window.innerWidth / 2;
+    const centerScreenY = window.innerHeight / 2 - GRID_OFFSET_Y;
     
     const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
     const wheelSpeed = 0.004;  
     const zoomFactor = Math.exp(-delta * wheelSpeed);
-    const clampZoom = (v, a = 0.1, b = 5) => Math.max(a, Math.min(b, v));
+    const clamp = (v, a = 0.1, b = 5) => Math.max(a, Math.min(b, v));
     
     const startZoom = gridTransform.zoom;
     const startPanX = gridTransform.panX;
     const startPanY = gridTransform.panY;
+
+    // Screen center in world space BEFORE zoom
+    const centerWorldX = (centerScreenX - startPanX) / startZoom;
+    const centerWorldY = (centerScreenY - startPanY) / startZoom;
     
-    // Calculate new zoom instantly
-    const newZoom = clampZoom(startZoom * zoomFactor);
+    const newZoom = clamp(startZoom * zoomFactor);
     
-    // Mouse position in world space BEFORE zoom
-    const mouseWorldX = (mouseScreenX - startPanX) / startZoom;
-    const mouseWorldY = (mouseScreenY - startPanY) / startZoom;
+    // Calculate new pan to keep screen center stable in world space (no clamping)
+    const newPanX = centerScreenX - centerWorldX * newZoom;
+    const newPanY = centerScreenY - centerWorldY * newZoom;
     
-    // Calculate new pan to keep mouse position stable in world space
-    let newPanX = mouseScreenX - mouseWorldX * newZoom;
-    let newPanY = mouseScreenY - mouseWorldY * newZoom;
-    
-    // Clamp pan values to limits
-    const maxPan = 10000; // Cap at ±10,000px (twice the grid size)
-    const clampedPanX = Math.max(-maxPan, Math.min(maxPan, newPanX));
-    const clampedPanY = Math.max(-maxPan, Math.min(maxPan, newPanY));
-    
-    // Set the new transform instantly (no animation)
+    // Set instantly (no animation)
     setGridTransformSafe({
         zoom: newZoom,
-        panX: clampedPanX,
-        panY: clampedPanY
-    });
-};
-
-            const handleGridMouseDown = (e) => {
-    if (!activeScene.grid?.enabled) return;
-    if (e.button === 2) {
-        e.preventDefault();
-        setIsPanning(true);
-        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y });
-    }
-};
-
-const handleGridMouseMove = (e) => {
-    if (!activeScene.grid?.enabled || !isPanning) return;
-    e.preventDefault();
-    
-    const deltaX = (e.clientX - panStart.x) * panSpeed;
-    const deltaY = ((e.clientY - GRID_OFFSET_Y) - panStart.y) * panSpeed;
-    const newPanX = gridTransform.panX + deltaX;
-    const newPanY = gridTransform.panY + deltaY;
-    
-    setGridTransformSafe(prev => ({
-        ...prev,
         panX: newPanX,
         panY: newPanY
-    }));
+    });
 };
 
             const handleGridMouseUp = (e) => {
@@ -3029,6 +2997,35 @@ const handleGridMouseMove = (e) => {
                         }
                     }
                 };
+
+                // Add these inside TheatreCanvas, before "return ("
+const handleGridMouseDown = (e) => {
+  if (!activeScene.grid?.enabled) return;
+  if (e.button === 2) { // Right mouse button
+    e.preventDefault();
+    setIsPanning(true);
+    setPanStart({ x: e.clientX, y: e.clientY });
+  }
+};
+
+const handleGridMouseMove = (e) => {
+  if (!activeScene.grid?.enabled || !isPanning) return;
+  e.preventDefault();
+  const deltaX = (e.clientX - panStart.x) * panSpeed;
+  const deltaY = (e.clientY - panStart.y) * panSpeed;
+  setPanStart({ x: e.clientX, y: e.clientY }); // update origin
+  setGridTransformSafe(prev => ({
+    ...prev,
+    panX: prev.panX + deltaX,
+    panY: prev.panY + deltaY
+  }));
+};
+
+const handleGridMouseUp = (e) => {
+  if (e.button === 2) {
+    setIsPanning(false);
+  }
+};
 
                 const handleMouseUp = (e) => {
                     // Middle mouse button (button 1)
