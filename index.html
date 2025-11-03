@@ -2877,6 +2877,7 @@ const handleHandoutUpload = async (e) => {
     const startZoom = gridTransform.zoom;
     const startPanX = gridTransform.panX;
     const startPanY = gridTransform.panY;
+    const panSpeed = .01;
     
     // Calculate new zoom instantly
     const newZoom = clampZoom(startZoom * zoomFactor);
@@ -2890,7 +2891,7 @@ const handleHandoutUpload = async (e) => {
     let newPanY = mouseScreenY - mouseWorldY * newZoom;
     
     // Clamp pan values to limits
-    const maxPan = 10000; // Cap at ±10,000px (twice the grid size)
+    const maxPan = 5000; // Cap at ±10,000px (twice the grid size)
     const clampedPanX = Math.max(-maxPan, Math.min(maxPan, newPanX));
     const clampedPanY = Math.max(-maxPan, Math.min(maxPan, newPanY));
     
@@ -2912,21 +2913,17 @@ const handleHandoutUpload = async (e) => {
 };
 
 const handleGridMouseMove = (e) => {
-    if (!activeScene.grid?.enabled || !isPanning) return;
-    e.preventDefault();
-    
-    const deltaX = e.clientX - panStart.x;
-    const deltaY = (e.clientY - GRID_OFFSET_Y) - panStart.y;
-    const newPanX = gridTransform.panX + deltaX;
-    const newPanY = gridTransform.panY + deltaY;
-    
-    setGridTransformSafe(prev => ({
-        ...prev,
-        panX: newPanX,
-        panY: newPanY
-    }));
+    if (isPanning) {
+        const deltaX = (e.clientX - panStart.x) * panSpeed;
+        const deltaY = (e.clientY - panStart.y) * panSpeed;
+        setGridTransformSafe(prev => ({
+            ...prev,
+            panX: prev.panX + deltaX,
+            panY: prev.panY + deltaY
+        }));
+        setPanStart({ x: e.clientX, y: e.clientY });
+    }
 };
-
             const handleGridMouseUp = (e) => {
                 if (e.button === 2) {
                     setIsPanning(false);
