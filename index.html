@@ -2998,6 +2998,35 @@ const handleHandoutUpload = async (e) => {
                     }
                 };
 
+                // Add these inside TheatreCanvas, before "return ("
+const handleGridMouseDown = (e) => {
+  if (!activeScene.grid?.enabled) return;
+  if (e.button === 2) { // Right mouse button
+    e.preventDefault();
+    setIsPanning(true);
+    setPanStart({ x: e.clientX, y: e.clientY });
+  }
+};
+
+const handleGridMouseMove = (e) => {
+  if (!activeScene.grid?.enabled || !isPanning) return;
+  e.preventDefault();
+  const deltaX = (e.clientX - panStart.x) * panSpeed;
+  const deltaY = (e.clientY - panStart.y) * panSpeed;
+  setPanStart({ x: e.clientX, y: e.clientY }); // update origin
+  setGridTransformSafe(prev => ({
+    ...prev,
+    panX: prev.panX + deltaX,
+    panY: prev.panY + deltaY
+  }));
+};
+
+const handleGridMouseUp = (e) => {
+  if (e.button === 2) {
+    setIsPanning(false);
+  }
+};
+
                 const handleMouseUp = (e) => {
                     // Middle mouse button (button 1)
                     if (e.button === 1) {
