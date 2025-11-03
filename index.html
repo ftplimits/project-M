@@ -2915,13 +2915,13 @@ const handleHandoutUpload = async (e) => {
 const handleGridMouseMove = (e) => {
     if (isPanning) {
         const deltaX = (e.clientX - panStart.x) * panSpeed;
-        const deltaY = ((e.clientY - GRID_OFFSET_Y) - panStart.y) * panSpeed;  // Adjust for canvas offset
+        const deltaY = ((e.clientY - GRID_OFFSET_Y) - panStart.y) * panSpeed; // Adjust for canvas offset
         setGridTransformSafe(prev => ({
             ...prev,
             panX: prev.panX + deltaX,
             panY: prev.panY + deltaY
         }));
-        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y });  // Keep consistent with canvas coordinates
+        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y }); // Keep consistent with canvas coordinates
     }
 };
             const handleGridMouseUp = (e) => {
