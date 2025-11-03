@@ -2908,7 +2908,7 @@ const handleHandoutUpload = async (e) => {
     if (e.button === 2) {
         e.preventDefault();
         setIsPanning(true);
-        setPanStart({ x: e.clientX, y: e.clientY }); // Remove - GRID_OFFSET_Y for consistency
+        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y }); // Use canvas-relative coordinates
     }
 };
 
