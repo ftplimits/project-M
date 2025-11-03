@@ -1499,7 +1499,7 @@ useEffect(() => {
                 
                 // Remove from pending requests
                 setPendingJoinRequests(prev => {
-                    const updated = prev.filter(req => req.peerId !== peerId);
+                    const updated = prev.filter(req => req.peerId !== conn.peer);
                     
                     // Show next request if any
                     if (updated.length > 0) {
@@ -2422,7 +2422,7 @@ const handleAvatarUpload = async (e) => {
                 draggedTokenRef.current = tokenId; // Track which token we're dragging
                 setTokenDragOffset({
                     x: e.clientX - screenX,
-                    y: e.clientY - GRID_OFFSET_Y - screenY
+                    y: e.clientY - screenY
                 });
                 // Store drag start position for measurement
                 setTokenDragStart({
@@ -2530,9 +2530,8 @@ const handleAvatarUpload = async (e) => {
         if (draggedToken) {
     // Use consistent screen-to-world transformation
     // Convert window coords to canvas coords, then to world coords
-    const canvasY = e.clientY - GRID_OFFSET_Y;
     const worldX = (e.clientX - tokenDragOffset.x - gridTransform.panX) / gridTransform.zoom;
-    const worldY = (canvasY - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
+    const worldY = (e.clientY - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
     
     // Grid snapping: snap to nearest grid intersection when within 25% threshold
     const gridSize = activeScene.grid?.size || 50;
@@ -2915,13 +2914,13 @@ const handleHandoutUpload = async (e) => {
 const handleGridMouseMove = (e) => {
     if (isPanning) {
         const deltaX = (e.clientX - panStart.x) * panSpeed;
-const deltaY = (e.clientY - panStart.y) * panSpeed;
-setGridTransformSafe(prev => ({
-    ...prev,
-    panX: prev.panX + deltaX,
-    panY: prev.panY + deltaY
-}));
-setPanStart({ x: e.clientX, y: e.clientY });
+        const deltaY = (e.clientY - panStart.y) * panSpeed;
+        setGridTransformSafe(prev => ({
+            ...prev,
+            panX: prev.panX + deltaX,
+            panY: prev.panY + deltaY
+        }));
+        setPanStart({ x: e.clientX, y: e.clientY });
     }
 };
             const handleGridMouseUp = (e) => {
@@ -3078,7 +3077,6 @@ setPanStart({ x: e.clientX, y: e.clientY });
                 ctx.clearRect(0, 0, width, height);
                 const worldToScreenX = wx => wx * gridTransform.zoom + gridTransform.panX;
                 const worldToScreenY = wy => wy * gridTransform.zoom + gridTransform.panY;
-                ctx.moveTo(worldToScreenX(worldX), worldToScreenY(worldY) - GRID_OFFSET_Y);
 
                 drawings.forEach(drawing => {
                     const baseWidth = 3;
@@ -3390,7 +3388,6 @@ setPanStart({ x: e.clientX, y: e.clientY });
                         const actualSize = baseSize * sizeMultiplier;
                         const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
                         const transformedY = token.y * gridTransform.zoom + gridTransform.panY - GRID_OFFSET_Y;
-                        ctx.drawImage(img, transformedX, transformedY, transformedSize, transformedSize);
                         const transformedSize = actualSize * gridTransform.zoom;
                         
                         // Check cache first
@@ -3627,7 +3624,12 @@ setPanStart({ x: e.clientX, y: e.clientY });
                                         collected.push(...s.avatars);
                                     }
                                 });
-                                setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
+                                if (collected.length > 0) {
+                                    setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
+                                    } else {
+                                        setAvatars([]);
+                                    }
+                                }
                             }
                             setScenes(parsed.scenes);
                             setTokens(parsed.tokens || []);
@@ -4081,7 +4083,7 @@ setPanStart({ x: e.clientX, y: e.clientY });
                                                                 }).catch(() => {
                                                                     // Fallback for older browsers
                                                                     const textArea = document.createElement('textarea');
-                                                                    textArea.value = shareableLink;
+                                                                    textArea.value = roomCode;
                                                                     document.body.appendChild(textArea);
                                                                     textArea.select();
                                                                     document.execCommand('copy');
@@ -5216,13 +5218,8 @@ setPanStart({ x: e.clientX, y: e.clientY });
     const baseSize = token.size || 50;
     const sizeMultiplier = token.sizeMultiplier || 1;
     const actualSize = baseSize * sizeMultiplier;
-    const screenX = token.x * gridTransform.zoom + gridTransform.panX;
-const screenY = token.y * gridTransform.zoom + gridTransform.panY;
-setTokenDragOffset({
-    x: e.clientX - screenX,
-    y: e.clientY - screenY
-});
-
+    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
+    const transformedY = token.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
     const transformedSize = actualSize * gridTransform.zoom;
     
     return (
@@ -5282,8 +5279,8 @@ setTokenDragOffset({
     const baseSize = token.size || 50;
     const sizeMultiplier = token.sizeMultiplier || 1;
     const actualSize = baseSize * sizeMultiplier;
-    const worldX = (e.clientX - tokenDragOffset.x - gridTransform.panX) / gridTransform.zoom;
-    const worldY = (e.clientY - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
+    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
+    const transformedY = token.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
     const transformedSize = actualSize * gridTransform.zoom;
     
     return (
