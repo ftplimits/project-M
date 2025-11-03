@@ -426,6 +426,17 @@
                 panX: 0,
                 panY: 0
             });
+
+            const gridTransformRef = useRef(gridTransform);
+
+const setGridTransformSafe = (updater) => {
+    setGridTransform(prev => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        gridTransformRef.current = next;
+        return next;
+    });
+};
+
             const [isPanning, setIsPanning] = useState(false);
             const [panStart, setPanStart] = useState({ x: 0, y: 0 });
             const zoomAnimationRef = useRef(null);
@@ -2840,66 +2851,64 @@ const handleHandoutUpload = async (e) => {
             };
 
             const handleGridWheel = (e) => {
-                if (!activeScene.grid?.enabled) return;
-                
-                e.preventDefault();
-                
-                // Use tokenCanvasRef or viewportRef as the reference canvas
-                const canvas = tokenCanvasRef.current || viewportRef.current;
-                if (!canvas) return;
-                
-                if (zoomAnimationRef.current) {
-                    cancelAnimationFrame(zoomAnimationRef.current);
-                    zoomAnimationRef.current = null;
-                }
+    if (!activeScene.grid?.enabled) return;
+    
+    e.preventDefault();
+    
+    // Use tokenCanvasRef or viewportRef as the reference canvas
+    const canvas = tokenCanvasRef.current || viewportRef.current;
+    if (!canvas) return;
+    
+    if (zoomAnimationRef.current) {
+        cancelAnimationFrame(zoomAnimationRef.current);
+        zoomAnimationRef.current = null;
+    }
 
-                // Get mouse position in screen space
-                const rect = canvas.getBoundingClientRect();
-                const mouseScreenX = e.clientX - rect.left;
-                const mouseScreenY = e.clientY - rect.top;
-                
-                const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-                const wheelSpeed = 0.004;  
-                const zoomFactor = Math.exp(-delta * wheelSpeed);
-                const clamp = (v, a = 0.1, b = 5) => Math.max(a, Math.min(b, v));
-                
-                const startZoom = gridTransform.zoom;
-                const startPanX = gridTransform.panX;
-                const startPanY = gridTransform.panY;
-                
-                // Mouse position in world space BEFORE zoom (accounting for GRID_OFFSET_Y)
-                const mouseWorldX = (mouseScreenX - startPanX) / startZoom;
-                const mouseWorldY = (mouseScreenY - startPanY) / startZoom;
-                
-                const targetZoom = clamp(startZoom * zoomFactor);
-                const startTime = performance.now();
-                const duration = 240;
-                const ratio = targetZoom / startZoom;
-                const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    // Get mouse position in screen space
+    const rect = canvas.getBoundingClientRect();
+    const mouseScreenX = e.clientX - rect.left;
+    const mouseScreenY = e.clientY - rect.top;  // rect.top should be GRID_OFFSET_Y
+    
+    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    const wheelSpeed = 0.004;  
+    const zoomFactor = Math.exp(-delta * wheelSpeed);
+    const clamp = (v, a = 0.1, b = 5) => Math.max(a, Math.min(b, v));
+    
+    const startZoom = gridTransformRef.current.zoom;
+    const startPanX = gridTransformRef.current.panX;
+    const startPanY = gridTransformRef.current.panY;
 
-                const step = (now) => {
-                    const elapsed = now - startTime;
-                    const t = Math.min(1, elapsed / duration);
-                    const eased = easeInOutCubic(t);
-                    const newZoom = startZoom * Math.pow(ratio, eased);
-                    
-                    // Calculate new pan to keep mouse position stable in world space
-                    const newPanX = mouseScreenX - mouseWorldX * newZoom;
-                    const newPanY = mouseScreenY - mouseWorldY * newZoom;
-                    
-                    setGridTransform({
-                        zoom: newZoom,
-                        panX: newPanX,
-                        panY: newPanY
-                    });
-                    if (t < 1) {
-                        zoomAnimationRef.current = requestAnimationFrame(step);
-                    } else {
-                        zoomAnimationRef.current = null;
-                    }
-                };
-                zoomAnimationRef.current = requestAnimationFrame(step);
-            };
+    // Mouse position in world space BEFORE zoom
+    const mouseWorldX = (mouseScreenX - startPanX) / startZoom;
+    const mouseWorldY = (mouseScreenY - startPanY) / startZoom;
+    
+    const targetZoom = clamp(startZoom * zoomFactor);
+    const startTime = performance.now();
+    const duration = 240;
+    const ratio = targetZoom / startZoom;
+    const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+    const step = (now) => {
+        const elapsed = now - startTime;
+        const t = Math.min(1, elapsed / duration);
+        const eased = easeInOutCubic(t);
+        const newZoom = startZoom * Math.pow(ratio, eased);
+        
+        // Calculate new pan to keep mouse position stable in world space
+        const newPanX = mouseScreenX - mouseWorldX * newZoom;
+        const newPanY = mouseScreenY - mouseWorldY * newZoom;
+        
+        // Update the state with the new transform values
+        setGridTransformSafe({ zoom: newZoom, panX: newPanX, panY: newPanY });
+        
+        if (t < 1) {
+            zoomAnimationRef.current = requestAnimationFrame(step);
+        } else {
+            zoomAnimationRef.current = null;
+        }
+    };
+    zoomAnimationRef.current = requestAnimationFrame(step);
+};
 
             const handleGridMouseDown = (e) => {
                 if (!activeScene.grid?.enabled) return;
@@ -2913,11 +2922,12 @@ const handleHandoutUpload = async (e) => {
             const handleGridMouseMove = (e) => {
                 if (!activeScene.grid?.enabled || !isPanning) return;
                 e.preventDefault();
-                setGridTransform(prev => ({
-                    ...prev,
-                    panX: e.clientX - panStart.x,
-                    panY: (e.clientY - GRID_OFFSET_Y) - panStart.y
-                }));
+                setGridTransformSafe(prev => ({
+    ...prev,
+    panX: e.clientX - panStart.x,
+    panY: (e.clientY - GRID_OFFSET_Y) - panStart.y
+}));
+
             };
 
             const handleGridMouseUp = (e) => {
@@ -2946,15 +2956,16 @@ const handleHandoutUpload = async (e) => {
             }, [isPanning, panStart, gridTransform.panX, gridTransform.panY, activeScene.grid?.enabled]);
 
             useEffect(() => {
-                if (activeScene.grid?.enabled) {
-                    document.addEventListener('wheel', handleGridWheel, { passive: false });
-                    document.addEventListener('contextmenu', handleGridContextMenu);
-                    return () => {
-                        document.removeEventListener('wheel', handleGridWheel);
-                        document.removeEventListener('contextmenu', handleGridContextMenu);
-                    };
-                }
-            }, [activeScene.grid?.enabled, gridTransform.zoom]);
+    if (activeScene.grid?.enabled) {
+        document.addEventListener('wheel', handleGridWheel, { passive: false });
+        document.addEventListener('contextmenu', handleGridContextMenu);
+        return () => {
+            document.removeEventListener('wheel', handleGridWheel);
+            document.removeEventListener('contextmenu', handleGridContextMenu);
+        };
+    }
+}, [activeScene.grid?.enabled, gridTransform.zoom]);
+
 
             useEffect(() => {
                 const handleClick = () => {
@@ -6635,14 +6646,14 @@ const handleHandoutUpload = async (e) => {
                     <input
                         ref={avatarInputRef}
                         type="file"
-                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        accept="image/jpeg,image/jpg,image/webp"
                         onChange={handleAvatarUpload}
                         className="hidden"
                     />
                     <input
                         ref={tokenInputRef}
                         type="file"
-                        accept="image/png,image/jpeg,image/webp"
+                        accept="image/jpeg,image/webp"
                         onChange={handleTokenUpload}
                         className="hidden"
                     />
