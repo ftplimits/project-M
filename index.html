@@ -177,10 +177,11 @@
         const { useState, useRef, useEffect } = React;
 
         // Constants
+        const panSpeed = .5;
         const DEFAULT_HOST_NAME = 'Host';
         const AUTO_FADE_DURATION = 3000; // 3 seconds
-        const MESSAGE_DELIVERY_DELAY = 500; // 500ms for message delivery before disconnect
-
+        const MESSAGE_DELIVERY_DELAY = 500; 
+        
         const throttle = (func, limit) => {
     let inThrottle;
     return function(...args) {
