@@ -2896,7 +2896,13 @@ const handleHandoutUpload = async (e) => {
                     
                     // Calculate new pan to keep mouse position stable in world space
                     const newPanX = mouseScreenX - mouseWorldX * newZoom;
-                    const newPanY = mouseScreenY - mouseWorldY * newZoom;                    
+                    const newPanY = mouseScreenY - mouseWorldY * newZoom; 
+                    
+                    setGridtransformSafe({
+                        zoom: newZoom,
+                        panX: newPanx,
+                        pany: newPany
+                    })
 
                     if (t < 1) {
                         zoomAnimationRef.current = requestAnimationFrame(step);
