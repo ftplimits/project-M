@@ -2900,9 +2900,9 @@ const handleHandoutUpload = async (e) => {
                     
                     setGridtransformSafe({
                         zoom: newZoom,
-                        panX: newPanx,
-                        pany: newPany
-                    })
+                        panX: newPanX,
+                        panY: newPanY
+                    });
 
                     if (t < 1) {
                         zoomAnimationRef.current = requestAnimationFrame(step);
