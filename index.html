@@ -2887,6 +2887,7 @@ const handleHandoutUpload = async (e) => {
     const duration = 240;
     const ratio = targetZoom / startZoom;
     const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const maxPan = 10000; // Cap at ±10,000px (twice the grid size)
 
     const step = (now) => {
         const elapsed = now - startTime;
@@ -2897,6 +2898,8 @@ const handleHandoutUpload = async (e) => {
         // Calculate new pan to keep mouse position stable in world space
         const newPanX = mouseScreenX - mouseWorldX * newZoom;
         const newPanY = mouseScreenY - mouseWorldY * newZoom;
+        const clampedPanX = Math.max(-maxPan, Math.min(maxPan, newPanX));
+        const clampedPanY = Math.max(-maxPan, Math.min(maxPan, newPanY));
         
         setGridTransformSafe({
             zoom: newZoom,
