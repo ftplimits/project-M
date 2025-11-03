@@ -2903,21 +2903,23 @@ const handleHandoutUpload = async (e) => {
 };
 
             const handleGridMouseDown = (e) => {
-                if (!activeScene.grid?.enabled) return;
-                if (e.button === 2) {
-                    e.preventDefault();
-                    setIsPanning(true);
-                    setPanStart({ x: e.clientX - gridTransform.panX, y: (e.clientY - GRID_OFFSET_Y) - gridTransform.panY });
-                }
-            };
+    if (!activeScene.grid?.enabled) return;
+    if (e.button === 2) {
+        e.preventDefault();
+        setIsPanning(true);
+        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y });
+    }
+};
 
-            const handleGridMouseMove = (e) => {
+const handleGridMouseMove = (e) => {
     if (!activeScene.grid?.enabled || !isPanning) return;
     e.preventDefault();
     
     const maxPan = 10000; // Cap at ±10,000px (twice the grid size)
-    const newPanX = Math.max(-maxPan, Math.min(maxPan, e.clientX - panStart.x));
-    const newPanY = Math.max(-maxPan, Math.min(maxPan, (e.clientY - GRID_OFFSET_Y) - panStart.y));
+    const deltaX = e.clientX - panStart.x;
+    const deltaY = (e.clientY - GRID_OFFSET_Y) - panStart.y;
+    const newPanX = Math.max(-maxPan, Math.min(maxPan, gridTransform.panX + deltaX));
+    const newPanY = Math.max(-maxPan, Math.min(maxPan, gridTransform.panY + deltaY));
     
     setGridTransformSafe(prev => ({
         ...prev,
