@@ -250,7 +250,7 @@
         };      
       
         const downscaleToken = (file) => {
-            return downscaleImage(file, 256, 256);
+            return downscaleImage(file, 128, 128);
         };
 
         // Grid map downscaling with custom quality
@@ -505,8 +505,8 @@ const setGridTransformSafe = (updater) => {
             const AUTOSAVE_DELAY = 3000; // 3 seconds
             
             // Performance optimization constants
-            const GRID_MAP_MAX_WIDTH = 2048;
-            const GRID_MAP_MAX_HEIGHT = 2048;
+            const GRID_MAP_MAX_WIDTH = 1536;
+            const GRID_MAP_MAX_HEIGHT = 1536;
             const GRID_MAP_QUALITY = 0.90; // 90% JPEG quality for grid maps
             const GRID_CELLS_TOTAL = 100; // Total grid cells in each dimension (100x100 grid)
             
@@ -2265,7 +2265,7 @@ const handleAvatarUpload = async (e) => {
     
     try {
         // Downscale image before using
-        const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
+        const downscaledDataUrl = await downscaleImage(file, 1024, 1024);
         
         if (!viewportRef.current) return;
         setAvatars(prev => {
@@ -2920,13 +2920,19 @@ const handleHandoutUpload = async (e) => {
             };
 
             const handleGridMouseMove = (e) => {
-                if (!activeScene.grid?.enabled || !isPanning) return;
-                e.preventDefault();
-                setGridTransformSafe(prev => ({
-    ...prev,
-    panX: e.clientX - panStart.x,
-    panY: (e.clientY - GRID_OFFSET_Y) - panStart.y
-}));
+    if (!activeScene.grid?.enabled || !isPanning) return;
+    e.preventDefault();
+    
+    const maxPan = 10000; 
+    const newPanX = Math.max(-maxPan, Math.min(maxPan, e.clientX - panStart.x));
+    const newPanY = Math.max(-maxPan, Math.min(maxPan, (e.clientY - GRID_OFFSET_Y) - panStart.y));
+    
+    setGridTransformSafe(prev => ({
+        ...prev,
+        panX: newPanX,
+        panY: newPanY
+    }));
+};
 
             };
 
