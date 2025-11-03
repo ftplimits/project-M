@@ -298,7 +298,7 @@
                         console.log(`Saving grid map as ${format} with quality ${quality}`);
                         
                         const dataUrl = canvas.toDataURL(format, quality);
-                        resolve(dataUrl);                        
+                        resolve(dataUrl);
                     };
                     
                     img.src = e.target.result;
@@ -501,7 +501,6 @@ const setGridTransformSafe = (updater) => {
             const activeScene = scenes[activeSceneIndex];
             const GRID_OFFSET_Y = 62;
             const LOCAL_STORAGE_KEY = 'monomyth_vtt_export_v1';
-            const panSpeed = .2;
             const AUTOSAVE_KEY = 'monomyth_vtt_autosave_v1';
             const AUTOSAVE_DELAY = 3000; // 3 seconds
             
@@ -831,9 +830,9 @@ useEffect(() => {
                             { urls: 'stun:stun2.l.google.com:19302' },
                             { urls: 'stun:stun3.l.google.com:19302' },
                             { urls: 'stun:stun4.l.google.com:19302' }
-                ]
-            }
-        });
+                        ]
+                    }
+                });
                 
                 newPeer.on('open', (id) => {
                     console.log('Host peer opened with ID:', id);
@@ -989,7 +988,7 @@ useEffect(() => {
                                 clipboardNotificationTimeoutRef.current = setTimeout(() => {
                                     setClipboardNotification(false);
                                     clipboardNotificationTimeoutRef.current = null;
-                                }, 2000);
+                                }, 3000);
                             })
                             .catch(err => {
                                 console.warn('Could not copy shareable link to clipboard:', err);
@@ -1499,7 +1498,7 @@ useEffect(() => {
                 
                 // Remove from pending requests
                 setPendingJoinRequests(prev => {
-                    const updated = prev.filter(req => req.peerId !== conn.peer);
+                    const updated = prev.filter(req => req.peerId !== peerId);
                     
                     // Show next request if any
                     if (updated.length > 0) {
@@ -1602,13 +1601,6 @@ useEffect(() => {
                 }
             }, [scenes]);
 
-            // Sync grid transform when it changes (only if host)
-            useEffect(() => {
-                if (isHost && isConnected) {
-                    broadcastState('GRID_TRANSFORM', gridTransform);
-                }
-            }, [gridTransform, isHost, isConnected]);
-
             // Automatic avatar animations - adds life to the table!
             useEffect(() => {
                 const remainingAvatarsRef = { current: [] };
@@ -1650,7 +1642,7 @@ useEffect(() => {
                             // Trigger bounce animation
                             setBouncingAvatarIds(prev => {
                                 if (prev.includes(selectedAvatar.id)) return prev;
-                                return [...prev, avatarId];
+                                return [...prev, selectedAvatar.id];
                             });
                             setTimeout(() => {
                                 setBouncingAvatarIds(prev => prev.filter(id => id !== selectedAvatar.id));
@@ -2429,7 +2421,7 @@ const handleAvatarUpload = async (e) => {
                 draggedTokenRef.current = tokenId; // Track which token we're dragging
                 setTokenDragOffset({
                     x: e.clientX - screenX,
-                    y: e.clientY - screenY
+                    y: e.clientY - GRID_OFFSET_Y - screenY
                 });
                 // Store drag start position for measurement
                 setTokenDragStart({
@@ -2537,8 +2529,9 @@ const handleAvatarUpload = async (e) => {
         if (draggedToken) {
     // Use consistent screen-to-world transformation
     // Convert window coords to canvas coords, then to world coords
+    const canvasY = e.clientY - GRID_OFFSET_Y;
     const worldX = (e.clientX - tokenDragOffset.x - gridTransform.panX) / gridTransform.zoom;
-    const worldY = (e.clientY - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
+    const worldY = (canvasY - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
     
     // Grid snapping: snap to nearest grid intersection when within 25% threshold
     const gridSize = activeScene.grid?.size || 50;
@@ -2873,8 +2866,8 @@ const handleHandoutUpload = async (e) => {
 
     // Get mouse position in screen space
     const rect = canvas.getBoundingClientRect();
-    const mouseScreenX = e.clientX;
-    const mouseScreenY = e.clientY;
+    const mouseScreenX = e.clientX - rect.left;
+    const mouseScreenY = e.clientY - rect.top;
     
     const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
     const wheelSpeed = 0.004;  
@@ -2883,7 +2876,7 @@ const handleHandoutUpload = async (e) => {
     
     const startZoom = gridTransform.zoom;
     const startPanX = gridTransform.panX;
-    const startPanY = gridTransform.panY;    
+    const startPanY = gridTransform.panY;
     
     // Calculate new zoom instantly
     const newZoom = clampZoom(startZoom * zoomFactor);
@@ -2897,7 +2890,7 @@ const handleHandoutUpload = async (e) => {
     let newPanY = mouseScreenY - mouseWorldY * newZoom;
     
     // Clamp pan values to limits
-    const maxPan = 5000; // Cap at ±10,000px (twice the grid size)
+    const maxPan = 10000; // Cap at ±10,000px (twice the grid size)
     const clampedPanX = Math.max(-maxPan, Math.min(maxPan, newPanX));
     const clampedPanY = Math.max(-maxPan, Math.min(maxPan, newPanY));
     
@@ -2914,22 +2907,26 @@ const handleHandoutUpload = async (e) => {
     if (e.button === 2) {
         e.preventDefault();
         setIsPanning(true);
-        setPanStart({ x: e.clientX, y: e.clientY });
+        setPanStart({ x: e.clientX, y: e.clientY - GRID_OFFSET_Y });
     }
 };
 
 const handleGridMouseMove = (e) => {
-    if (isPanning) {
-        const deltaX = (e.clientX - panStart.x) * panSpeed;
-        const deltaY = (e.clientY - panStart.y) * panSpeed;
-        setGridTransformSafe(prev => ({
-            ...prev,
-            panX: prev.panX + deltaX,
-            panY: prev.panY + deltaY
-        }));
-        setPanStart({ x: e.clientX, y: e.clientY });
-    }
+    if (!activeScene.grid?.enabled || !isPanning) return;
+    e.preventDefault();
+    
+    const deltaX = e.clientX - panStart.x;
+    const deltaY = (e.clientY - GRID_OFFSET_Y) - panStart.y;
+    const newPanX = gridTransform.panX + deltaX;
+    const newPanY = gridTransform.panY + deltaY;
+    
+    setGridTransformSafe(prev => ({
+        ...prev,
+        panX: newPanX,
+        panY: newPanY
+    }));
 };
+
             const handleGridMouseUp = (e) => {
                 if (e.button === 2) {
                     setIsPanning(false);
@@ -3394,7 +3391,7 @@ const handleGridMouseMove = (e) => {
                         const sizeMultiplier = token.sizeMultiplier || 1;
                         const actualSize = baseSize * sizeMultiplier;
                         const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
-                        const transformedY = token.y * gridTransform.zoom + gridTransform.panY - GRID_OFFSET_Y;
+                        const transformedY = token.y * gridTransform.zoom + gridTransform.panY;
                         const transformedSize = actualSize * gridTransform.zoom;
                         
                         // Check cache first
@@ -3569,7 +3566,7 @@ const handleGridMouseMove = (e) => {
                         setTokens(parsed.tokens || []);
                         setDrawings(parsed.drawings || []);
                         setActiveSceneIndex(parsed.activeSceneIndex || 0);
-                        setGridTransform(parsed.gridTransform || { zoom: 1.25, panX: 0, panY: 0 });
+                        setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
                         setDicePresets(parsed.dicePresets || dicePresets);
                         setCharacterSheets(parsed.characterSheets || []);
                         setDiceModifiers(parsed.diceModifiers || {});
@@ -3611,58 +3608,61 @@ const handleGridMouseMove = (e) => {
             };
 
             const handleImportFile = (e) => {
-    try {
-        const parsed = JSON.parse(e.target.result);
-        if (parsed.scenes) {
-            if (!confirm('Importing a file will replace your current scenes and state. Proceed?')) {
-                e.target.value = '';
-                return;
-            }
-            if (parsed.avatars) {
-                setAvatars(parsed.avatars.map(a => ({ ...a, flipped: !!a.flipped })));
-            } else {
-                const collected = [];
-                parsed.scenes.forEach(s => {
-                    if (Array.isArray(s.avatars)) {
-                        collected.push(...s.avatars);
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const parsed = JSON.parse(event.target.result);
+                        if (parsed.scenes) {
+                            if (!confirm('Importing a file will replace your current scenes and state. Proceed?')) {
+                                e.target.value = '';
+                                return;
+                            }
+                            if (parsed.avatars) {
+                                setAvatars(parsed.avatars.map(a => ({ ...a, flipped: !!a.flipped })));
+                            } else {
+                                const collected = [];
+                                parsed.scenes.forEach(s => {
+                                    if (Array.isArray(s.avatars)) {
+                                        collected.push(...s.avatars);
+                                    }
+                                });
+                                setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
+                            }
+                            setScenes(parsed.scenes);
+                            setTokens(parsed.tokens || []);
+                            setDrawings(parsed.drawings || []);
+                            setActiveSceneIndex(parsed.activeSceneIndex || 0);
+                            setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
+                            setDicePresets(parsed.dicePresets || dicePresets);
+                            setCharacterSheets(parsed.characterSheets || []);
+                            setDiceModifiers(parsed.diceModifiers || {});
+                            alert('Import successful.');
+                        } else if (Array.isArray(parsed)) {
+                            if (!confirm('Importing a file will replace your current scenes. Proceed?')) {
+                                e.target.value = '';
+                                return;
+                            }
+                            const collected = [];
+                            parsed.forEach(s => {
+                                if (Array.isArray(s.avatars)) collected.push(...s.avatars);
+                            });
+                            setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
+                            setScenes(parsed);
+                            alert('Import successful (scenes only).');
+                        } else {
+                            alert('Invalid import file format.');
+                        }
+                    } catch (err) {
+                        console.error('Import failed', err);
+                        alert('Import failed (see console).');
+                    } finally {
+                        e.target.value = '';
                     }
-                });
-                if (collected.length > 0) {
-                    setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
-                } else {
-                    setAvatars([]);
-                }
-            }
-            setScenes(parsed.scenes);
-            setTokens(parsed.tokens || []);
-            setDrawings(parsed.drawings || []);
-            setActiveSceneIndex(parsed.activeSceneIndex || 0);
-            setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
-            setDicePresets(parsed.dicePresets || dicePresets);
-            setCharacterSheets(parsed.characterSheets || []);
-            setDiceModifiers(parsed.diceModifiers || {});
-            alert('Import successful.');
-        } else if (Array.isArray(parsed)) {
-            if (!confirm('Importing a file will replace your current scenes. Proceed?')) {
-                e.target.value = '';
-                return;
-            }
-            const collected = [];
-            parsed.forEach(s => {
-                if (Array.isArray(s.avatars)) collected.push(...s.avatars);
-            });
-            setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
-            setScenes(parsed);
-            alert('Import successful (scenes only).');
-        } else {
-            alert('Invalid import file format.');
-        }
-    } catch (err) {
-        console.error('Import failed', err);
-        alert('Import failed (see console).');
-    }
-    e.target.value = '';
-};
+                };
+                reader.readAsText(file);
+            };
 
             return (
                 <div className="w-full h-screen bg-zinc-900 flex flex-col overflow-hidden relative">
@@ -4082,7 +4082,7 @@ const handleGridMouseMove = (e) => {
                                                                 }).catch(() => {
                                                                     // Fallback for older browsers
                                                                     const textArea = document.createElement('textarea');
-                                                                    textArea.value = roomCode;
+                                                                    textArea.value = shareableLink;
                                                                     document.body.appendChild(textArea);
                                                                     textArea.select();
                                                                     document.execCommand('copy');
@@ -5095,29 +5095,47 @@ const handleGridMouseMove = (e) => {
                     <Lock size={16} className="text-red-500" />
                 ) : (
                     <Unlock size={16} className="text-amber-500" />
-                        )}
-                    </button>
+                )}
+            </button>
 
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            deleteImage(image.id);
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    deleteImage(image.id);
+                }}
+                className="absolute top-1 right-1 p-2 bg-zinc-800 hover:bg-red-900 border-2 border-red-700 rounded shadow-lg transition-all z-10"
+                title="Delete"
+                style={{ pointerEvents: 'auto' }}
+            >
+                <X size={16} className="text-red-500" />
+            </button>
+
+            {!image.locked && (
+                <>
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            width: '100%',
+                            height: '100%',
+                            cursor: 'move',
+                            pointerEvents: 'auto'
                         }}
-                        className="absolute top-1 right-1 p-2 bg-zinc-800 hover:bg-red-900 border-2 border-red-700 rounded shadow-lg transition-all z-10"
-                        title="Delete"
+                        onMouseDown={(e) => {
+                            if (!image.locked) {
+                                handleImageMouseDown(e, image.id);
+                            }
+                        }}
+                    />
+                    <div
+                        onMouseDown={(e) => handleResizeMouseDown(e, image.id, 'se')}
+                        className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-600 border-2 border-amber-400 rounded-full cursor-se-resize z-10 hover:scale-125 transition-transform"
                         style={{ pointerEvents: 'auto' }}
-                    >
-                        <X size={16} className="text-red-500" />
-                    </button>
-
-                    {!image.locked && (
-                        <div
-                            onMouseDown={(e) => handleResizeMouseDown(e, image.id, 'se')}
-                            className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-600 border-2 border-amber-400 rounded-full cursor-se-resize z-10 hover:scale-125 transition-transform"
-                            style={{ pointerEvents: 'auto' }}
-                        />
-                    )}
-                </div>
+                    />
+                </>
+            )}
+        </div>
     );
 })}
 
@@ -5209,7 +5227,7 @@ const handleGridMouseMove = (e) => {
             className="fixed"
             style={{
                 left: transformedX,
-                top: transformedY + GRID_OFFSET_Y,  // <-- Add the offset
+                top: transformedY,
                 width: transformedSize,
                 height: transformedSize,
                 zIndex: 100,
@@ -5270,7 +5288,7 @@ const handleGridMouseMove = (e) => {
             className="fixed"
             style={{
                 left: transformedX,
-                top: transformedY + GRID_OFFSET_Y,  // <-- Add the offset
+                top: transformedY,
                 width: transformedSize,
                 height: transformedSize,
                 zIndex: 85,
