@@ -174,7 +174,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useRef, useEffect, useCallback } = React;
+        const { useState, useRef, useEffect } = React;
 
         // Constants
         const DEFAULT_HOST_NAME = 'Host';
@@ -2840,6 +2840,36 @@ const handleHandoutUpload = async (e) => {
                 setIsDrawing(false);
             };
 
+            // Clamp pan values to keep viewport within 100x100 grid bounds
+            const clampPanToGridBounds = (panX, panY, zoom) => {
+                const gridSize = activeScene.grid?.size || 50;
+                const worldWidth = 100 * gridSize;  // 100 cells wide
+                const worldHeight = 100 * gridSize; // 100 cells tall
+                
+                // Get viewport dimensions (accounting for GRID_OFFSET_Y)
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight - GRID_OFFSET_Y;
+                
+                // Calculate the world space dimensions visible in the viewport
+                const visibleWorldWidth = viewportWidth / zoom;
+                const visibleWorldHeight = viewportHeight / zoom;
+                
+                // Calculate pan limits
+                // When world is larger than viewport: constrain to show only within world bounds
+                // When world is smaller than viewport: allow world to stay on screen
+                const minPanX = Math.min(0, viewportWidth - worldWidth * zoom);
+                const maxPanX = 0;
+                
+                const minPanY = Math.min(0, viewportHeight - worldHeight * zoom);
+                const maxPanY = 0;
+                
+                // Clamp the values
+                const clampedPanX = Math.max(minPanX, Math.min(maxPanX, panX));
+                const clampedPanY = Math.max(minPanY, Math.min(maxPanY, panY));
+                
+                return { panX: clampedPanX, panY: clampedPanY };
+            };
+
             const handleGridWheel = (e) => {
     if (!activeScene.grid?.enabled) return;
     
@@ -2885,8 +2915,13 @@ const handleHandoutUpload = async (e) => {
         const newZoom = startZoom * Math.pow(ratio, eased);
         
         // Calculate new pan to keep mouse position stable in world space
-        const newPanX = mouseScreenX - mouseWorldX * newZoom;
-        const newPanY = mouseScreenY - mouseWorldY * newZoom;
+        let newPanX = mouseScreenX - mouseWorldX * newZoom;
+        let newPanY = mouseScreenY - mouseWorldY * newZoom;
+        
+        // Clamp pan to grid bounds
+        const clamped = clampPanToGridBounds(newPanX, newPanY, newZoom);
+        newPanX = clamped.panX;
+        newPanY = clamped.panY;
         
         // Update the state with the new transform values
         setGridTransform({ zoom: newZoom, panX: newPanX, panY: newPanY });
@@ -2911,10 +2946,16 @@ const handleHandoutUpload = async (e) => {
             const handleGridMouseMove = (e) => {
                 if (!activeScene.grid?.enabled || !isPanning) return;
                 e.preventDefault();
+                
+                const rawPanX = e.clientX - panStart.x;
+                const rawPanY = (e.clientY - GRID_OFFSET_Y) - panStart.y;
+                const clamped = clampPanToGridBounds(rawPanX, rawPanY, gridTransform.zoom);
+                
                 setGridTransform(prev => ({
                     ...prev,
-                    panX: e.clientX - panStart.x,
-                    panY: (e.clientY - GRID_OFFSET_Y) - panStart.y
+                    panX: clamped.panX,
+                    panY: clamped.panY
+                }));
                 }));
             };
 
