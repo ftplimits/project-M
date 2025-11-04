@@ -489,6 +489,8 @@
             const [videoPositions, setVideoPositions] = useState({}); // { playerId: { x, y, locked } }
             const localVideoRef = useRef(null);
             const remoteVideoRefs = useRef({});
+            const localStreamRef = useRef(null);
+            const peerRef = useRef(null);
             
             // Draw tools visibility state
             const [drawToolsVisible, setDrawToolsVisible] = useState(false);
@@ -689,6 +691,7 @@ useEffect(() => {
         newPeer.on('open', (id) => {
             setMyPeerId(id);
             setPeer(newPeer);
+            peerRef.current = newPeer;
             
             const conn = newPeer.connect(roomParam.trim());
             
@@ -876,6 +879,7 @@ useEffect(() => {
                     setIsConnected(true);
                     setPlayers([{ id: id, name: hostName.trim(), isHost: true }]);
                     setPeer(newPeer);
+                    peerRef.current = newPeer;
                     
                     // Hide creating dialog
                     setShowCreatingDialog(false);
@@ -968,8 +972,8 @@ useEffect(() => {
                     console.log('Incoming video call from:', call.peer);
                     
                     // Answer the call with our local stream (if camera is on)
-                    if (localStream) {
-                        call.answer(localStream);
+                    if (localStreamRef.current) {
+                        call.answer(localStreamRef.current);
                     } else {
                         call.answer(); // Answer without stream if camera is off
                     }
@@ -1051,6 +1055,7 @@ useEffect(() => {
                     setIsConnected(true);
                     setPlayers([{ id: id, name: name, isHost: true }]);
                     setPeer(newPeer);
+                    peerRef.current = newPeer;
                     
                     // Automatically copy shareable link to clipboard
                     const shareableLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
@@ -1157,6 +1162,7 @@ useEffect(() => {
                 newPeer.on('open', (id) => {
                     setMyPeerId(id);
                     setPeer(newPeer);
+                    peerRef.current = newPeer;
                     
                     const conn = newPeer.connect(joinCode.trim());
                     
@@ -1198,8 +1204,8 @@ useEffect(() => {
                     console.log('Player: Incoming video call from:', call.peer);
                     
                     // Answer the call with our local stream (if camera is on)
-                    if (localStream) {
-                        call.answer(localStream);
+                    if (localStreamRef.current) {
+                        call.answer(localStreamRef.current);
                     } else {
                         call.answer(); // Answer without stream if camera is off
                     }
@@ -1506,6 +1512,7 @@ useEffect(() => {
                                 peer.destroy();
                             }
                             setPeer(null);
+                            peerRef.current = null;
                             setIsConnected(false);
                             // Clean up URL parameter
                             window.history.replaceState({}, document.title, window.location.pathname);
@@ -1532,6 +1539,7 @@ useEffect(() => {
                         setPlayers([]);
                         setRoomCode('');
                         setPeer(null);
+                        peerRef.current = null;
                         
                         // Auto-close message after configured duration
                         setTimeout(() => {
@@ -1652,6 +1660,7 @@ useEffect(() => {
                 setPlayers([]);
                 setRoomCode('');
                 setPeer(null);
+                peerRef.current = null;
             };
 
             const kickPlayer = (playerId, playerName) => {
@@ -2888,6 +2897,7 @@ const handleHandoutUpload = async (e) => {
                     if (localStream) {
                         localStream.getTracks().forEach(track => track.stop());
                         setLocalStream(null);
+                        localStreamRef.current = null;
                     }
                     setCameraEnabled(false);
                     setCameraPermissionDenied(false);
@@ -2909,15 +2919,16 @@ const handleHandoutUpload = async (e) => {
                         });
                         
                         setLocalStream(stream);
+                        localStreamRef.current = stream;
                         setCameraEnabled(true);
                         setCameraPermissionDenied(false);
                         
                         // Send video stream to all connected peers
-                        if (isConnectedRef.current) {
+                        if (isConnectedRef.current && peerRef.current) {
                             connectionsRef.current.forEach(conn => {
                                 if (conn.open) {
                                     // Create a call to send video
-                                    const call = peer.call(conn.peer, stream);
+                                    const call = peerRef.current.call(conn.peer, stream);
                                     if (call) {
                                         call.on('stream', (remoteStream) => {
                                             console.log('Received return stream from:', conn.peer);
