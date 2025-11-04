@@ -429,6 +429,7 @@
             const [isPanning, setIsPanning] = useState(false);
             const [panStart, setPanStart] = useState({ x: 0, y: 0 });
             const zoomAnimationRef = useRef(null);
+            const gridTransformRef = useRef({ zoom: 1.5, panX: 0, panY: 0 });
 
             const [drawingTool, setDrawingTool] = useState(null);
             const [drawingColor, setDrawingColor] = useState('#ffffff');
@@ -2952,7 +2953,12 @@ const handleHandoutUpload = async (e) => {
             document.removeEventListener('contextmenu', handleGridContextMenu);
         };
     }
-}, [activeScene.grid?.enabled, gridTransform.zoom]);
+}, [activeScene.grid?.enabled]);
+
+            // Sync gridTransformRef with gridTransform state
+            useEffect(() => {
+                gridTransformRef.current = gridTransform;
+            }, [gridTransform]);
 
             useEffect(() => {
                 const handleClick = () => {
