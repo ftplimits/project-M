@@ -174,7 +174,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useRef, useEffect } = React;
+        const { useState, useRef, useEffect, useCallback } = React;
 
         // Constants
         const DEFAULT_HOST_NAME = 'Host';
@@ -2889,7 +2889,7 @@ const handleHandoutUpload = async (e) => {
         const newPanY = mouseScreenY - mouseWorldY * newZoom;
         
         // Update the state with the new transform values
-        setGridTransformSafe({ zoom: newZoom, panX: newPanX, panY: newPanY });
+        setGridTransform({ zoom: newZoom, panX: newPanX, panY: newPanY });
         
         if (t < 1) {
             zoomAnimationRef.current = requestAnimationFrame(step);
