@@ -2693,6 +2693,16 @@ const toggleTokenMeasurement = (tokenId) => {
     setDiceCountMenu(null);
 };
 
+// Set border color for a specific token
+const setTokenBorderColor = (tokenId, color) => {
+    setTokens(prevTokens => 
+        prevTokens.map(t => 
+            t.id === tokenId ? { ...t, borderColor: color } : t
+        )
+    );
+    setDiceCountMenu(null);
+};
+
 // Handout upload handler
 const handleHandoutUpload = async (e) => {
     const file = e.target.files[0];
@@ -3473,6 +3483,23 @@ const handleHandoutUpload = async (e) => {
                             
                             ctx.drawImage(img, transformedX, transformedY, transformedSize, transformedSize);
                             ctx.restore();
+                            
+                            // Draw border if token has borderColor
+                            if (token.borderColor) {
+                                ctx.save();
+                                ctx.strokeStyle = token.borderColor;
+                                ctx.lineWidth = Math.max(4, transformedSize * 0.08); // Border scales with token
+                                ctx.beginPath();
+                                ctx.arc(
+                                    transformedX + transformedSize / 2, 
+                                    transformedY + transformedSize / 2, 
+                                    transformedSize / 2, 
+                                    0, 
+                                    2 * Math.PI
+                                );
+                                ctx.stroke();
+                                ctx.restore();
+                            }
                             
                             // Draw token name label
                             if (token.name) {
@@ -6273,6 +6300,74 @@ const handleHandoutUpload = async (e) => {
         >
             🟣 Huge
         </button>
+        
+        {/* Border Color Divider */}
+        <div style={{
+            color: '#888',
+            fontSize: '10px',
+            fontFamily: 'Arial, sans-serif',
+            marginTop: '8px',
+            marginBottom: '2px',
+            paddingLeft: '4px'
+        }}>
+            Border Color:
+        </div>
+        
+        {/* Border Color Grid */}
+        <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '4px'
+        }}>
+            {[
+                { color: null, label: 'None', emoji: '⭕' },
+                { color: '#ffffff', label: 'White', emoji: '⚪' },
+                { color: '#000000', label: 'Black', emoji: '⚫' },
+                { color: '#ef4444', label: 'Red', emoji: '🔴' },
+                { color: '#3b82f6', label: 'Blue', emoji: '🔵' },
+                { color: '#eab308', label: 'Yellow', emoji: '🟡' },
+                { color: '#22c55e', label: 'Green', emoji: '🟢' },
+                { color: '#ec4899', label: 'Pink', emoji: '🩷' },
+                { color: '#a855f7', label: 'Purple', emoji: '🟣' },
+                { color: '#f97316', label: 'Orange', emoji: '🟠' }
+            ].map(({ color, label, emoji }) => (
+                <button
+                    key={label}
+                    onClick={() => setTokenBorderColor(diceCountMenu.tokenId, color)}
+                    style={{
+                        padding: '8px 4px',
+                        backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor === color ? '#d4af37' : '#2a2a2a',
+                        color: tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor === color ? '#000' : '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        fontFamily: 'Arial, sans-serif',
+                        fontWeight: 'bold',
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '2px'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor !== color) {
+                            e.currentTarget.style.backgroundColor = '#3a3a3a';
+                            e.currentTarget.style.borderColor = '#d4af37';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor !== color) {
+                            e.currentTarget.style.backgroundColor = '#2a2a2a';
+                            e.currentTarget.style.borderColor = '#444';
+                        }
+                    }}
+                >
+                    <span style={{ fontSize: '16px' }}>{emoji}</span>
+                    <span style={{ fontSize: '9px' }}>{label}</span>
+                </button>
+            ))}
+        </div>
         
         {/* Delete Button (Host Only) */}
         {isHost && (
