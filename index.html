@@ -2943,15 +2943,16 @@ const handleHandoutUpload = async (e) => {
             }, [isPanning, panStart, gridTransform.panX, gridTransform.panY, activeScene.grid?.enabled]);
 
             useEffect(() => {
-                if (activeScene.grid?.enabled) {
-                    document.addEventListener('wheel', handleGridWheel, { passive: false });
-                    document.addEventListener('contextmenu', handleGridContextMenu);
-                    return () => {
-                        document.removeEventListener('wheel', handleGridWheel);
-                        document.removeEventListener('contextmenu', handleGridContextMenu);
-                    };
-                }
-            }, [activeScene.grid?.enabled, gridTransform.zoom]);
+    if (activeScene.grid?.enabled && gridCanvasRef.current) {
+        const canvas = gridCanvasRef.current;
+        canvas.addEventListener('wheel', handleGridWheel, { passive: false });
+        document.addEventListener('contextmenu', handleGridContextMenu);
+        return () => {
+            canvas.removeEventListener('wheel', handleGridWheel);
+            document.removeEventListener('contextmenu', handleGridContextMenu);
+        };
+    }
+}, [activeScene.grid?.enabled, gridTransform.zoom]);
 
             useEffect(() => {
                 const handleClick = () => {
