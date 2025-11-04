@@ -479,19 +479,6 @@
             const [handoutImage, setHandoutImage] = useState(null);
             const handoutInputRef = useRef(null);
             
-            // Camera/Video state
-            const [cameraEnabled, setCameraEnabled] = useState(false);
-            const [localStream, setLocalStream] = useState(null);
-            const [remoteStreams, setRemoteStreams] = useState({}); // { playerId: stream }
-            const [videoFeeds, setVideoFeeds] = useState([]); // { playerId, playerName, stream }
-            const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
-            const [draggingVideoId, setDraggingVideoId] = useState(null);
-            const [videoPositions, setVideoPositions] = useState({}); // { playerId: { x, y, locked } }
-            const localVideoRef = useRef(null);
-            const remoteVideoRefs = useRef({});
-            const localStreamRef = useRef(null);
-            const peerRef = useRef(null);
-            
             // Draw tools visibility state
             const [drawToolsVisible, setDrawToolsVisible] = useState(false);
 
@@ -691,7 +678,6 @@ useEffect(() => {
         newPeer.on('open', (id) => {
             setMyPeerId(id);
             setPeer(newPeer);
-            peerRef.current = newPeer;
             
             const conn = newPeer.connect(roomParam.trim());
             
@@ -775,31 +761,6 @@ useEffect(() => {
     }, 100); // Same throttle rate for host
 }, []);
 
-// Camera/Video useEffect hooks
-useEffect(() => {
-    // Update playersRef when players change (for video call handler)
-    playersRef.current = players;
-}, [players]);
-
-useEffect(() => {
-    // Attach local stream to video element when stream is available
-    if (localVideoRef.current && localStream) {
-        localVideoRef.current.srcObject = localStream;
-    }
-}, [localStream]);
-
-useEffect(() => {
-    // Cleanup video streams on unmount
-    return () => {
-        if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
-        }
-        Object.values(remoteStreams).forEach(stream => {
-            stream.getTracks().forEach(track => track.stop());
-        });
-    };
-}, []);
-
 // ===== MULTIPLAYER FUNCTIONS =====
 
             // ===== MULTIPLAYER FUNCTIONS =====
@@ -879,7 +840,6 @@ useEffect(() => {
                     setIsConnected(true);
                     setPlayers([{ id: id, name: hostName.trim(), isHost: true }]);
                     setPeer(newPeer);
-                    peerRef.current = newPeer;
                     
                     // Hide creating dialog
                     setShowCreatingDialog(false);
@@ -967,53 +927,6 @@ useEffect(() => {
                     });
                 });
 
-                // Handle incoming video calls
-                newPeer.on('call', (call) => {
-                    console.log('Incoming video call from:', call.peer);
-                    
-                    // Answer the call with our local stream (if camera is on)
-                    if (localStreamRef.current) {
-                        call.answer(localStreamRef.current);
-                    } else {
-                        call.answer(); // Answer without stream if camera is off
-                    }
-                    
-                    // Listen for the remote stream
-                    call.on('stream', (remoteStream) => {
-                        console.log('Received video stream from:', call.peer);
-                        
-                        // Find the player name
-                        const player = playersRef.current.find(p => p.id === call.peer);
-                        const playerName = player ? player.name : 'Unknown';
-                        
-                        setRemoteStreams(prev => ({
-                            ...prev,
-                            [call.peer]: remoteStream
-                        }));
-                        
-                        setVideoFeeds(prev => {
-                            // Remove existing feed for this player
-                            const filtered = prev.filter(f => f.playerId !== call.peer);
-                            return [...filtered, { 
-                                playerId: call.peer, 
-                                playerName: playerName,
-                                stream: remoteStream 
-                            }];
-                        });
-                    });
-                    
-                    call.on('close', () => {
-                        console.log('Call closed with:', call.peer);
-                        setRemoteStreams(prev => {
-                            const updated = { ...prev };
-                            delete updated[call.peer];
-                            return updated;
-                        });
-                        
-                        setVideoFeeds(prev => prev.filter(f => f.playerId !== call.peer));
-                    });
-                });
-
                 newPeer.on('error', (err) => {
                     console.error('Peer error:', err);
                     setShowCreatingDialog(false);
@@ -1055,7 +968,6 @@ useEffect(() => {
                     setIsConnected(true);
                     setPlayers([{ id: id, name: name, isHost: true }]);
                     setPeer(newPeer);
-                    peerRef.current = newPeer;
                     
                     // Automatically copy shareable link to clipboard
                     const shareableLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
@@ -1162,7 +1074,6 @@ useEffect(() => {
                 newPeer.on('open', (id) => {
                     setMyPeerId(id);
                     setPeer(newPeer);
-                    peerRef.current = newPeer;
                     
                     const conn = newPeer.connect(joinCode.trim());
                     
@@ -1196,53 +1107,6 @@ useEffect(() => {
                     conn.on('error', (err) => {
                         console.error('Connection error:', err);
                         alert('Failed to connect to room. Check the room code!');
-                    });
-                });
-                
-                // Handle incoming video calls for players
-                newPeer.on('call', (call) => {
-                    console.log('Player: Incoming video call from:', call.peer);
-                    
-                    // Answer the call with our local stream (if camera is on)
-                    if (localStreamRef.current) {
-                        call.answer(localStreamRef.current);
-                    } else {
-                        call.answer(); // Answer without stream if camera is off
-                    }
-                    
-                    // Listen for the remote stream
-                    call.on('stream', (remoteStream) => {
-                        console.log('Player: Received video stream from:', call.peer);
-                        
-                        // Find the player name
-                        const player = playersRef.current.find(p => p.id === call.peer);
-                        const playerName = player ? player.name : 'Unknown';
-                        
-                        setRemoteStreams(prev => ({
-                            ...prev,
-                            [call.peer]: remoteStream
-                        }));
-                        
-                        setVideoFeeds(prev => {
-                            // Remove existing feed for this player
-                            const filtered = prev.filter(f => f.playerId !== call.peer);
-                            return [...filtered, { 
-                                playerId: call.peer, 
-                                playerName: playerName,
-                                stream: remoteStream 
-                            }];
-                        });
-                    });
-                    
-                    call.on('close', () => {
-                        console.log('Player: Call closed with:', call.peer);
-                        setRemoteStreams(prev => {
-                            const updated = { ...prev };
-                            delete updated[call.peer];
-                            return updated;
-                        });
-                        
-                        setVideoFeeds(prev => prev.filter(f => f.playerId !== call.peer));
                     });
                 });
             };
@@ -1512,7 +1376,6 @@ useEffect(() => {
                                 peer.destroy();
                             }
                             setPeer(null);
-                            peerRef.current = null;
                             setIsConnected(false);
                             // Clean up URL parameter
                             window.history.replaceState({}, document.title, window.location.pathname);
@@ -1539,7 +1402,6 @@ useEffect(() => {
                         setPlayers([]);
                         setRoomCode('');
                         setPeer(null);
-                        peerRef.current = null;
                         
                         // Auto-close message after configured duration
                         setTimeout(() => {
@@ -1660,7 +1522,6 @@ useEffect(() => {
                 setPlayers([]);
                 setRoomCode('');
                 setPeer(null);
-                peerRef.current = null;
             };
 
             const kickPlayer = (playerId, playerName) => {
@@ -2889,81 +2750,6 @@ const handleHandoutUpload = async (e) => {
     
     e.target.value = '';
 };
-
-            // Camera/Video Functions
-            const toggleCamera = async () => {
-                if (cameraEnabled) {
-                    // Turn off camera
-                    if (localStream) {
-                        localStream.getTracks().forEach(track => track.stop());
-                        setLocalStream(null);
-                        localStreamRef.current = null;
-                    }
-                    setCameraEnabled(false);
-                    setCameraPermissionDenied(false);
-                    
-                    // Notify other players that camera is off
-                    if (isConnectedRef.current) {
-                        broadcastState('CAMERA_OFF', { playerId: myPeerId });
-                    }
-                } else {
-                    // Turn on camera
-                    try {
-                        const stream = await navigator.mediaDevices.getUserMedia({
-                            video: {
-                                width: { ideal: 640 },
-                                height: { ideal: 480 },
-                                frameRate: { ideal: 24, max: 30 }
-                            },
-                            audio: false // No audio, Discord handles that
-                        });
-                        
-                        setLocalStream(stream);
-                        localStreamRef.current = stream;
-                        setCameraEnabled(true);
-                        setCameraPermissionDenied(false);
-                        
-                        // Send video stream to all connected peers
-                        if (isConnectedRef.current && peerRef.current) {
-                            connectionsRef.current.forEach(conn => {
-                                if (conn.open) {
-                                    // Create a call to send video
-                                    const call = peerRef.current.call(conn.peer, stream);
-                                    if (call) {
-                                        call.on('stream', (remoteStream) => {
-                                            console.log('Received return stream from:', conn.peer);
-                                        });
-                                    }
-                                }
-                            });
-                            
-                            // Notify that camera is on
-                            broadcastState('CAMERA_ON', { playerId: myPeerId, playerName: playerName });
-                        }
-                    } catch (err) {
-                        console.error('Camera access denied:', err);
-                        setCameraPermissionDenied(true);
-                        setTimeout(() => setCameraPermissionDenied(false), 5000);
-                    }
-                }
-            };
-            
-            const updateVideoPosition = (videoId, x, y) => {
-                setVideoPositions(prev => ({
-                    ...prev,
-                    [videoId]: { ...prev[videoId], x, y }
-                }));
-            };
-            
-            const toggleVideoLock = (videoId) => {
-                setVideoPositions(prev => ({
-                    ...prev,
-                    [videoId]: { 
-                        ...prev[videoId], 
-                        locked: !prev[videoId]?.locked 
-                    }
-                }));
-            };
 
             const startDrawing = (e) => {
                 // Anyone can draw now
@@ -7112,248 +6898,6 @@ const handleHandoutUpload = async (e) => {
                             {presetsVisible ? '▶' : '🎲 PRESETS'}
                         </div>
                     </div>
-
-                    {/* Camera Toggle Button */}
-                    <div
-                        onClick={toggleCamera}
-                        style={{
-                            position: 'fixed',
-                            right: '5px',
-                            top: '160px',
-                            zIndex: 2000,
-                            backgroundColor: cameraEnabled ? '#2a5a2a' : '#1a1a1a',
-                            padding: '10px 8px',
-                            borderRadius: '8px',
-                            border: `2px solid ${cameraEnabled ? '#4ade80' : '#444'}`,
-                            boxShadow: cameraEnabled ? '0 0 12px rgba(74,222,128,0.4)' : '0 4px 12px rgba(0,0,0,0.6)',
-                            cursor: 'pointer',
-                            transition: 'all 0.3s ease-in-out',
-                            userSelect: 'none'
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = cameraEnabled ? '#3a6a3a' : '#2a2a2a';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = cameraEnabled ? '#2a5a2a' : '#1a1a1a';
-                        }}
-                        title={cameraEnabled ? 'Turn off camera' : 'Turn on camera'}
-                    >
-                        <div style={{
-                            fontSize: '24px'
-                        }}>
-                            {cameraEnabled ? '📹' : '📷'}
-                        </div>
-                    </div>
-                    
-                    {/* Camera Permission Denied Message */}
-                    {cameraPermissionDenied && (
-                        <div style={{
-                            position: 'fixed',
-                            top: '220px',
-                            right: '60px',
-                            backgroundColor: '#991b1b',
-                            color: '#fff',
-                            padding: '12px 16px',
-                            borderRadius: '8px',
-                            border: '2px solid #ef4444',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
-                            zIndex: 3000,
-                            maxWidth: '250px',
-                            fontSize: '12px',
-                            fontFamily: 'Arial, sans-serif'
-                        }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Camera Access Denied</div>
-                            <div>Please allow camera access in your browser settings and try again.</div>
-                        </div>
-                    )}
-
-                    {/* Host Video Feed - Top Left */}
-                    {cameraEnabled && localStream && (
-                        <div
-                            style={{
-                                position: 'fixed',
-                                left: videoPositions['local']?.x || '170px',
-                                top: videoPositions['local']?.y || '80px',
-                                width: '200px',
-                                height: '150px',
-                                zIndex: 1500,
-                                backgroundColor: '#000',
-                                borderRadius: '8px',
-                                border: '3px solid #d4af37',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
-                                overflow: 'hidden',
-                                cursor: videoPositions['local']?.locked ? 'default' : 'move'
-                            }}
-                            draggable={!videoPositions['local']?.locked}
-                            onDragStart={(e) => {
-                                if (videoPositions['local']?.locked) {
-                                    e.preventDefault();
-                                    return;
-                                }
-                                setDraggingVideoId('local');
-                                e.dataTransfer.effectAllowed = 'move';
-                            }}
-                            onDragEnd={(e) => {
-                                if (!videoPositions['local']?.locked) {
-                                    updateVideoPosition('local', e.clientX - 100, e.clientY - 75);
-                                }
-                                setDraggingVideoId(null);
-                            }}
-                        >
-                            <video
-                                ref={localVideoRef}
-                                autoPlay
-                                muted
-                                playsInline
-                                style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover',
-                                    transform: 'scaleX(-1)' // Mirror effect for own camera
-                                }}
-                                onLoadedMetadata={(e) => {
-                                    e.target.srcObject = localStream;
-                                }}
-                            />
-                            <div style={{
-                                position: 'absolute',
-                                bottom: '4px',
-                                left: '4px',
-                                backgroundColor: 'rgba(0,0,0,0.7)',
-                                color: '#d4af37',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                                fontFamily: 'Arial, sans-serif'
-                            }}>
-                                You
-                            </div>
-                            <div
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleVideoLock('local');
-                                }}
-                                style={{
-                                    position: 'absolute',
-                                    top: '4px',
-                                    right: '4px',
-                                    backgroundColor: 'rgba(0,0,0,0.7)',
-                                    color: videoPositions['local']?.locked ? '#fbbf24' : '#9ca3af',
-                                    padding: '4px',
-                                    borderRadius: '4px',
-                                    fontSize: '12px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
-                                title={videoPositions['local']?.locked ? 'Unlock position' : 'Lock position'}
-                            >
-                                {videoPositions['local']?.locked ? '🔒' : '🔓'}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Player Video Feeds - Right Side Stack */}
-                    {videoFeeds.map((feed, index) => {
-                        const totalFeeds = videoFeeds.length;
-                        const feedHeight = 150; // Base height
-                        const feedWidth = 150; // Base width
-                        const scaleFactor = totalFeeds > 4 ? Math.max(0.6, 1 - (totalFeeds - 4) * 0.1) : 1;
-                        const scaledHeight = feedHeight * scaleFactor;
-                        const scaledWidth = feedWidth * scaleFactor;
-                        const spacing = 8;
-                        const defaultTop = 80 + index * (scaledHeight + spacing);
-                        
-                        return (
-                            <div
-                                key={feed.playerId}
-                                style={{
-                                    position: 'fixed',
-                                    right: videoPositions[feed.playerId]?.x !== undefined ? `${videoPositions[feed.playerId].x}px` : '10px',
-                                    top: videoPositions[feed.playerId]?.y || `${defaultTop}px`,
-                                    width: `${scaledWidth}px`,
-                                    height: `${scaledHeight}px`,
-                                    zIndex: 1500,
-                                    backgroundColor: '#000',
-                                    borderRadius: '8px',
-                                    border: '3px solid #d4af37',
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
-                                    overflow: 'hidden',
-                                    cursor: videoPositions[feed.playerId]?.locked ? 'default' : 'move'
-                                }}
-                                draggable={!videoPositions[feed.playerId]?.locked}
-                                onDragStart={(e) => {
-                                    if (videoPositions[feed.playerId]?.locked) {
-                                        e.preventDefault();
-                                        return;
-                                    }
-                                    setDraggingVideoId(feed.playerId);
-                                    e.dataTransfer.effectAllowed = 'move';
-                                }}
-                                onDragEnd={(e) => {
-                                    if (!videoPositions[feed.playerId]?.locked) {
-                                        updateVideoPosition(feed.playerId, window.innerWidth - e.clientX, e.clientY - (scaledHeight / 2));
-                                    }
-                                    setDraggingVideoId(null);
-                                }}
-                            >
-                                <video
-                                    ref={(el) => {
-                                        if (el && feed.stream) {
-                                            el.srcObject = feed.stream;
-                                            remoteVideoRefs.current[feed.playerId] = el;
-                                        }
-                                    }}
-                                    autoPlay
-                                    playsInline
-                                    style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        objectFit: 'cover'
-                                    }}
-                                />
-                                <div style={{
-                                    position: 'absolute',
-                                    bottom: '4px',
-                                    left: '4px',
-                                    backgroundColor: 'rgba(0,0,0,0.7)',
-                                    color: '#d4af37',
-                                    padding: '2px 6px',
-                                    borderRadius: '4px',
-                                    fontSize: `${Math.max(8, 10 * scaleFactor)}px`,
-                                    fontWeight: 'bold',
-                                    fontFamily: 'Arial, sans-serif',
-                                    maxWidth: '90%',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                }}>
-                                    {feed.playerName}
-                                </div>
-                                <div
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleVideoLock(feed.playerId);
-                                    }}
-                                    style={{
-                                        position: 'absolute',
-                                        top: '4px',
-                                        right: '4px',
-                                        backgroundColor: 'rgba(0,0,0,0.7)',
-                                        color: videoPositions[feed.playerId]?.locked ? '#fbbf24' : '#9ca3af',
-                                        padding: '4px',
-                                        borderRadius: '4px',
-                                        fontSize: `${Math.max(10, 12 * scaleFactor)}px`,
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    title={videoPositions[feed.playerId]?.locked ? 'Unlock position' : 'Lock position'}
-                                >
-                                    {videoPositions[feed.playerId]?.locked ? '🔒' : '🔓'}
-                                </div>
-                            </div>
-                        );
-                    })}
 
                     <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-30">
                         <button
