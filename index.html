@@ -479,6 +479,13 @@
             const [handoutImage, setHandoutImage] = useState(null);
             const handoutInputRef = useRef(null);
             
+            // DM Avatar state
+            const [dmAvatar, setDmAvatar] = useState(null); // { src, x, y, locked }
+            const [dmAvatarBouncing, setDmAvatarBouncing] = useState(false);
+            const [draggingDmAvatar, setDraggingDmAvatar] = useState(false);
+            const [dmAvatarDragOffset, setDmAvatarDragOffset] = useState({ x: 0, y: 0 });
+            const dmAvatarInputRef = useRef(null);
+            
             // Draw tools visibility state
             const [drawToolsVisible, setDrawToolsVisible] = useState(false);
 
@@ -516,6 +523,7 @@
                         dicePresets,
                         characterSheets,
                         diceModifiers,
+                        dmAvatar,
                         autoSavedAt: new Date().toISOString()
                     };
                     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
@@ -538,7 +546,7 @@
             // Auto-save whenever game state changes
             useEffect(() => {
                 scheduleAutoSave();
-            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers]);
+            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers, dmAvatar]);
 
             // Auto-load on startup
             useEffect(() => {
@@ -560,6 +568,7 @@
                             setDicePresets(parsed.dicePresets || dicePresets);
                             setCharacterSheets(parsed.characterSheets || []);
                             setDiceModifiers(parsed.diceModifiers || {});
+                            setDmAvatar(parsed.dmAvatar || null);
                         }
                     } catch (err) {
                         console.error('Auto-load failed', err);
@@ -589,7 +598,7 @@
                 return () => {
                     window.removeEventListener('beforeunload', handleBeforeUnload);
                 };
-            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers, isHost, isConnected, players]);            
+            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers, dmAvatar, isHost, isConnected, players]);            
 
 const dice = [
   { type: 'd4',  sides: 4,  image: 'https://res.cloudinary.com/dmbibsole/image/upload/v1761679707/4_ze8lej.png' },
@@ -731,6 +740,43 @@ useEffect(() => {
         });
     }
 }, []); // Only run once on mount
+
+// Global mouse handlers for DM avatar dragging
+useEffect(() => {
+    const handleGlobalMouseMove = (e) => {
+        if (draggingDmAvatar && dmAvatar && !dmAvatar.locked) {
+            const newX = e.clientX - dmAvatarDragOffset.x;
+            const newY = e.clientY - dmAvatarDragOffset.y;
+            
+            setDmAvatar(prev => ({
+                ...prev,
+                x: newX,
+                y: newY
+            }));
+        }
+    };
+    
+    const handleGlobalMouseUp = () => {
+        if (draggingDmAvatar && dmAvatar) {
+            setDraggingDmAvatar(false);
+            
+            // Broadcast final position
+            if (isConnectedRef.current && isHostRef.current) {
+                broadcastState('DM_AVATAR_UPDATE', dmAvatar);
+            }
+        }
+    };
+    
+    if (draggingDmAvatar) {
+        window.addEventListener('mousemove', handleGlobalMouseMove);
+        window.addEventListener('mouseup', handleGlobalMouseUp);
+        
+        return () => {
+            window.removeEventListener('mousemove', handleGlobalMouseMove);
+            window.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }
+}, [draggingDmAvatar, dmAvatar, dmAvatarDragOffset, isConnectedRef, isHostRef]);
 
 // Initialize throttled broadcast
 useEffect(() => {
@@ -1019,6 +1065,7 @@ useEffect(() => {
                                 dicePresets,
                                 characterSheets,
                                 diceModifiers,
+                                dmAvatar,
                                 players: playersRef.current
                             }
                         });
@@ -1127,6 +1174,7 @@ useEffect(() => {
                         setDicePresets(message.data.dicePresets || dicePresets);
                         setCharacterSheets(message.data.characterSheets || []);
                         setDiceModifiers(message.data.diceModifiers || {});
+                        setDmAvatar(message.data.dmAvatar || null);
                         setPlayers(message.data.players || []);
                         break;
 
@@ -1157,6 +1205,7 @@ useEffect(() => {
                                         dicePresets,
                                         characterSheets,
                                         diceModifiers,
+                                        dmAvatar,
                                         players: updated
                                     }
                                 });
@@ -1317,6 +1366,22 @@ useEffect(() => {
                         setHandoutVisible(true);
                         break;
                     
+                    case 'DM_AVATAR_UPDATE':
+                        // Update DM avatar for all players
+                        setDmAvatar(message.data);
+                        break;
+                    
+                    case 'DM_AVATAR_BOUNCE':
+                        // Trigger DM avatar bounce animation for all players
+                        setDmAvatarBouncing(true);
+                        setTimeout(() => setDmAvatarBouncing(false), 420);
+                        break;
+                    
+                    case 'DM_AVATAR_REMOVE':
+                        // Remove DM avatar for all players
+                        setDmAvatar(null);
+                        break;
+                    
                     case 'AVATAR_BOUNCE':
                         // Trigger bounce animation for all players
                         const { avatarId } = message.data;
@@ -1455,6 +1520,7 @@ useEffect(() => {
                             dicePresets,
                             characterSheets,
                             diceModifiers,
+                            dmAvatar,
                             players: playersRef.current
                         }
                     });
@@ -2751,6 +2817,102 @@ const handleHandoutUpload = async (e) => {
     e.target.value = '';
 };
 
+            // DM Avatar Functions
+            const handleDmAvatarUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file || !file.type.startsWith('image/')) return;
+                
+                try {
+                    // Downscale image to reasonable size
+                    const downscaledDataUrl = await downscaleImage(file, 512, 512);
+                    
+                    const avatarData = {
+                        src: downscaledDataUrl,
+                        x: window.innerWidth / 2 - 75, // Center-ish
+                        y: window.innerHeight / 2 - 75,
+                        locked: false
+                    };
+                    
+                    setDmAvatar(avatarData);
+                    
+                    // Broadcast to all players if host is connected
+                    if (isConnectedRef.current && isHostRef.current) {
+                        broadcastState('DM_AVATAR_UPDATE', avatarData);
+                    }
+                } catch (err) {
+                    console.error('Failed to process DM avatar:', err);
+                    alert('Failed to load DM avatar. Please try a different file.');
+                }
+                
+                e.target.value = '';
+            };
+            
+            const toggleDmAvatarLock = () => {
+                if (!dmAvatar) return;
+                
+                const updated = { ...dmAvatar, locked: !dmAvatar.locked };
+                setDmAvatar(updated);
+                
+                if (isConnectedRef.current && isHostRef.current) {
+                    broadcastState('DM_AVATAR_UPDATE', updated);
+                }
+            };
+            
+            const startDmAvatarDrag = (e) => {
+                if (!dmAvatar || dmAvatar.locked) return;
+                
+                setDraggingDmAvatar(true);
+                setDmAvatarDragOffset({
+                    x: e.clientX - dmAvatar.x,
+                    y: e.clientY - dmAvatar.y
+                });
+            };
+            
+            const handleDmAvatarDrag = (e) => {
+                if (!draggingDmAvatar || !dmAvatar) return;
+                
+                const newX = e.clientX - dmAvatarDragOffset.x;
+                const newY = e.clientY - dmAvatarDragOffset.y;
+                
+                setDmAvatar(prev => ({
+                    ...prev,
+                    x: newX,
+                    y: newY
+                }));
+            };
+            
+            const endDmAvatarDrag = () => {
+                if (draggingDmAvatar && dmAvatar) {
+                    setDraggingDmAvatar(false);
+                    
+                    // Broadcast final position
+                    if (isConnectedRef.current && isHostRef.current) {
+                        broadcastState('DM_AVATAR_UPDATE', dmAvatar);
+                    }
+                }
+            };
+            
+            const handleDmAvatarClick = () => {
+                if (!dmAvatar || draggingDmAvatar) return;
+                
+                // Trigger bounce animation
+                setDmAvatarBouncing(true);
+                setTimeout(() => setDmAvatarBouncing(false), 420);
+                
+                // Broadcast bounce to all players
+                if (isConnectedRef.current && isHostRef.current) {
+                    broadcastState('DM_AVATAR_BOUNCE', { timestamp: Date.now() });
+                }
+            };
+            
+            const removeDmAvatar = () => {
+                setDmAvatar(null);
+                
+                if (isConnectedRef.current && isHostRef.current) {
+                    broadcastState('DM_AVATAR_REMOVE', {});
+                }
+            };
+
             const startDrawing = (e) => {
                 // Anyone can draw now
                 if (!drawingTool || !activeScene.grid?.enabled) return;
@@ -3751,6 +3913,7 @@ const handleHandoutUpload = async (e) => {
                             setDicePresets(parsed.dicePresets || dicePresets);
                             setCharacterSheets(parsed.characterSheets || []);
                             setDiceModifiers(parsed.diceModifiers || {});
+                            setDmAvatar(parsed.dmAvatar || null);
                             alert('Import successful.');
                         } else if (Array.isArray(parsed)) {
                             if (!confirm('Importing a file will replace your current scenes. Proceed?')) {
@@ -4413,6 +4576,22 @@ const handleHandoutUpload = async (e) => {
                             
                             {/* Right side - Grid button, Handouts button, and Help button */}
                             <div className="flex gap-3 items-center">
+                                {/* DM Avatar Button - Host Only */}
+                                {(isHost || !isConnected) && (
+                                    <button
+                                        onClick={() => dmAvatarInputRef.current?.click()}
+                                        className="px-4 py-2 font-bold rounded-lg text-base transition-all border-2 flex items-center gap-2 shadow-lg bg-zinc-700 text-amber-500 border-amber-600 hover:bg-amber-600 hover:text-zinc-900 hover:border-amber-500"
+                                        style={{ 
+                                            fontFamily: 'Georgia, serif',
+                                            boxShadow: dmAvatar ? '0 0 20px rgba(212, 175, 55, 0.6)' : '0 4px 12px rgba(0,0,0,0.4)'
+                                        }}
+                                        title="Upload DM Avatar (Floating Portrait)"
+                                    >
+                                        <Upload size={20} />
+                                        DM
+                                    </button>
+                                )}
+                                
                                 {/* Handouts Button - Host Only */}
                                 {(isHost || !isConnected) && (
                                     <button
@@ -6955,6 +7134,13 @@ const handleHandoutUpload = async (e) => {
                         onChange={handleHandoutUpload}
                         className="hidden"
                     />
+                    <input
+                        ref={dmAvatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleDmAvatarUpload}
+                        className="hidden"
+                    />
 
                     {/* Real-time Pointer Tool */}
                     {/* Show local player's pointer */}
@@ -7132,6 +7318,127 @@ const handleHandoutUpload = async (e) => {
                                     Click anywhere to close
                                 </div>
                             </div>
+                        </div>
+                    )}
+                    
+                    {/* Floating DM Avatar */}
+                    {dmAvatar && (
+                        <div
+                            className={dmAvatarBouncing ? 'avatar bouncing' : 'avatar'}
+                            style={{
+                                position: 'fixed',
+                                left: `${dmAvatar.x}px`,
+                                top: `${dmAvatar.y}px`,
+                                width: '150px',
+                                height: '150px',
+                                zIndex: 2500,
+                                cursor: dmAvatar.locked ? 'default' : 'move',
+                                borderRadius: '50%',
+                                overflow: 'hidden',
+                                border: '4px solid #d4af37',
+                                boxShadow: '0 8px 24px rgba(212, 175, 55, 0.5)',
+                                transition: dmAvatarBouncing ? 'none' : 'transform 180ms cubic-bezier(.2,.8,.2,1), box-shadow 180ms cubic-bezier(.2,.8,.2,1)',
+                                userSelect: 'none'
+                            }}
+                            onMouseDown={startDmAvatarDrag}
+                            onMouseMove={handleDmAvatarDrag}
+                            onMouseUp={endDmAvatarDrag}
+                            onMouseLeave={endDmAvatarDrag}
+                            onClick={handleDmAvatarClick}
+                        >
+                            <img
+                                src={dmAvatar.src}
+                                alt="DM Avatar"
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                            
+                            {/* DM Badge */}
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    bottom: '0',
+                                    left: '0',
+                                    right: '0',
+                                    backgroundColor: 'rgba(212, 175, 55, 0.95)',
+                                    color: '#1a1a1a',
+                                    padding: '4px 0',
+                                    fontSize: '14px',
+                                    fontWeight: 'bold',
+                                    fontFamily: 'Georgia, serif',
+                                    textAlign: 'center',
+                                    letterSpacing: '2px'
+                                }}
+                            >
+                                DM
+                            </div>
+                            
+                            {/* Lock/Remove Controls - Host Only */}
+                            {(isHost || !isConnected) && (
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        top: '4px',
+                                        right: '4px',
+                                        display: 'flex',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleDmAvatarLock();
+                                        }}
+                                        style={{
+                                            width: '28px',
+                                            height: '28px',
+                                            borderRadius: '50%',
+                                            backgroundColor: 'rgba(0,0,0,0.7)',
+                                            border: '2px solid #d4af37',
+                                            color: dmAvatar.locked ? '#fbbf24' : '#9ca3af',
+                                            fontSize: '14px',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        title={dmAvatar.locked ? 'Unlock position' : 'Lock position'}
+                                    >
+                                        {dmAvatar.locked ? '🔒' : '🔓'}
+                                    </button>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (confirm('Remove DM avatar?')) {
+                                                removeDmAvatar();
+                                            }
+                                        }}
+                                        style={{
+                                            width: '28px',
+                                            height: '28px',
+                                            borderRadius: '50%',
+                                            backgroundColor: 'rgba(220, 53, 69, 0.9)',
+                                            border: '2px solid #fff',
+                                            color: '#fff',
+                                            fontSize: '16px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        title="Remove DM avatar"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                     
