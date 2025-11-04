@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    MONOMYTH FULLY WORKING 1.0 
+    MONOMYTH VTT - V 0.71   
 -->
 <head>
     <meta charset="UTF-8">
@@ -2838,6 +2838,12 @@ const handleHandoutUpload = async (e) => {
                     setCurrentDrawing(null);
                 }
                 setIsDrawing(false);
+            };
+
+            // Center all players' views to host's current view
+            const centerAllViews = () => {
+                if (!isHost || !isConnected) return;
+                broadcastState('GRID_TRANSFORM', gridTransform);
             };
 
             // Clamp pan values to keep viewport within 100x100 grid bounds
@@ -6445,6 +6451,49 @@ const handleHandoutUpload = async (e) => {
                             {diceVisible ? '◀' : '🎲'}
                         </div>
                     </div>
+
+                    {/* Center All Views Button - Host only */}
+                    {isHost && isConnected && activeScene.grid?.enabled && (
+                        <div
+                            onClick={centerAllViews}
+                            style={{
+                                position: 'fixed',
+                                bottom: '10px',
+                                right: '10px',
+                                zIndex: 1000,
+                                backgroundColor: '#1a1a1a',
+                                padding: '10px',
+                                borderRadius: '8px',
+                                border: '2px solid #d4af37',
+                                boxShadow: '0 4px 12px rgba(212, 175, 55, 0.4)',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                userSelect: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                e.currentTarget.style.transform = 'scale(1.05)';
+                                e.currentTarget.style.borderColor = '#f5c842';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = '#1a1a1a';
+                                e.currentTarget.style.transform = 'scale(1)';
+                                e.currentTarget.style.borderColor = '#d4af37';
+                            }}
+                            title="Center all players' views to your current view"
+                        >
+                            <div style={{
+                                fontSize: '24px',
+                                color: '#d4af37',
+                                lineHeight: '1'
+                            }}>
+                                👁️
+                            </div>
+                        </div>
+                    )}
 
                     <div style={{
                         position: 'fixed',
