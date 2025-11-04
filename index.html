@@ -2841,23 +2841,31 @@ const handleHandoutUpload = async (e) => {
             };
 
             // Clamp pan values to keep viewport within 100x100 grid bounds
+            // Grid is CENTERED at world origin (0,0), extending from -50 to +50 cells
             const clampPanToGridBounds = (panX, panY, zoom) => {
                 const gridSize = activeScene.grid?.size || 50;
-                const worldWidth = 100 * gridSize;  // 100 cells wide
-                const worldHeight = 100 * gridSize; // 100 cells tall
+                const halfWorld = (GRID_CELLS_TOTAL / 2) * gridSize;  // 50 cells * 50px = 2500px
                 
                 // Get viewport dimensions (accounting for GRID_OFFSET_Y)
                 const viewportWidth = window.innerWidth;
                 const viewportHeight = window.innerHeight - GRID_OFFSET_Y;
                 
-                // Calculate pan limits
-                // When zoomed in: constrain to world bounds
-                // When zoomed out: keep world visible on screen
-                const minPanX = Math.min(0, viewportWidth - worldWidth * zoom);
-                const maxPanX = 0;
+                // Calculate pan limits for a centered grid
+                // Grid extends from -halfWorld to +halfWorld in both directions
+                // Left edge at worldX = -halfWorld, Right edge at worldX = +halfWorld
+                // screenX = worldX * zoom + panX
                 
-                const minPanY = Math.min(0, viewportHeight - worldHeight * zoom);
-                const maxPanY = 0;
+                // Constraints:
+                // - Right edge must be visible (not off left side): halfWorld*zoom + panX >= 0
+                //   So: panX >= -halfWorld*zoom
+                // - Left edge must be visible (not off right side): -halfWorld*zoom + panX <= viewportWidth
+                //   So: panX <= viewportWidth + halfWorld*zoom
+                
+                const minPanX = -halfWorld * zoom;
+                const maxPanX = viewportWidth + halfWorld * zoom;
+                
+                const minPanY = -halfWorld * zoom;
+                const maxPanY = viewportHeight + halfWorld * zoom;
                 
                 // Clamp the values
                 const clampedPanX = Math.max(minPanX, Math.min(maxPanX, panX));
