@@ -448,6 +448,7 @@
             // Voice detection states
             const [talkingPlayers, setTalkingPlayers] = useState(new Set()); // Set of player IDs currently talking
             const [avatarContextMenu, setAvatarContextMenu] = useState(null); // { x, y, avatarId }
+            const [dmAvatarContextMenu, setDmAvatarContextMenu] = useState(null); // { x, y }
             const [micSensitivity, setMicSensitivity] = useState(0.02); // Default sensitivity (2%)
             const audioContextRef = useRef(null);
             const audioStreamRef = useRef(null);
@@ -1407,6 +1408,16 @@ useEffect(() => {
                     case 'DM_AVATAR_UPDATE':
                         // Update DM avatar for all players (position, lock, name, etc)
                         setDmAvatar(message.data);
+                        
+                        // If assigned to us, request mic permission
+                        if (message.data.assignedPlayerId === myPeerIdRef.current && !micEnabled) {
+                            requestMicPermission();
+                        }
+                        
+                        // If this is our avatar, update our monitoring sensitivity
+                        if (message.data.assignedPlayerId === myPeerIdRef.current && message.data.micSensitivity) {
+                            setMicSensitivity(message.data.micSensitivity);
+                        }
                         break;
                     
                     case 'DM_AVATAR_REMOVE':
@@ -2533,6 +2544,39 @@ const handleAvatarUpload = async (e) => {
                 }
             };
             
+            const assignPlayerToDmAvatar = (playerId) => {
+                console.log(`Assigning player ${playerId} to DM avatar`);
+                setDmAvatar(prev => ({ ...prev, assignedPlayerId: playerId }));
+                
+                // If assigning to current player, request mic permission
+                if (playerId === myPeerIdRef.current) {
+                    console.log('This is our player (DM avatar), requesting mic permission...');
+                    requestMicPermission();
+                }
+                
+                // Broadcast assignment to all players
+                if (isConnectedRef.current && isHostRef.current) {
+                    console.log('Broadcasting DM avatar assignment to all players');
+                    const updated = { ...dmAvatar, assignedPlayerId: playerId };
+                    broadcastState('DM_AVATAR_UPDATE', updated);
+                }
+            };
+            
+            const updateDmAvatarSensitivity = (sensitivity) => {
+                setDmAvatar(prev => ({ ...prev, micSensitivity: sensitivity }));
+                
+                // If this is our avatar, update our monitoring sensitivity
+                if (dmAvatar && dmAvatar.assignedPlayerId === myPeerIdRef.current) {
+                    setMicSensitivity(sensitivity);
+                }
+                
+                // Broadcast sensitivity to all players
+                if (isConnectedRef.current && isHostRef.current) {
+                    const updated = { ...dmAvatar, micSensitivity: sensitivity };
+                    broadcastState('DM_AVATAR_UPDATE', updated);
+                }
+            };
+            
             const updateAvatarSensitivity = (avatarId, sensitivity) => {
                 setAvatars(prev => prev.map(av => 
                     av.id === avatarId ? { ...av, micSensitivity: sensitivity } : av
@@ -2595,9 +2639,10 @@ const handleAvatarUpload = async (e) => {
                     }
                     frameCount++;
                     
-                    // Get our assigned avatar to check its sensitivity
+                    // Get our assigned avatar to check its sensitivity (check both regular and DM avatar)
                     const myAvatar = avatars.find(av => av.assignedPlayerId === myPeerIdRef.current);
-                    const sensitivity = myAvatar?.micSensitivity || micSensitivity;
+                    const dmAvatarAssigned = dmAvatar && dmAvatar.assignedPlayerId === myPeerIdRef.current;
+                    const sensitivity = myAvatar?.micSensitivity || dmAvatar?.micSensitivity || micSensitivity;
                     
                     // Check if talking
                     const isTalking = normalizedVolume > sensitivity;
@@ -5386,7 +5431,7 @@ const handleHandoutUpload = async (e) => {
                     {/* DM Host Avatar - Positioned ABOVE the theatre box */}
                     {dmAvatar && (
                         <div
-                            className={`fixed avatar floating`}
+                            className={`fixed avatar floating ${dmAvatar.assignedPlayerId && talkingPlayers.has(dmAvatar.assignedPlayerId) ? 'talking' : ''}`}
                             style={{
                                 left: '12%',
                                 top: '18%',
@@ -5403,8 +5448,13 @@ const handleHandoutUpload = async (e) => {
                             onContextMenu={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if ((isHost || !isConnected) && confirm('Remove DM avatar?')) {
-                                    removeDmAvatar();
+                                if (isHost) {
+                                    setDmAvatarContextMenu({
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        assignedPlayerId: dmAvatar.assignedPlayerId,
+                                        micSensitivity: dmAvatar.micSensitivity || 0.02
+                                    });
                                 }
                             }}
                         >
@@ -7876,6 +7926,159 @@ const handleHandoutUpload = async (e) => {
                                 )}
                             </div>
                         </div>
+                    )}
+                    
+                    {/* DM Avatar Context Menu */}
+                    {dmAvatarContextMenu && (
+                        <>
+                            <div 
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    zIndex: 2999
+                                }}
+                                onClick={() => setDmAvatarContextMenu(null)}
+                            />
+                            <div style={{
+                                position: 'fixed',
+                                left: dmAvatarContextMenu.x,
+                                top: dmAvatarContextMenu.y,
+                                backgroundColor: '#1a1a1a',
+                                border: '2px solid #d4af37',
+                                borderRadius: '8px',
+                                padding: '12px',
+                                zIndex: 3000,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
+                                minWidth: '220px'
+                            }}>
+                                <div style={{
+                                    color: '#d4af37',
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                    fontFamily: 'Georgia, serif',
+                                    marginBottom: '8px',
+                                    borderBottom: '1px solid #d4af37',
+                                    paddingBottom: '6px'
+                                }}>
+                                    DM Host Settings
+                                </div>
+                                
+                                {/* Player Assignment */}
+                                <div style={{
+                                    marginBottom: '12px'
+                                }}>
+                                    <label style={{
+                                        color: '#888',
+                                        fontSize: '11px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        display: 'block',
+                                        marginBottom: '4px'
+                                    }}>
+                                        Assign Player:
+                                    </label>
+                                    <select
+                                        value={dmAvatarContextMenu.assignedPlayerId || ''}
+                                        onChange={(e) => {
+                                            const playerId = e.target.value || null;
+                                            assignPlayerToDmAvatar(playerId);
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '8px',
+                                            backgroundColor: '#2a2a2a',
+                                            color: '#e0e0e0',
+                                            border: '1px solid #444',
+                                            borderRadius: '4px',
+                                            fontSize: '13px',
+                                            fontFamily: 'Arial, sans-serif',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <option value="">None</option>
+                                        {players.map(player => (
+                                            <option key={player.id} value={player.id}>
+                                                {player.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                
+                                {/* Mic Sensitivity Slider */}
+                                <div style={{
+                                    marginBottom: '12px'
+                                }}>
+                                    <label style={{
+                                        color: '#888',
+                                        fontSize: '11px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        display: 'block',
+                                        marginBottom: '4px'
+                                    }}>
+                                        Mic Sensitivity: {Math.round(dmAvatarContextMenu.micSensitivity * 100)}
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="0.001"
+                                        max="0.1"
+                                        step="0.001"
+                                        value={dmAvatarContextMenu.micSensitivity}
+                                        onChange={(e) => {
+                                            const sensitivity = parseFloat(e.target.value);
+                                            setDmAvatarContextMenu(prev => ({ ...prev, micSensitivity: sensitivity }));
+                                            updateDmAvatarSensitivity(sensitivity);
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '9px',
+                                        color: '#666',
+                                        marginTop: '2px'
+                                    }}>
+                                        <span>Quiet</span>
+                                        <span>Loud</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Delete DM Avatar Button */}
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Remove DM Host avatar?')) {
+                                            removeDmAvatar();
+                                            setDmAvatarContextMenu(null);
+                                        }
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 12px',
+                                        backgroundColor: '#dc3545',
+                                        color: '#fff',
+                                        border: '1px solid #b02a37',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#c82333';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#dc3545';
+                                    }}
+                                >
+                                    🗑️ Remove DM Avatar
+                                </button>
+                            </div>
+                        </>
                     )}
                     
                     {/* Avatar Context Menu */}
