@@ -88,6 +88,21 @@
             50% { transform: translateY(-50%) translateY(-20px); }
         }
 
+        .avatar.talking {
+            animation: avatar-talking 0.8s ease-in-out;
+            filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
+        }
+        @keyframes avatar-talking {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-15px); }
+            100% { transform: translateY(0); }
+        }
+
+        .avatar.talking img {
+            border: 4px solid #d4af37 !important;
+            box-shadow: 0 0 25px rgba(212, 175, 55, 0.9), inset 0 0 20px rgba(212, 175, 55, 0.3) !important;
+        }
+
         .avatar.flipped img {
             transform: scaleX(-1);
             transform-origin: center;
@@ -386,6 +401,7 @@
             const throttledHostTokenBroadcast = useRef(null);
             const isHostRef = useRef(false);
             const isConnectedRef = useRef(false);
+            const myPeerIdRef = useRef('');
             
             // NEW ADMISSION SYSTEM STATE
             const [pendingJoinRequests, setPendingJoinRequests] = useState([]);
@@ -428,6 +444,17 @@
 
             const [bouncingAvatarIds, setBouncingAvatarIds] = useState([]);
             const clickTimeoutRef = useRef(null);
+            
+            // Voice detection states
+            const [talkingPlayers, setTalkingPlayers] = useState(new Set()); // Set of player IDs currently talking
+            const [avatarContextMenu, setAvatarContextMenu] = useState(null); // { x, y, avatarId }
+            const [micSensitivity, setMicSensitivity] = useState(0.01); // Default sensitivity
+            const audioContextRef = useRef(null);
+            const audioStreamRef = useRef(null);
+            const analyserRef = useRef(null);
+            const animationFrameRef = useRef(null);
+            const isTalkingRef = useRef(false);
+            const [micEnabled, setMicEnabled] = useState(false);
 
             const [gridTransform, setGridTransform] = useState({
                 zoom: 1.5,
@@ -680,6 +707,11 @@ const dice = [
                 console.log('isConnectedRef updated to:', isConnected);
             }, [isConnected]);
 
+            // Sync myPeerIdRef with myPeerId state
+            useEffect(() => {
+                myPeerIdRef.current = myPeerId;
+            }, [myPeerId]);
+
             // Cleanup dice notification timeout on unmount
             useEffect(() => {
                 return () => {
@@ -695,6 +727,13 @@ useEffect(() => {
         if (diceNotificationTimeoutRef.current) {
             clearTimeout(diceNotificationTimeoutRef.current);
         }
+    };
+}, []);
+
+// Cleanup voice detection on unmount
+useEffect(() => {
+    return () => {
+        stopVoiceDetection();
     };
 }, []);
 
@@ -1390,6 +1429,49 @@ useEffect(() => {
                         if (isHostRef.current) {
                             broadcastState('AVATAR_BOUNCE', message.data);
                         }
+                        break;
+                    
+                    case 'AVATAR_ASSIGNMENT':
+                        // Update avatar player assignment for all players
+                        setAvatars(prev => prev.map(av => 
+                            av.id === message.data.avatarId 
+                                ? { ...av, assignedPlayerId: message.data.playerId } 
+                                : av
+                        ));
+                        
+                        // If assigned to us, request mic permission
+                        if (message.data.playerId === myPeerIdRef.current) {
+                            requestMicPermission();
+                        }
+                        break;
+                    
+                    case 'AVATAR_SENSITIVITY':
+                        // Update avatar sensitivity for all players
+                        setAvatars(prev => prev.map(av => 
+                            av.id === message.data.avatarId 
+                                ? { ...av, micSensitivity: message.data.sensitivity } 
+                                : av
+                        ));
+                        
+                        // If this is our avatar, update our monitoring
+                        const myAvatarSens = avatars.find(av => av.id === message.data.avatarId);
+                        if (myAvatarSens && myAvatarSens.assignedPlayerId === myPeerIdRef.current) {
+                            setMicSensitivity(message.data.sensitivity);
+                        }
+                        break;
+                    
+                    case 'PLAYER_TALKING_START':
+                        // Mark player as talking
+                        setTalkingPlayers(prev => new Set([...prev, message.data.playerId]));
+                        break;
+                    
+                    case 'PLAYER_TALKING_STOP':
+                        // Mark player as not talking
+                        setTalkingPlayers(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(message.data.playerId);
+                            return newSet;
+                        });
                         break;
                     
                     case 'JOIN_REQUEST':
@@ -2415,6 +2497,117 @@ const handleAvatarUpload = async (e) => {
 
             const updateAvatarName = (avatarId, newName) => {
                 setAvatars(prev => prev.map(av => av.id === avatarId ? { ...av, name: newName } : av));
+            };
+            
+            // Voice Detection Functions
+            const assignPlayerToAvatar = (avatarId, playerId) => {
+                setAvatars(prev => prev.map(av => 
+                    av.id === avatarId ? { ...av, assignedPlayerId: playerId } : av
+                ));
+                
+                // If assigning to current player, request mic permission
+                if (playerId === myPeerIdRef.current) {
+                    requestMicPermission();
+                }
+                
+                // Broadcast assignment to all players
+                if (isConnectedRef.current && isHostRef.current) {
+                    broadcastState('AVATAR_ASSIGNMENT', { avatarId, playerId });
+                }
+            };
+            
+            const updateAvatarSensitivity = (avatarId, sensitivity) => {
+                setAvatars(prev => prev.map(av => 
+                    av.id === avatarId ? { ...av, micSensitivity: sensitivity } : av
+                ));
+                
+                // If this is our avatar, update our monitoring sensitivity
+                const avatar = avatars.find(av => av.id === avatarId);
+                if (avatar && avatar.assignedPlayerId === myPeerIdRef.current) {
+                    setMicSensitivity(sensitivity);
+                }
+                
+                // Broadcast sensitivity to all players
+                if (isConnectedRef.current && isHostRef.current) {
+                    broadcastState('AVATAR_SENSITIVITY', { avatarId, sensitivity });
+                }
+            };
+            
+            const requestMicPermission = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    audioStreamRef.current = stream;
+                    
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    audioContextRef.current = audioContext;
+                    
+                    const source = audioContext.createMediaStreamSource(stream);
+                    const analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+                    analyserRef.current = analyser;
+                    
+                    setMicEnabled(true);
+                    startVoiceDetection();
+                } catch (error) {
+                    console.error('Microphone permission denied:', error);
+                    alert('Microphone access denied. Voice animations will not work for your avatar.');
+                }
+            };
+            
+            const startVoiceDetection = () => {
+                if (!analyserRef.current) return;
+                
+                const analyser = analyserRef.current;
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                const detectVoice = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    
+                    // Calculate average volume
+                    const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+                    const normalizedVolume = average / 255;
+                    
+                    // Get our assigned avatar to check its sensitivity
+                    const myAvatar = avatars.find(av => av.assignedPlayerId === myPeerIdRef.current);
+                    const sensitivity = myAvatar?.micSensitivity || micSensitivity;
+                    
+                    // Check if talking
+                    const isTalking = normalizedVolume > sensitivity;
+                    
+                    // Only broadcast state changes
+                    if (isTalking !== isTalkingRef.current) {
+                        isTalkingRef.current = isTalking;
+                        
+                        if (isTalking) {
+                            // Broadcast that we're talking
+                            if (isConnectedRef.current) {
+                                broadcastState('PLAYER_TALKING_START', { playerId: myPeerIdRef.current });
+                            }
+                        } else {
+                            // Broadcast that we stopped talking
+                            if (isConnectedRef.current) {
+                                broadcastState('PLAYER_TALKING_STOP', { playerId: myPeerIdRef.current });
+                            }
+                        }
+                    }
+                    
+                    animationFrameRef.current = requestAnimationFrame(detectVoice);
+                };
+                
+                detectVoice();
+            };
+            
+            const stopVoiceDetection = () => {
+                if (animationFrameRef.current) {
+                    cancelAnimationFrame(animationFrameRef.current);
+                }
+                if (audioStreamRef.current) {
+                    audioStreamRef.current.getTracks().forEach(track => track.stop());
+                }
+                if (audioContextRef.current) {
+                    audioContextRef.current.close();
+                }
             };
 
             const handleImageMouseDown = (e, imageId) => {
@@ -5101,10 +5294,11 @@ const handleHandoutUpload = async (e) => {
 
                             {avatars.map((avatar) => {
                                 const isBouncing = bouncingAvatarIds.includes(avatar.id);
+                                const isTalking = avatar.assignedPlayerId && talkingPlayers.has(avatar.assignedPlayerId);
                                 return (
                                     <div
                                         key={avatar.id}
-                                        className={`absolute avatar ${isBouncing ? 'bouncing' : ''} ${avatar.flipped ? 'flipped' : ''}`}
+                                        className={`absolute avatar ${isBouncing ? 'bouncing' : ''} ${isTalking ? 'talking' : ''} ${avatar.flipped ? 'flipped' : ''}`}
                                         style={{
                                             left: avatar.x,
                                             top: avatar.y,
@@ -5115,8 +5309,14 @@ const handleHandoutUpload = async (e) => {
                                         onContextMenu={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            if (isHost && confirm('Delete avatar?')) {
-                                                deleteAvatar(avatar.id);
+                                            if (isHost) {
+                                                setAvatarContextMenu({
+                                                    x: e.clientX,
+                                                    y: e.clientY,
+                                                    avatarId: avatar.id,
+                                                    assignedPlayerId: avatar.assignedPlayerId,
+                                                    micSensitivity: avatar.micSensitivity || 0.01
+                                                });
                                             }
                                         }}
                                     >
@@ -7640,6 +7840,159 @@ const handleHandoutUpload = async (e) => {
                                 )}
                             </div>
                         </div>
+                    )}
+                    
+                    {/* Avatar Context Menu */}
+                    {avatarContextMenu && (
+                        <>
+                            <div 
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    zIndex: 2999
+                                }}
+                                onClick={() => setAvatarContextMenu(null)}
+                            />
+                            <div style={{
+                                position: 'fixed',
+                                left: avatarContextMenu.x,
+                                top: avatarContextMenu.y,
+                                backgroundColor: '#1a1a1a',
+                                border: '2px solid #d4af37',
+                                borderRadius: '8px',
+                                padding: '12px',
+                                zIndex: 3000,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
+                                minWidth: '220px'
+                            }}>
+                                <div style={{
+                                    color: '#d4af37',
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                    fontFamily: 'Georgia, serif',
+                                    marginBottom: '8px',
+                                    borderBottom: '1px solid #d4af37',
+                                    paddingBottom: '6px'
+                                }}>
+                                    Avatar Settings
+                                </div>
+                                
+                                {/* Player Assignment */}
+                                <div style={{
+                                    marginBottom: '12px'
+                                }}>
+                                    <label style={{
+                                        color: '#888',
+                                        fontSize: '11px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        display: 'block',
+                                        marginBottom: '4px'
+                                    }}>
+                                        Assign Player:
+                                    </label>
+                                    <select
+                                        value={avatarContextMenu.assignedPlayerId || ''}
+                                        onChange={(e) => {
+                                            const playerId = e.target.value || null;
+                                            assignPlayerToAvatar(avatarContextMenu.avatarId, playerId);
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '8px',
+                                            backgroundColor: '#2a2a2a',
+                                            color: '#e0e0e0',
+                                            border: '1px solid #444',
+                                            borderRadius: '4px',
+                                            fontSize: '13px',
+                                            fontFamily: 'Arial, sans-serif',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <option value="">None</option>
+                                        {players.map(player => (
+                                            <option key={player.id} value={player.id}>
+                                                {player.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                
+                                {/* Mic Sensitivity Slider */}
+                                <div style={{
+                                    marginBottom: '12px'
+                                }}>
+                                    <label style={{
+                                        color: '#888',
+                                        fontSize: '11px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        display: 'block',
+                                        marginBottom: '4px'
+                                    }}>
+                                        Mic Sensitivity: {Math.round(avatarContextMenu.micSensitivity * 100)}
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="0.001"
+                                        max="0.1"
+                                        step="0.001"
+                                        value={avatarContextMenu.micSensitivity}
+                                        onChange={(e) => {
+                                            const sensitivity = parseFloat(e.target.value);
+                                            setAvatarContextMenu(prev => ({ ...prev, micSensitivity: sensitivity }));
+                                            updateAvatarSensitivity(avatarContextMenu.avatarId, sensitivity);
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '9px',
+                                        color: '#666',
+                                        marginTop: '2px'
+                                    }}>
+                                        <span>Quiet</span>
+                                        <span>Loud</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Delete Avatar Button */}
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Delete this avatar?')) {
+                                            deleteAvatar(avatarContextMenu.avatarId);
+                                            setAvatarContextMenu(null);
+                                        }
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 12px',
+                                        backgroundColor: '#dc3545',
+                                        color: '#fff',
+                                        border: '1px solid #b02a37',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#c82333';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#dc3545';
+                                    }}
+                                >
+                                    🗑️ Delete Avatar
+                                </button>
+                            </div>
+                        </>
                     )}
                     
                     {/* Player Context Menu */}
