@@ -5136,68 +5136,70 @@ const handleHandoutUpload = async (e) => {
                                     </div>
                                 );
                             })}
-                            
-                            {/* DM Host Avatar - Locked to top-left, same layer as other avatars */}
-                            {dmAvatar && (
-                                <div
-                                    className={`absolute avatar ${dmAvatarBouncing ? 'bouncing' : ''}`}
-                                    style={{
-                                        left: '20px',
-                                        top: '20px',
-                                        width: '150px'
-                                    }}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (isHost || !isConnected) {
-                                            handleDmAvatarClick();
-                                        }
-                                    }}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if ((isHost || !isConnected) && confirm('Remove DM avatar?')) {
-                                            removeDmAvatar();
-                                        }
-                                    }}
-                                >
-                                    <div className="relative leading-none">
-                                        <img
-                                            src={dmAvatar.src}
-                                            alt="DM Host"
-                                            className="w-full pointer-events-none select-none block"
-                                            style={{
-                                                display: 'block',
-                                                boxShadow: '0 1px 1px rgba(0, 0, 0, 0)',
-                                                borderRadius: '50%',
-                                                border: '4px solid #d4af37'
-                                            }}
-                                            draggable={false}
-                                        />
-                                    </div>
-
-                                    <div className="bg-zinc-800 border-2 border-amber-600 rounded px-3 py-2">
-                                        <input
-                                            type="text"
-                                            value={dmAvatar.name || 'DM Host'}
-                                            onChange={(e) => {
-                                                if (isHost || !isConnected) {
-                                                    const updated = { ...dmAvatar, name: e.target.value };
-                                                    setDmAvatar(updated);
-                                                    if (isConnectedRef.current && isHostRef.current) {
-                                                        broadcastState('DM_AVATAR_UPDATE', updated);
-                                                    }
-                                                }
-                                            }}
-                                            className="w-full bg-transparent text-amber-500 text-center text-lg font-bold outline-none"
-                                            style={{ fontFamily: 'Georgia, serif' }}
-                                            placeholder="DM Host"
-                                            disabled={!isHost && isConnected}
-                                        />
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     </div>
+                    
+                    {/* DM Host Avatar - Positioned ABOVE the theatre box */}
+                    {dmAvatar && (
+                        <div
+                            className={`fixed avatar ${dmAvatarBouncing ? 'bouncing' : ''}`}
+                            style={{
+                                left: '5%',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                width: '150px',
+                                zIndex: 100
+                            }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (isHost || !isConnected) {
+                                    handleDmAvatarClick();
+                                }
+                            }}
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if ((isHost || !isConnected) && confirm('Remove DM avatar?')) {
+                                    removeDmAvatar();
+                                }
+                            }}
+                        >
+                            <div className="relative leading-none">
+                                <img
+                                    src={dmAvatar.src}
+                                    alt="DM Host"
+                                    className="w-full pointer-events-none select-none block"
+                                    style={{
+                                        display: 'block',
+                                        boxShadow: '0 8px 24px rgba(212, 175, 55, 0.4)',
+                                        borderRadius: '50%',
+                                        border: '4px solid #d4af37'
+                                    }}
+                                    draggable={false}
+                                />
+                            </div>
+
+                            <div className="bg-zinc-800 border-2 border-amber-600 rounded px-3 py-2">
+                                <input
+                                    type="text"
+                                    value={dmAvatar.name || 'DM Host'}
+                                    onChange={(e) => {
+                                        if (isHost || !isConnected) {
+                                            const updated = { ...dmAvatar, name: e.target.value };
+                                            setDmAvatar(updated);
+                                            if (isConnectedRef.current && isHostRef.current) {
+                                                broadcastState('DM_AVATAR_UPDATE', updated);
+                                            }
+                                        }
+                                    }}
+                                    className="w-full bg-transparent text-amber-500 text-center text-lg font-bold outline-none"
+                                    style={{ fontFamily: 'Georgia, serif' }}
+                                    placeholder="DM Host"
+                                    disabled={!isHost && isConnected}
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     {/* Grid Blur Layer - REMOVED: Now applied directly to theatre canvas via filter */}
 
