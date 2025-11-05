@@ -479,6 +479,49 @@
             const [handoutImage, setHandoutImage] = useState(null);
             const handoutInputRef = useRef(null);
             
+            // Reliable clipboard copy function that works even in async contexts
+            const copyToClipboard = (text) => {
+                // Try modern API first
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    return navigator.clipboard.writeText(text)
+                        .then(() => true)
+                        .catch(() => {
+                            // Fallback to textarea method
+                            return fallbackCopyToClipboard(text);
+                        });
+                } else {
+                    // Use fallback directly
+                    return Promise.resolve(fallbackCopyToClipboard(text));
+                }
+            };
+            
+            const fallbackCopyToClipboard = (text) => {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.top = '0';
+                textarea.style.left = '0';
+                textarea.style.width = '2em';
+                textarea.style.height = '2em';
+                textarea.style.padding = '0';
+                textarea.style.border = 'none';
+                textarea.style.outline = 'none';
+                textarea.style.boxShadow = 'none';
+                textarea.style.background = 'transparent';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                
+                try {
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    return successful;
+                } catch (err) {
+                    document.body.removeChild(textarea);
+                    return false;
+                }
+            };
+            
             // DM Avatar state
             const [dmAvatar, setDmAvatar] = useState(null); // { src, x, y, locked }
             const [dmAvatarBouncing, setDmAvatarBouncing] = useState(false);
@@ -893,34 +936,22 @@ useEffect(() => {
                     
                     // Generate and copy shareable link to clipboard
                     const shareableLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(shareableLink)
-                            .then(() => {
+                    copyToClipboard(shareableLink)
+                        .then((success) => {
+                            if (success) {
                                 console.log('Shareable link copied to clipboard:', shareableLink);
-                                
-                                // Show "Session created! Link copied to clipboard" message
-                                setSessionCreatedMessage(true);
-                                
-                                // Auto-fade after configured duration
-                                setTimeout(() => {
-                                    setSessionCreatedMessage(false);
-                                }, AUTO_FADE_DURATION);
-                            })
-                            .catch(err => {
-                                console.warn('Could not copy shareable link to clipboard:', err);
-                                // Still show success message even if clipboard fails
-                                setSessionCreatedMessage(true);
-                                setTimeout(() => {
-                                    setSessionCreatedMessage(false);
-                                }, AUTO_FADE_DURATION);
-                            });
-                    } else {
-                        // Browser doesn't support clipboard API
-                        setSessionCreatedMessage(true);
-                        setTimeout(() => {
-                            setSessionCreatedMessage(false);
-                        }, AUTO_FADE_DURATION);
-                    }
+                            } else {
+                                console.warn('Could not copy shareable link to clipboard');
+                            }
+                            
+                            // Show "Session created! Link copied to clipboard" message
+                            setSessionCreatedMessage(true);
+                            
+                            // Auto-fade after configured duration
+                            setTimeout(() => {
+                                setSessionCreatedMessage(false);
+                            }, AUTO_FADE_DURATION);
+                        });
                     
                     // Close multiplayer menu if open
                     setShowMultiplayerMenu(false);
@@ -1018,9 +1049,9 @@ useEffect(() => {
                     
                     // Automatically copy shareable link to clipboard
                     const shareableLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(shareableLink)
-                            .then(() => {
+                    copyToClipboard(shareableLink)
+                        .then((success) => {
+                            if (success) {
                                 console.log('Shareable link copied to clipboard:', shareableLink);
                                 
                                 // Show clipboard notification
@@ -1034,11 +1065,10 @@ useEffect(() => {
                                     setClipboardNotification(false);
                                     clipboardNotificationTimeoutRef.current = null;
                                 }, 3000);
-                            })
-                            .catch(err => {
-                                console.warn('Could not copy shareable link to clipboard:', err);
-                            });
-                    }
+                            } else {
+                                console.warn('Could not copy shareable link to clipboard');
+                            }
+                        });
                     
                     // Give React a moment to update state, then close modal
                     setTimeout(() => {
