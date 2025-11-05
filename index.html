@@ -80,6 +80,14 @@
             100% { transform: translateY(0) scale(1); }
         }
 
+        .avatar.floating {
+            animation: avatar-float 4s ease-in-out infinite;
+        }
+        @keyframes avatar-float {
+            0%, 100% { transform: translateY(-50%) translateY(0px); }
+            50% { transform: translateY(-50%) translateY(-20px); }
+        }
+
         .avatar.flipped img {
             transform: scaleX(-1);
             transform-origin: center;
@@ -5142,7 +5150,7 @@ const handleHandoutUpload = async (e) => {
                     {/* DM Host Avatar - Positioned ABOVE the theatre box */}
                     {dmAvatar && (
                         <div
-                            className={`fixed avatar ${dmAvatarBouncing ? 'bouncing' : ''}`}
+                            className={`fixed avatar floating`}
                             style={{
                                 left: '12%',
                                 top: '18%',
@@ -5194,7 +5202,7 @@ const handleHandoutUpload = async (e) => {
                                     }}
                                     className="w-full bg-transparent text-amber-500 text-center text-lg font-bold outline-none"
                                     style={{ fontFamily: 'Georgia, serif' }}
-                                    placeholder="Host"
+                                    placeholder="DM Host"
                                     disabled={!isHost && isConnected}
                                 />
                             </div>
