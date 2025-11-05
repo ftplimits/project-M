@@ -848,6 +848,32 @@ useEffect(() => {
     }
 }, []); // Only run once on mount
 
+// Cleanup peer connections on unmount/refresh
+useEffect(() => {
+    return () => {
+        console.log('Component unmounting - cleaning up peer connections');
+        if (peer) {
+            try {
+                peer.destroy();
+                console.log('Peer destroyed successfully');
+            } catch (err) {
+                console.error('Error destroying peer:', err);
+            }
+        }
+        
+        // Close all data connections
+        if (connectionsRef.current.length > 0) {
+            connectionsRef.current.forEach(conn => {
+                try {
+                    conn.close();
+                } catch (err) {
+                    console.error('Error closing connection:', err);
+                }
+            });
+        }
+    };
+}, [peer]); // Re-run if peer changes
+
 // Initialize throttled broadcast
 useEffect(() => {
     // Initialize throttled broadcast for players (only send network updates every 100ms)
