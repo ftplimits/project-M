@@ -2652,6 +2652,17 @@ const handleAvatarUpload = async (e) => {
                         isTalkingRef.current = isTalking;
                         console.log(`Voice state changed: ${isTalking ? 'TALKING' : 'STOPPED'} (volume: ${(normalizedVolume * 100).toFixed(1)}%)`);
                         
+                        // Update local state FIRST (important for solo mode)
+                        if (isTalking) {
+                            setTalkingPlayers(prev => new Set([...prev, myPeerIdRef.current]));
+                        } else {
+                            setTalkingPlayers(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(myPeerIdRef.current);
+                                return newSet;
+                            });
+                        }
+                        
                         const messageType = isTalking ? 'PLAYER_TALKING_START' : 'PLAYER_TALKING_STOP';
                         const messageData = { playerId: myPeerIdRef.current };
                         
