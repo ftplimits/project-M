@@ -448,7 +448,7 @@
             // Voice detection states
             const [talkingPlayers, setTalkingPlayers] = useState(new Set()); // Set of player IDs currently talking
             const [avatarContextMenu, setAvatarContextMenu] = useState(null); // { x, y, avatarId }
-            const [micSensitivity, setMicSensitivity] = useState(0.01); // Default sensitivity
+            const [micSensitivity, setMicSensitivity] = useState(0.02); // Default sensitivity (2%)
             const audioContextRef = useRef(null);
             const audioStreamRef = useRef(null);
             const analyserRef = useRef(null);
@@ -1462,16 +1462,30 @@ useEffect(() => {
                     
                     case 'PLAYER_TALKING_START':
                         // Mark player as talking
+                        console.log(`Received PLAYER_TALKING_START for player: ${message.data.playerId}`);
                         setTalkingPlayers(prev => new Set([...prev, message.data.playerId]));
+                        
+                        // If host, re-broadcast to all other players
+                        if (isHostRef.current) {
+                            console.log('Host re-broadcasting PLAYER_TALKING_START');
+                            broadcastState('PLAYER_TALKING_START', message.data);
+                        }
                         break;
                     
                     case 'PLAYER_TALKING_STOP':
                         // Mark player as not talking
+                        console.log(`Received PLAYER_TALKING_STOP for player: ${message.data.playerId}`);
                         setTalkingPlayers(prev => {
                             const newSet = new Set(prev);
                             newSet.delete(message.data.playerId);
                             return newSet;
                         });
+                        
+                        // If host, re-broadcast to all other players
+                        if (isHostRef.current) {
+                            console.log('Host re-broadcasting PLAYER_TALKING_STOP');
+                            broadcastState('PLAYER_TALKING_STOP', message.data);
+                        }
                         break;
                     
                     case 'JOIN_REQUEST':
@@ -2501,17 +2515,20 @@ const handleAvatarUpload = async (e) => {
             
             // Voice Detection Functions
             const assignPlayerToAvatar = (avatarId, playerId) => {
+                console.log(`Assigning player ${playerId} to avatar ${avatarId}`);
                 setAvatars(prev => prev.map(av => 
                     av.id === avatarId ? { ...av, assignedPlayerId: playerId } : av
                 ));
                 
                 // If assigning to current player, request mic permission
                 if (playerId === myPeerIdRef.current) {
+                    console.log('This is our player, requesting mic permission...');
                     requestMicPermission();
                 }
                 
                 // Broadcast assignment to all players
                 if (isConnectedRef.current && isHostRef.current) {
+                    console.log('Broadcasting avatar assignment to all players');
                     broadcastState('AVATAR_ASSIGNMENT', { avatarId, playerId });
                 }
             };
@@ -2535,6 +2552,7 @@ const handleAvatarUpload = async (e) => {
             
             const requestMicPermission = async () => {
                 try {
+                    console.log('Requesting microphone permission...');
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     audioStreamRef.current = stream;
                     
@@ -2548,6 +2566,7 @@ const handleAvatarUpload = async (e) => {
                     analyserRef.current = analyser;
                     
                     setMicEnabled(true);
+                    console.log('Microphone access granted, starting voice detection...');
                     startVoiceDetection();
                 } catch (error) {
                     console.error('Microphone permission denied:', error);
@@ -2558,8 +2577,10 @@ const handleAvatarUpload = async (e) => {
             const startVoiceDetection = () => {
                 if (!analyserRef.current) return;
                 
+                console.log('Voice detection started!');
                 const analyser = analyserRef.current;
                 const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                let frameCount = 0;
                 
                 const detectVoice = () => {
                     analyser.getByteFrequencyData(dataArray);
@@ -2567,6 +2588,12 @@ const handleAvatarUpload = async (e) => {
                     // Calculate average volume
                     const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
                     const normalizedVolume = average / 255;
+                    
+                    // Log every 60 frames (about once per second at 60fps)
+                    if (frameCount % 60 === 0) {
+                        console.log(`Voice level: ${(normalizedVolume * 100).toFixed(1)}% | Sensitivity: ${(micSensitivity * 100).toFixed(1)}% | Talking: ${isTalkingRef.current}`);
+                    }
+                    frameCount++;
                     
                     // Get our assigned avatar to check its sensitivity
                     const myAvatar = avatars.find(av => av.assignedPlayerId === myPeerIdRef.current);
@@ -2578,17 +2605,26 @@ const handleAvatarUpload = async (e) => {
                     // Only broadcast state changes
                     if (isTalking !== isTalkingRef.current) {
                         isTalkingRef.current = isTalking;
+                        console.log(`Voice state changed: ${isTalking ? 'TALKING' : 'STOPPED'} (volume: ${(normalizedVolume * 100).toFixed(1)}%)`);
                         
-                        if (isTalking) {
-                            // Broadcast that we're talking
-                            if (isConnectedRef.current) {
-                                broadcastState('PLAYER_TALKING_START', { playerId: myPeerIdRef.current });
+                        const messageType = isTalking ? 'PLAYER_TALKING_START' : 'PLAYER_TALKING_STOP';
+                        const messageData = { playerId: myPeerIdRef.current };
+                        
+                        if (isConnectedRef.current) {
+                            if (isHostRef.current) {
+                                // Host broadcasts to all players
+                                console.log(`Host broadcasting ${messageType}`);
+                                broadcastState(messageType, messageData);
+                            } else {
+                                // Player sends to host who will re-broadcast
+                                console.log(`Player sending ${messageType} to host`);
+                                connectionsRef.current[0]?.send({
+                                    type: messageType,
+                                    data: messageData
+                                });
                             }
                         } else {
-                            // Broadcast that we stopped talking
-                            if (isConnectedRef.current) {
-                                broadcastState('PLAYER_TALKING_STOP', { playerId: myPeerIdRef.current });
-                            }
+                            console.log('Not connected, cannot broadcast voice state');
                         }
                     }
                     
@@ -5315,7 +5351,7 @@ const handleHandoutUpload = async (e) => {
                                                     y: e.clientY,
                                                     avatarId: avatar.id,
                                                     assignedPlayerId: avatar.assignedPlayerId,
-                                                    micSensitivity: avatar.micSensitivity || 0.01
+                                                    micSensitivity: avatar.micSensitivity || 0.02
                                                 });
                                             }
                                         }}
