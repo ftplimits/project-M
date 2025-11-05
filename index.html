@@ -523,11 +523,8 @@
             };
             
             // DM Avatar state
-            const [dmAvatar, setDmAvatar] = useState(null); // { src, x, y, locked }
+            const [dmAvatar, setDmAvatar] = useState(null); // { src, name }
             const [dmAvatarBouncing, setDmAvatarBouncing] = useState(false);
-            const [draggingDmAvatar, setDraggingDmAvatar] = useState(false);
-            const [dmAvatarDragOffset, setDmAvatarDragOffset] = useState({ x: 0, y: 0 });
-            const [dmAvatarContextMenu, setDmAvatarContextMenu] = useState(null); // { x, y }
             const dmAvatarInputRef = useRef(null);
             
             // Draw tools visibility state
@@ -784,43 +781,6 @@ useEffect(() => {
         });
     }
 }, []); // Only run once on mount
-
-// Global mouse handlers for DM avatar dragging
-useEffect(() => {
-    const handleGlobalMouseMove = (e) => {
-        if (draggingDmAvatar && dmAvatar && !dmAvatar.locked) {
-            const newX = e.clientX - dmAvatarDragOffset.x;
-            const newY = e.clientY - dmAvatarDragOffset.y;
-            
-            setDmAvatar(prev => ({
-                ...prev,
-                x: newX,
-                y: newY
-            }));
-        }
-    };
-    
-    const handleGlobalMouseUp = () => {
-        if (draggingDmAvatar && dmAvatar) {
-            setDraggingDmAvatar(false);
-            
-            // Broadcast final position
-            if (isConnectedRef.current && isHostRef.current) {
-                broadcastState('DM_AVATAR_UPDATE', dmAvatar);
-            }
-        }
-    };
-    
-    if (draggingDmAvatar) {
-        window.addEventListener('mousemove', handleGlobalMouseMove);
-        window.addEventListener('mouseup', handleGlobalMouseUp);
-        
-        return () => {
-            window.removeEventListener('mousemove', handleGlobalMouseMove);
-            window.removeEventListener('mouseup', handleGlobalMouseUp);
-        };
-    }
-}, [draggingDmAvatar, dmAvatar, dmAvatarDragOffset, isConnectedRef, isHostRef]);
 
 // Initialize throttled broadcast
 useEffect(() => {
@@ -2853,10 +2813,7 @@ const handleHandoutUpload = async (e) => {
                     
                     const avatarData = {
                         src: downscaledDataUrl,
-                        x: window.innerWidth / 2 - 75, // Center-ish
-                        y: window.innerHeight / 2 - 75,
-                        locked: false,
-                        name: 'DM'
+                        name: 'DM Host'
                     };
                     
                     setDmAvatar(avatarData);
@@ -2873,59 +2830,8 @@ const handleHandoutUpload = async (e) => {
                 e.target.value = '';
             };
             
-            const toggleDmAvatarLock = () => {
-                if (!dmAvatar) return;
-                
-                // Only host can lock/unlock the DM avatar
-                if (!isHost && isConnected) return;
-                
-                const updated = { ...dmAvatar, locked: !dmAvatar.locked };
-                setDmAvatar(updated);
-                
-                if (isConnectedRef.current && isHostRef.current) {
-                    broadcastState('DM_AVATAR_UPDATE', updated);
-                }
-            };
-            
-            const startDmAvatarDrag = (e) => {
-                if (!dmAvatar || dmAvatar.locked) return;
-                
-                // Only host can move the DM avatar
-                if (!isHost && isConnected) return;
-                
-                setDraggingDmAvatar(true);
-                setDmAvatarDragOffset({
-                    x: e.clientX - dmAvatar.x,
-                    y: e.clientY - dmAvatar.y
-                });
-            };
-            
-            const handleDmAvatarDrag = (e) => {
-                if (!draggingDmAvatar || !dmAvatar) return;
-                
-                const newX = e.clientX - dmAvatarDragOffset.x;
-                const newY = e.clientY - dmAvatarDragOffset.y;
-                
-                setDmAvatar(prev => ({
-                    ...prev,
-                    x: newX,
-                    y: newY
-                }));
-            };
-            
-            const endDmAvatarDrag = () => {
-                if (draggingDmAvatar && dmAvatar) {
-                    setDraggingDmAvatar(false);
-                    
-                    // Broadcast final position
-                    if (isConnectedRef.current && isHostRef.current) {
-                        broadcastState('DM_AVATAR_UPDATE', dmAvatar);
-                    }
-                }
-            };
-            
             const handleDmAvatarClick = () => {
-                if (!dmAvatar || draggingDmAvatar) return;
+                if (!dmAvatar) return;
                 
                 // Trigger bounce animation (local only - not broadcast to reduce P2P strain)
                 setDmAvatarBouncing(true);
@@ -2941,35 +2847,6 @@ const handleHandoutUpload = async (e) => {
                 if (isConnectedRef.current && isHostRef.current) {
                     broadcastState('DM_AVATAR_REMOVE', {});
                 }
-            };
-            
-            const changeDmAvatarName = () => {
-                if (!dmAvatar) return;
-                
-                const newName = prompt('Enter name for DM avatar:', dmAvatar.name || 'DM');
-                if (newName !== null && newName.trim()) {
-                    const updated = { ...dmAvatar, name: newName.trim() };
-                    setDmAvatar(updated);
-                    
-                    if (isConnectedRef.current && isHostRef.current) {
-                        broadcastState('DM_AVATAR_UPDATE', updated);
-                    }
-                }
-                
-                setDmAvatarContextMenu(null);
-            };
-            
-            const handleDmAvatarRightClick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                // Only host can change name
-                if (!isHost && isConnected) return;
-                
-                setDmAvatarContextMenu({
-                    x: e.clientX,
-                    y: e.clientY
-                });
             };
 
             const startDrawing = (e) => {
@@ -5259,6 +5136,66 @@ const handleHandoutUpload = async (e) => {
                                     </div>
                                 );
                             })}
+                            
+                            {/* DM Host Avatar - Locked to top-left, same layer as other avatars */}
+                            {dmAvatar && (
+                                <div
+                                    className={`absolute avatar ${dmAvatarBouncing ? 'bouncing' : ''}`}
+                                    style={{
+                                        left: '20px',
+                                        top: '20px',
+                                        width: '150px'
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isHost || !isConnected) {
+                                            handleDmAvatarClick();
+                                        }
+                                    }}
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if ((isHost || !isConnected) && confirm('Remove DM avatar?')) {
+                                            removeDmAvatar();
+                                        }
+                                    }}
+                                >
+                                    <div className="relative leading-none">
+                                        <img
+                                            src={dmAvatar.src}
+                                            alt="DM Host"
+                                            className="w-full pointer-events-none select-none block"
+                                            style={{
+                                                display: 'block',
+                                                boxShadow: '0 1px 1px rgba(0, 0, 0, 0)',
+                                                borderRadius: '50%',
+                                                border: '4px solid #d4af37'
+                                            }}
+                                            draggable={false}
+                                        />
+                                    </div>
+
+                                    <div className="bg-zinc-800 border-2 border-amber-600 rounded px-3 py-2">
+                                        <input
+                                            type="text"
+                                            value={dmAvatar.name || 'DM Host'}
+                                            onChange={(e) => {
+                                                if (isHost || !isConnected) {
+                                                    const updated = { ...dmAvatar, name: e.target.value };
+                                                    setDmAvatar(updated);
+                                                    if (isConnectedRef.current && isHostRef.current) {
+                                                        broadcastState('DM_AVATAR_UPDATE', updated);
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full bg-transparent text-amber-500 text-center text-lg font-bold outline-none"
+                                            style={{ fontFamily: 'Georgia, serif' }}
+                                            placeholder="DM Host"
+                                            disabled={!isHost && isConnected}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -7378,205 +7315,6 @@ const handleHandoutUpload = async (e) => {
                                 </div>
                             </div>
                         </div>
-                    )}
-                    
-                    {/* Floating DM Avatar */}
-                    {dmAvatar && (
-                        <div
-                            className={dmAvatarBouncing ? 'avatar bouncing' : 'avatar'}
-                            style={{
-                                position: 'fixed',
-                                left: `${dmAvatar.x}px`,
-                                top: `${dmAvatar.y}px`,
-                                width: '150px',
-                                height: '150px',
-                                zIndex: 2500,
-                                cursor: dmAvatar.locked ? 'default' : 'move',
-                                userSelect: 'none',
-                                borderRadius: '50%',
-                                border: '4px solid #d4af37',
-                                boxShadow: '0 8px 24px rgba(212, 175, 55, 0.5)'
-                            }}
-                            onMouseDown={startDmAvatarDrag}
-                            onMouseMove={handleDmAvatarDrag}
-                            onMouseUp={endDmAvatarDrag}
-                            onMouseLeave={endDmAvatarDrag}
-                            onClick={handleDmAvatarClick}
-                            onContextMenu={handleDmAvatarRightClick}
-                        >
-                            {/* Inner circular container for image mask */}
-                            <div
-                                style={{
-                                    position: 'relative',
-                                    width: '100%',
-                                    height: '100%',
-                                    borderRadius: '50%',
-                                    overflow: 'hidden'
-                                }}
-                            >
-                                <img
-                                    src={dmAvatar.src}
-                                    alt="DM Avatar"
-                                    style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        objectFit: 'cover',
-                                        pointerEvents: 'none'
-                                    }}
-                                />
-                                
-                                {/* Name Badge */}
-                                <div
-                                    style={{
-                                        position: 'absolute',
-                                        bottom: '0',
-                                        left: '0',
-                                        right: '0',
-                                        backgroundColor: 'rgba(212, 175, 55, 0.95)',
-                                        color: '#1a1a1a',
-                                        padding: '4px 0',
-                                        fontSize: '14px',
-                                        fontWeight: 'bold',
-                                        fontFamily: 'Georgia, serif',
-                                        textAlign: 'center',
-                                        letterSpacing: '1px',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap'
-                                    }}
-                                >
-                                    {dmAvatar.name || 'DM'}
-                                </div>
-                            </div>
-                            
-                            {/* Lock button - positioned OUTSIDE circle at top-left */}
-                            {(isHost || !isConnected) && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleDmAvatarLock();
-                                    }}
-                                    style={{
-                                        position: 'absolute',
-                                        top: '-10px',
-                                        left: '-10px',
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '50%',
-                                        backgroundColor: 'rgba(0,0,0,0.85)',
-                                        border: '3px solid #d4af37',
-                                        color: dmAvatar.locked ? '#fbbf24' : '#9ca3af',
-                                        fontSize: '16px',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                        zIndex: 2,
-                                        pointerEvents: 'auto'
-                                    }}
-                                    title={dmAvatar.locked ? 'Unlock position' : 'Lock position'}
-                                >
-                                    {dmAvatar.locked ? '🔒' : '🔓'}
-                                </button>
-                            )}
-                            
-                            {/* Remove button - positioned OUTSIDE circle at top-right */}
-                            {(isHost || !isConnected) && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (confirm('Remove DM avatar?')) {
-                                            removeDmAvatar();
-                                        }
-                                    }}
-                                    style={{
-                                        position: 'absolute',
-                                        top: '-10px',
-                                        right: '-10px',
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '50%',
-                                        backgroundColor: 'rgba(220, 53, 69, 0.95)',
-                                        border: '3px solid #fff',
-                                        color: '#fff',
-                                        fontSize: '18px',
-                                        fontWeight: 'bold',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                        zIndex: 2,
-                                        pointerEvents: 'auto'
-                                    }}
-                                    title="Remove DM avatar"
-                                >
-                                    ✕
-                                </button>
-                            )}
-                        </div>
-                    )}
-                    
-                    {/* DM Avatar Context Menu */}
-                    {dmAvatarContextMenu && (
-                        <>
-                            <div 
-                                style={{
-                                    position: 'fixed',
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    bottom: 0,
-                                    zIndex: 2999
-                                }}
-                                onClick={() => setDmAvatarContextMenu(null)}
-                            />
-                            <div
-                                style={{
-                                    position: 'fixed',
-                                    left: `${dmAvatarContextMenu.x}px`,
-                                    top: `${dmAvatarContextMenu.y}px`,
-                                    backgroundColor: '#1a1a1a',
-                                    border: '2px solid #d4af37',
-                                    borderRadius: '6px',
-                                    padding: '4px',
-                                    zIndex: 3000,
-                                    minWidth: '160px',
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
-                                }}
-                            >
-                                <button
-                                    onClick={changeDmAvatarName}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px 12px',
-                                        backgroundColor: '#2a2a2a',
-                                        color: '#e0e0e0',
-                                        border: '1px solid #444',
-                                        borderRadius: '4px',
-                                        cursor: 'pointer',
-                                        fontSize: '13px',
-                                        fontFamily: 'Arial, sans-serif',
-                                        fontWeight: 'bold',
-                                        textAlign: 'left',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
-                                        e.currentTarget.style.borderColor = '#d4af37';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
-                                        e.currentTarget.style.borderColor = '#444';
-                                    }}
-                                >
-                                    ✏️ Change Name
-                                </button>
-                            </div>
-                        </>
                     )}
                     
                     {/* Creating Game Dialog */}
