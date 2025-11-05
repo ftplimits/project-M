@@ -773,21 +773,22 @@ useEffect(() => {
             debug: 0,
             config: {
                 iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' }
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun.cloudflare.com:3478' }
                 ],
                 iceTransportPolicy: 'all',
                 iceCandidatePoolSize: 10
             }
         });
         
-        // Add connection timeout
+        // Add connection timeout - 30 seconds for reliability
         const connectionTimeout = setTimeout(() => {
             if (!newPeer.open) {
-                console.error('Peer connection timeout');
+                console.error('Peer connection timeout after 30 seconds');
                 newPeer.destroy();
-                alert('Connection timeout. Please try again.');
+                alert('Connection timed out. Please check your internet connection and try again.');
             }
-        }, 15000); // 15 second timeout
+        }, 30000); // 30 second timeout
         
         newPeer.on('open', (id) => {
             clearTimeout(connectionTimeout);
@@ -939,22 +940,23 @@ useEffect(() => {
                     debug: 0,
                     config: {
                         iceServers: [
-                            { urls: 'stun:stun.l.google.com:19302' }
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun.cloudflare.com:3478' }
                         ],
                         iceTransportPolicy: 'all',
                         iceCandidatePoolSize: 10
                     }
                 });
                 
-                // Add connection timeout
+                // Add connection timeout - 30 seconds for reliability
                 const connectionTimeout = setTimeout(() => {
                     if (!newPeer.open) {
-                        console.error('Peer connection timeout');
+                        console.error('Peer connection timeout after 30 seconds');
                         newPeer.destroy();
                         setShowCreatingDialog(false);
-                        alert('Connection timeout. Please try again.');
+                        alert('Connection timed out. Please check your internet connection and try again.');
                     }
-                }, 15000); // 15 second timeout
+                }, 30000); // 30 second timeout
                 
                 newPeer.on('open', (id) => {
                     clearTimeout(connectionTimeout);
@@ -1065,21 +1067,22 @@ useEffect(() => {
                     debug: 0,
                     config: {
                         iceServers: [
-                            { urls: 'stun:stun.l.google.com:19302' }
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun.cloudflare.com:3478' }
                         ],
                         iceTransportPolicy: 'all',
                         iceCandidatePoolSize: 10
                     }
                 });
                 
-                // Add connection timeout
+                // Add connection timeout - 30 seconds for reliability
                 const connectionTimeout = setTimeout(() => {
                     if (!newPeer.open) {
-                        console.error('Peer connection timeout');
+                        console.error('Peer connection timeout after 30 seconds');
                         newPeer.destroy();
-                        alert('Connection timeout. Please try again.');
+                        alert('Connection timed out. Please check your internet connection and try again.');
                     }
-                }, 15000); // 15 second timeout
+                }, 30000); // 30 second timeout
                 
                 newPeer.on('open', (id) => {
                     clearTimeout(connectionTimeout);
@@ -1185,21 +1188,22 @@ useEffect(() => {
                     debug: 0,
                     config: {
                         iceServers: [
-                            { urls: 'stun:stun.l.google.com:19302' }
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun.cloudflare.com:3478' }
                         ],
                         iceTransportPolicy: 'all',
                         iceCandidatePoolSize: 10
                     }
                 });
                 
-                // Add connection timeout
+                // Add connection timeout - 30 seconds for reliability
                 const connectionTimeout = setTimeout(() => {
                     if (!newPeer.open) {
-                        console.error('Peer connection timeout');
+                        console.error('Peer connection timeout after 30 seconds');
                         newPeer.destroy();
-                        alert('Connection timeout. Please try again.');
+                        alert('Connection timed out. Please check your internet connection and try again.');
                     }
-                }, 15000); // 15 second timeout
+                }, 30000); // 30 second timeout
                 
                 newPeer.on('open', (id) => {
                     clearTimeout(connectionTimeout);
