@@ -7085,6 +7085,7 @@ const handleHandoutUpload = async (e) => {
                 </label>
                 <select
                     value={tokens.find(t => t.id === diceCountMenu.tokenId)?.assignedPlayerId || ''}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
                         const playerId = e.target.value || null;
                         assignPlayerToToken(diceCountMenu.tokenId, playerId);
