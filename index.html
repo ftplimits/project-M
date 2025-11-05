@@ -7392,7 +7392,6 @@ const handleHandoutUpload = async (e) => {
                                 height: '150px',
                                 zIndex: 2500,
                                 cursor: dmAvatar.locked ? 'default' : 'move',
-                                transition: dmAvatarBouncing ? 'none' : 'transform 180ms cubic-bezier(.2,.8,.2,1), box-shadow 180ms cubic-bezier(.2,.8,.2,1)',
                                 userSelect: 'none'
                             }}
                             onMouseDown={startDmAvatarDrag}
@@ -7447,38 +7446,39 @@ const handleHandoutUpload = async (e) => {
                                 >
                                     {dmAvatar.name || 'DM'}
                                 </div>
-                                
-                                {/* Lock button - stays inside circle */}
-                                {(isHost || !isConnected) && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            toggleDmAvatarLock();
-                                        }}
-                                        style={{
-                                            position: 'absolute',
-                                            top: '4px',
-                                            right: '4px',
-                                            width: '28px',
-                                            height: '28px',
-                                            borderRadius: '50%',
-                                            backgroundColor: 'rgba(0,0,0,0.7)',
-                                            border: '2px solid #d4af37',
-                                            color: dmAvatar.locked ? '#fbbf24' : '#9ca3af',
-                                            fontSize: '14px',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            transition: 'all 0.2s',
-                                            zIndex: 1
-                                        }}
-                                        title={dmAvatar.locked ? 'Unlock position' : 'Lock position'}
-                                    >
-                                        {dmAvatar.locked ? '🔒' : '🔓'}
-                                    </button>
-                                )}
                             </div>
+                            
+                            {/* Lock button - positioned OUTSIDE circle at top-left */}
+                            {(isHost || !isConnected) && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleDmAvatarLock();
+                                    }}
+                                    style={{
+                                        position: 'absolute',
+                                        top: '-10px',
+                                        left: '-10px',
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '50%',
+                                        backgroundColor: 'rgba(0,0,0,0.85)',
+                                        border: '3px solid #d4af37',
+                                        color: dmAvatar.locked ? '#fbbf24' : '#9ca3af',
+                                        fontSize: '16px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                        zIndex: 2
+                                    }}
+                                    title={dmAvatar.locked ? 'Unlock position' : 'Lock position'}
+                                >
+                                    {dmAvatar.locked ? '🔒' : '🔓'}
+                                </button>
+                            )}
                             
                             {/* Remove button - positioned OUTSIDE circle at top-right */}
                             {(isHost || !isConnected) && (
