@@ -89,14 +89,14 @@
         }
 
         .avatar.talking {
-            transform: translateY(-15px) scale(1.15);
+            transform: translateY(-15px) scale(1.10);
             filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
         }
         
         /* When DM avatar is both floating and talking, stay elevated */
         .avatar.floating.talking {
             animation: none;
-            transform: translateY(-50%) translateY(-15px) scale(1.15);
+            transform: translateY(-50%) translateY(-15px) scale(1.10);
             filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
         }
 
@@ -458,6 +458,7 @@
             const animationFrameRef = useRef(null);
             const isTalkingRef = useRef(false);
             const micSensitivityRef = useRef(0.02); // Track current sensitivity for detection loop
+            const talkingStopTimeoutRef = useRef(null); // Delay before deactivating talking state
             const [micEnabled, setMicEnabled] = useState(false);
 
             const [gridTransform, setGridTransform] = useState({
@@ -2661,38 +2662,71 @@ const handleAvatarUpload = async (e) => {
                     
                     // Only broadcast state changes
                     if (isTalking !== isTalkingRef.current) {
-                        isTalkingRef.current = isTalking;
-                        console.log(`Voice state changed: ${isTalking ? 'TALKING' : 'STOPPED'} (volume: ${(normalizedVolume * 100).toFixed(1)}%)`);
                         
-                        // Update local state FIRST (important for solo mode)
                         if (isTalking) {
-                            setTalkingPlayers(prev => new Set([...prev, myPeerIdRef.current]));
-                        } else {
-                            setTalkingPlayers(prev => {
-                                const newSet = new Set(prev);
-                                newSet.delete(myPeerIdRef.current);
-                                return newSet;
-                            });
-                        }
-                        
-                        const messageType = isTalking ? 'PLAYER_TALKING_START' : 'PLAYER_TALKING_STOP';
-                        const messageData = { playerId: myPeerIdRef.current };
-                        
-                        if (isConnectedRef.current) {
-                            if (isHostRef.current) {
-                                // Host broadcasts to all players
-                                console.log(`Host broadcasting ${messageType}`);
-                                broadcastState(messageType, messageData);
-                            } else {
-                                // Player sends to host who will re-broadcast
-                                console.log(`Player sending ${messageType} to host`);
-                                connectionsRef.current[0]?.send({
-                                    type: messageType,
-                                    data: messageData
-                                });
+                            // Starting to talk - clear any pending stop timeout and activate immediately
+                            if (talkingStopTimeoutRef.current) {
+                                clearTimeout(talkingStopTimeoutRef.current);
+                                talkingStopTimeoutRef.current = null;
                             }
+                            
+                            isTalkingRef.current = true;
+                            console.log(`Voice state changed: TALKING (volume: ${(normalizedVolume * 100).toFixed(1)}%)`);
+                            
+                            // Update local state immediately
+                            setTalkingPlayers(prev => new Set([...prev, myPeerIdRef.current]));
+                            
+                            // Broadcast talking start
+                            const messageData = { playerId: myPeerIdRef.current };
+                            if (isConnectedRef.current) {
+                                if (isHostRef.current) {
+                                    console.log(`Host broadcasting PLAYER_TALKING_START`);
+                                    broadcastState('PLAYER_TALKING_START', messageData);
+                                } else {
+                                    console.log(`Player sending PLAYER_TALKING_START to host`);
+                                    connectionsRef.current[0]?.send({
+                                        type: 'PLAYER_TALKING_START',
+                                        data: messageData
+                                    });
+                                }
+                            } else {
+                                console.log('Not connected, cannot broadcast voice state');
+                            }
+                            
                         } else {
-                            console.log('Not connected, cannot broadcast voice state');
+                            // Stopped talking - delay deactivation by 500ms to prevent flickering
+                            console.log(`Voice dropped below threshold, waiting 500ms before deactivating...`);
+                            
+                            talkingStopTimeoutRef.current = setTimeout(() => {
+                                isTalkingRef.current = false;
+                                console.log(`Voice state changed: STOPPED (after delay)`);
+                                
+                                // Update local state
+                                setTalkingPlayers(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(myPeerIdRef.current);
+                                    return newSet;
+                                });
+                                
+                                // Broadcast talking stop
+                                const messageData = { playerId: myPeerIdRef.current };
+                                if (isConnectedRef.current) {
+                                    if (isHostRef.current) {
+                                        console.log(`Host broadcasting PLAYER_TALKING_STOP`);
+                                        broadcastState('PLAYER_TALKING_STOP', messageData);
+                                    } else {
+                                        console.log(`Player sending PLAYER_TALKING_STOP to host`);
+                                        connectionsRef.current[0]?.send({
+                                            type: 'PLAYER_TALKING_STOP',
+                                            data: messageData
+                                        });
+                                    }
+                                } else {
+                                    console.log('Not connected, cannot broadcast voice state');
+                                }
+                                
+                                talkingStopTimeoutRef.current = null;
+                            }, 500); // 0.5 second delay
                         }
                     }
                     
@@ -2705,6 +2739,10 @@ const handleAvatarUpload = async (e) => {
             const stopVoiceDetection = () => {
                 if (animationFrameRef.current) {
                     cancelAnimationFrame(animationFrameRef.current);
+                }
+                if (talkingStopTimeoutRef.current) {
+                    clearTimeout(talkingStopTimeoutRef.current);
+                    talkingStopTimeoutRef.current = null;
                 }
                 if (audioStreamRef.current) {
                     audioStreamRef.current.getTracks().forEach(track => track.stop());
@@ -8060,7 +8098,7 @@ const handleHandoutUpload = async (e) => {
                                         type="range"
                                         min="0.01"
                                         max="0.3"
-                                        step="0.005"
+                                        step="0.01"
                                         value={dmAvatarContextMenu.micSensitivity}
                                         onChange={(e) => {
                                             const sensitivity = parseFloat(e.target.value);
@@ -8213,7 +8251,7 @@ const handleHandoutUpload = async (e) => {
                                         type="range"
                                         min="0.01"
                                         max="0.3"
-                                        step="0.005"
+                                        step="0.01"
                                         value={avatarContextMenu.micSensitivity}
                                         onChange={(e) => {
                                             const sensitivity = parseFloat(e.target.value);
