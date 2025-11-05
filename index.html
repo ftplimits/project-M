@@ -1477,15 +1477,6 @@ useEffect(() => {
                         }
                         break;
                     
-                    case 'TOKEN_PLAYER_ASSIGNMENT':
-                        // Update token player assignment for all players
-                        setTokens(prev => prev.map(token => 
-                            token.id === message.data.tokenId 
-                                ? { ...token, assignedPlayerId: message.data.playerId } 
-                                : token
-                        ));
-                        break;
-                    
                     case 'PLAYER_TALKING_START':
                         // Mark player as talking
                         console.log(`Received PLAYER_TALKING_START for player: ${message.data.playerId}`);
@@ -2581,19 +2572,6 @@ const handleAvatarUpload = async (e) => {
                     console.log('Broadcasting DM avatar assignment to all players');
                     const updated = { ...dmAvatar, assignedPlayerId: playerId };
                     broadcastState('DM_AVATAR_UPDATE', updated);
-                }
-            };
-            
-            const assignPlayerToToken = (tokenId, playerId) => {
-                console.log(`Assigning player ${playerId} to token ${tokenId}`);
-                setTokens(prev => prev.map(token => 
-                    token.id === tokenId ? { ...token, assignedPlayerId: playerId } : token
-                ));
-                
-                // Broadcast assignment to all players
-                if (isConnectedRef.current && isHostRef.current) {
-                    console.log('Broadcasting token player assignment to all players');
-                    broadcastState('TOKEN_PLAYER_ASSIGNMENT', { tokenId, playerId });
                 }
             };
             
@@ -3930,9 +3908,6 @@ const handleHandoutUpload = async (e) => {
                         const transformedY = token.y * gridTransform.zoom + gridTransform.panY;
                         const transformedSize = actualSize * gridTransform.zoom;
                         
-                        // Check if this token's assigned player is talking
-                        const isTalking = token.assignedPlayerId && talkingPlayers.has(token.assignedPlayerId);
-                        
                         // Check cache first
                         let img = imageCache.current.get(token.src);
                         if (!img) {
@@ -3952,24 +3927,6 @@ const handleHandoutUpload = async (e) => {
                         if (img.complete) {
                             ctx.save();
                             ctx.globalAlpha = token.locked ? 0.5 : 1.0;
-                            
-                            // Draw gold glow if token is talking
-                            if (isTalking) {
-                                ctx.save();
-                                ctx.shadowColor = '#d4af37';
-                                ctx.shadowBlur = 30;
-                                ctx.fillStyle = 'rgba(212, 175, 55, 0.3)';
-                                ctx.beginPath();
-                                ctx.arc(
-                                    transformedX + transformedSize / 2, 
-                                    transformedY + transformedSize / 2, 
-                                    transformedSize / 2 + 10, 
-                                    0, 
-                                    2 * Math.PI
-                                );
-                                ctx.fill();
-                                ctx.restore();
-                            }
                             
                             // Draw token as circle (clip to circle)
                             ctx.beginPath();
@@ -4000,29 +3957,6 @@ const handleHandoutUpload = async (e) => {
                                     2 * Math.PI
                                 );
                                 ctx.stroke();
-                                ctx.restore();
-                            }
-                            
-                            // Draw chat bubble emoji if token is talking (only when GRID is ON)
-                            if (isTalking && activeScene.grid?.enabled) {
-                                ctx.save();
-                                const bubbleSize = Math.max(24, transformedSize * 0.45);
-                                ctx.font = `${bubbleSize}px Arial`;
-                                ctx.textAlign = 'center';
-                                ctx.textBaseline = 'middle';
-                                
-                                // Position chat bubble above token
-                                const bubbleX = transformedX + transformedSize / 2;
-                                const bubbleY = transformedY - bubbleSize * 0.7;
-                                
-                                // Draw background circle for chat bubble
-                                ctx.fillStyle = 'rgba(212, 175, 55, 0.95)';
-                                ctx.beginPath();
-                                ctx.arc(bubbleX, bubbleY, bubbleSize * 0.65, 0, 2 * Math.PI);
-                                ctx.fill();
-                                
-                                // Draw chat bubble emoji
-                                ctx.fillText('💬', bubbleX, bubbleY);
                                 ctx.restore();
                             }
                             
@@ -4082,7 +4016,7 @@ const handleHandoutUpload = async (e) => {
                 };
                 
                 renderTokens().catch(err => console.error('Token rendering error:', err));
-            }, [tokens, activeScene.grid?.enabled, gridTransform, talkingPlayers]);
+            }, [tokens, activeScene.grid?.enabled, gridTransform]);
             
             // Layer 5: UI Canvas - renders pointer and measurement (60fps when active)
             useEffect(() => {
@@ -7070,47 +7004,6 @@ const handleHandoutUpload = async (e) => {
                 </button>
             ))}
         </div>
-        
-        {/* Assign Player Section (DM Only) */}
-        {isHost && (
-            <div style={{ marginTop: '8px' }}>
-                <label style={{
-                    color: '#888',
-                    fontSize: '11px',
-                    fontFamily: 'Arial, sans-serif',
-                    display: 'block',
-                    marginBottom: '4px'
-                }}>
-                    Assign Player:
-                </label>
-                <select
-                    value={tokens.find(t => t.id === diceCountMenu.tokenId)?.assignedPlayerId || ''}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                        const playerId = e.target.value || null;
-                        assignPlayerToToken(diceCountMenu.tokenId, playerId);
-                    }}
-                    style={{
-                        width: '100%',
-                        padding: '8px',
-                        backgroundColor: '#2a2a2a',
-                        color: '#e0e0e0',
-                        border: '1px solid #444',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        fontFamily: 'Arial, sans-serif',
-                        cursor: 'pointer'
-                    }}
-                >
-                    <option value="">None</option>
-                    {players.map(player => (
-                        <option key={player.id} value={player.id}>
-                            {player.name}
-                        </option>
-                    ))}
-                </select>
-            </div>
-        )}
         
         {/* Delete Button (Host Only) */}
         {isHost && (
