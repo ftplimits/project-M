@@ -457,6 +457,7 @@
             const analyserRef = useRef(null);
             const animationFrameRef = useRef(null);
             const isTalkingRef = useRef(false);
+            const micSensitivityRef = useRef(0.02); // Track current sensitivity for detection loop
             const [micEnabled, setMicEnabled] = useState(false);
 
             const [gridTransform, setGridTransform] = useState({
@@ -1419,6 +1420,7 @@ useEffect(() => {
                         // If this is our avatar, update our monitoring sensitivity
                         if (message.data.assignedPlayerId === myPeerIdRef.current && message.data.micSensitivity) {
                             setMicSensitivity(message.data.micSensitivity);
+                            micSensitivityRef.current = message.data.micSensitivity; // Update ref
                         }
                         break;
                     
@@ -1470,6 +1472,7 @@ useEffect(() => {
                         const myAvatarSens = avatars.find(av => av.id === message.data.avatarId);
                         if (myAvatarSens && myAvatarSens.assignedPlayerId === myPeerIdRef.current) {
                             setMicSensitivity(message.data.sensitivity);
+                            micSensitivityRef.current = message.data.sensitivity; // Update ref
                         }
                         break;
                     
@@ -2536,6 +2539,10 @@ const handleAvatarUpload = async (e) => {
                 // If assigning to current player, request mic permission
                 if (playerId === myPeerIdRef.current) {
                     console.log('This is our player, requesting mic permission...');
+                    const avatar = avatars.find(av => av.id === avatarId);
+                    if (avatar?.micSensitivity) {
+                        micSensitivityRef.current = avatar.micSensitivity;
+                    }
                     requestMicPermission();
                 }
                 
@@ -2553,6 +2560,9 @@ const handleAvatarUpload = async (e) => {
                 // If assigning to current player, request mic permission
                 if (playerId === myPeerIdRef.current) {
                     console.log('This is our player (DM avatar), requesting mic permission...');
+                    if (dmAvatar?.micSensitivity) {
+                        micSensitivityRef.current = dmAvatar.micSensitivity;
+                    }
                     requestMicPermission();
                 }
                 
@@ -2570,6 +2580,7 @@ const handleAvatarUpload = async (e) => {
                 // If this is our avatar, update our monitoring sensitivity
                 if (dmAvatar && dmAvatar.assignedPlayerId === myPeerIdRef.current) {
                     setMicSensitivity(sensitivity);
+                    micSensitivityRef.current = sensitivity; // Update ref for voice detection loop
                 }
                 
                 // Broadcast sensitivity to all players
@@ -2588,6 +2599,7 @@ const handleAvatarUpload = async (e) => {
                 const avatar = avatars.find(av => av.id === avatarId);
                 if (avatar && avatar.assignedPlayerId === myPeerIdRef.current) {
                     setMicSensitivity(sensitivity);
+                    micSensitivityRef.current = sensitivity; // Update ref for voice detection loop
                 }
                 
                 // Broadcast sensitivity to all players
@@ -2637,14 +2649,12 @@ const handleAvatarUpload = async (e) => {
                     
                     // Log every 60 frames (about once per second at 60fps)
                     if (frameCount % 60 === 0) {
-                        console.log(`Voice level: ${(normalizedVolume * 100).toFixed(1)}% | Sensitivity: ${(micSensitivity * 100).toFixed(1)}% | Talking: ${isTalkingRef.current}`);
+                        console.log(`Voice level: ${(normalizedVolume * 100).toFixed(1)}% | Sensitivity: ${(micSensitivityRef.current * 100).toFixed(1)}% | Talking: ${isTalkingRef.current}`);
                     }
                     frameCount++;
                     
-                    // Get our assigned avatar to check its sensitivity (check both regular and DM avatar)
-                    const myAvatar = avatars.find(av => av.assignedPlayerId === myPeerIdRef.current);
-                    const dmAvatarAssigned = dmAvatar && dmAvatar.assignedPlayerId === myPeerIdRef.current;
-                    const sensitivity = myAvatar?.micSensitivity || dmAvatar?.micSensitivity || micSensitivity;
+                    // Use the sensitivity from the ref (updated by slider)
+                    const sensitivity = micSensitivityRef.current;
                     
                     // Check if talking
                     const isTalking = normalizedVolume > sensitivity;
@@ -8049,9 +8059,9 @@ const handleHandoutUpload = async (e) => {
                                     </label>
                                     <input
                                         type="range"
-                                        min="0.001"
-                                        max="0.635"
-                                        step="0.01"
+                                        min="0.01"
+                                        max="0.2"
+                                        step="0.005"
                                         value={dmAvatarContextMenu.micSensitivity}
                                         onChange={(e) => {
                                             const sensitivity = parseFloat(e.target.value);
@@ -8202,9 +8212,9 @@ const handleHandoutUpload = async (e) => {
                                     </label>
                                     <input
                                         type="range"
-                                        min="0.001"
-                                        max="0.635"
-                                        step="0.01"
+                                        min="0.01"
+                                        max="0.2"
+                                        step="0.005"
                                         value={avatarContextMenu.micSensitivity}
                                         onChange={(e) => {
                                             const sensitivity = parseFloat(e.target.value);
