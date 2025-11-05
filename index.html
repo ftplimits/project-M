@@ -7392,7 +7392,10 @@ const handleHandoutUpload = async (e) => {
                                 height: '150px',
                                 zIndex: 2500,
                                 cursor: dmAvatar.locked ? 'default' : 'move',
-                                userSelect: 'none'
+                                userSelect: 'none',
+                                borderRadius: '50%',
+                                border: '4px solid #d4af37',
+                                boxShadow: '0 8px 24px rgba(212, 175, 55, 0.5)'
                             }}
                             onMouseDown={startDmAvatarDrag}
                             onMouseMove={handleDmAvatarDrag}
@@ -7401,16 +7404,14 @@ const handleHandoutUpload = async (e) => {
                             onClick={handleDmAvatarClick}
                             onContextMenu={handleDmAvatarRightClick}
                         >
-                            {/* Inner circular container for image */}
+                            {/* Inner circular container for image mask */}
                             <div
                                 style={{
                                     position: 'relative',
                                     width: '100%',
                                     height: '100%',
                                     borderRadius: '50%',
-                                    overflow: 'hidden',
-                                    border: '4px solid #d4af37',
-                                    boxShadow: '0 8px 24px rgba(212, 175, 55, 0.5)'
+                                    overflow: 'hidden'
                                 }}
                             >
                                 <img
@@ -7472,7 +7473,8 @@ const handleHandoutUpload = async (e) => {
                                         justifyContent: 'center',
                                         transition: 'all 0.2s',
                                         boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                        zIndex: 2
+                                        zIndex: 2,
+                                        pointerEvents: 'auto'
                                     }}
                                     title={dmAvatar.locked ? 'Unlock position' : 'Lock position'}
                                 >
@@ -7507,7 +7509,8 @@ const handleHandoutUpload = async (e) => {
                                         justifyContent: 'center',
                                         transition: 'all 0.2s',
                                         boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                        zIndex: 2
+                                        zIndex: 2,
+                                        pointerEvents: 'auto'
                                     }}
                                     title="Remove DM avatar"
                                 >
