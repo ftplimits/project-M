@@ -484,6 +484,7 @@
             const [dmAvatarBouncing, setDmAvatarBouncing] = useState(false);
             const [draggingDmAvatar, setDraggingDmAvatar] = useState(false);
             const [dmAvatarDragOffset, setDmAvatarDragOffset] = useState({ x: 0, y: 0 });
+            const [dmAvatarContextMenu, setDmAvatarContextMenu] = useState(null); // { x, y }
             const dmAvatarInputRef = useRef(null);
             
             // Draw tools visibility state
@@ -2830,7 +2831,8 @@ const handleHandoutUpload = async (e) => {
                         src: downscaledDataUrl,
                         x: window.innerWidth / 2 - 75, // Center-ish
                         y: window.innerHeight / 2 - 75,
-                        locked: false
+                        locked: false,
+                        name: 'DM'
                     };
                     
                     setDmAvatar(avatarData);
@@ -2911,6 +2913,35 @@ const handleHandoutUpload = async (e) => {
                 if (isConnectedRef.current && isHostRef.current) {
                     broadcastState('DM_AVATAR_REMOVE', {});
                 }
+            };
+            
+            const changeDmAvatarName = () => {
+                if (!dmAvatar) return;
+                
+                const newName = prompt('Enter name for DM avatar:', dmAvatar.name || 'DM');
+                if (newName !== null && newName.trim()) {
+                    const updated = { ...dmAvatar, name: newName.trim() };
+                    setDmAvatar(updated);
+                    
+                    if (isConnectedRef.current && isHostRef.current) {
+                        broadcastState('DM_AVATAR_UPDATE', updated);
+                    }
+                }
+                
+                setDmAvatarContextMenu(null);
+            };
+            
+            const handleDmAvatarRightClick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Only host can change name
+                if (!isHost && isConnected) return;
+                
+                setDmAvatarContextMenu({
+                    x: e.clientX,
+                    y: e.clientY
+                });
             };
 
             const startDrawing = (e) => {
@@ -7333,7 +7364,7 @@ const handleHandoutUpload = async (e) => {
                                 height: '150px',
                                 zIndex: 2500,
                                 cursor: dmAvatar.locked ? 'default' : 'move',
-                                borderRadius: '50%',
+                                borderRadius: '8px',
                                 overflow: 'hidden',
                                 border: '4px solid #d4af37',
                                 boxShadow: '0 8px 24px rgba(212, 175, 55, 0.5)',
@@ -7345,6 +7376,7 @@ const handleHandoutUpload = async (e) => {
                             onMouseUp={endDmAvatarDrag}
                             onMouseLeave={endDmAvatarDrag}
                             onClick={handleDmAvatarClick}
+                            onContextMenu={handleDmAvatarRightClick}
                         >
                             <img
                                 src={dmAvatar.src}
@@ -7357,7 +7389,7 @@ const handleHandoutUpload = async (e) => {
                                 }}
                             />
                             
-                            {/* DM Badge */}
+                            {/* Name Badge */}
                             <div
                                 style={{
                                     position: 'absolute',
@@ -7371,10 +7403,13 @@ const handleHandoutUpload = async (e) => {
                                     fontWeight: 'bold',
                                     fontFamily: 'Georgia, serif',
                                     textAlign: 'center',
-                                    letterSpacing: '2px'
+                                    letterSpacing: '1px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
                                 }}
                             >
-                                DM
+                                {dmAvatar.name || 'DM'}
                             </div>
                             
                             {/* Lock/Remove Controls - Host Only */}
@@ -7440,6 +7475,65 @@ const handleHandoutUpload = async (e) => {
                                 </div>
                             )}
                         </div>
+                    )}
+                    
+                    {/* DM Avatar Context Menu */}
+                    {dmAvatarContextMenu && (
+                        <>
+                            <div 
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    zIndex: 2999
+                                }}
+                                onClick={() => setDmAvatarContextMenu(null)}
+                            />
+                            <div
+                                style={{
+                                    position: 'fixed',
+                                    left: `${dmAvatarContextMenu.x}px`,
+                                    top: `${dmAvatarContextMenu.y}px`,
+                                    backgroundColor: '#1a1a1a',
+                                    border: '2px solid #d4af37',
+                                    borderRadius: '6px',
+                                    padding: '4px',
+                                    zIndex: 3000,
+                                    minWidth: '160px',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
+                                }}
+                            >
+                                <button
+                                    onClick={changeDmAvatarName}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 12px',
+                                        backgroundColor: '#2a2a2a',
+                                        color: '#e0e0e0',
+                                        border: '1px solid #444',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        fontWeight: 'bold',
+                                        textAlign: 'left',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                        e.currentTarget.style.borderColor = '#d4af37';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                        e.currentTarget.style.borderColor = '#444';
+                                    }}
+                                >
+                                    ✏️ Change Name
+                                </button>
+                            </div>
+                        </>
                     )}
                     
                     {/* Creating Game Dialog */}
