@@ -5454,8 +5454,8 @@ const handleHandoutUpload = async (e) => {
                                         onDoubleClick={() => removeTokenFromInitiative(tokenId)}
                                         style={{
                                             position: 'relative',
-                                            width: '50px',
-                                            height: '50px',
+                                            width: '75px',
+                                            height: '75px',
                                             borderRadius: '50%',
                                             overflow: 'hidden',
                                             border: isCurrentTurn ? '4px solid #d4af37' : '2px solid #444',
@@ -5489,8 +5489,8 @@ const handleHandoutUpload = async (e) => {
                                         {/* Initiative number badge */}
                                         <div style={{
                                             position: 'absolute',
-                                            top: '-12px',
-                                            right: '-12px',
+                                            top: '0px',
+                                            right: '0px',
                                             backgroundColor: '#d4af37',
                                             color: '#1a1a1a',
                                             borderRadius: '50%',
@@ -5511,7 +5511,7 @@ const handleHandoutUpload = async (e) => {
                                         {token.name && (
                                             <div style={{
                                                 position: 'absolute',
-                                                bottom: 0,
+                                                bottom: 2,
                                                 left: 0,
                                                 right: 0,
                                                 backgroundColor: 'rgba(26, 26, 26, 0.9)',
@@ -5519,7 +5519,7 @@ const handleHandoutUpload = async (e) => {
                                                 fontSize: '10px',
                                                 fontWeight: 'bold',
                                                 textAlign: 'center',
-                                                padding: '4px 2px',
+                                                padding: '2px 2px',
                                                 fontFamily: 'Times New Roman, serif',
                                                 whiteSpace: 'nowrap',
                                                 overflow: 'hidden',
@@ -5781,7 +5781,7 @@ const handleHandoutUpload = async (e) => {
                                 maxWidth: '1400px',
                                 aspectRatio: '16 / 9',
                                 boxShadow: '0 0 40px rgba(212, 175, 55, 0.3), inset 0 0 20px rgba(0, 0, 0, 0.8)',
-                                filter: activeScene.grid?.enabled ? 'brightness(0.3)' : 'none'
+                                filter: activeScene.grid?.enabled ? 'brightness(0.1)' : 'none'
                             }}
                         >
                             {(!activeScene.images || activeScene.images.length === 0) && (
