@@ -397,6 +397,7 @@
             const playersRef = useRef([]);
             const tokensRef = useRef([]);
             const draggedTokenRef = useRef(null); // Track which token we're actively dragging
+            const processingReceivedMoveRef = useRef(false); // Track when processing move from another player
             const diceNotificationTimeoutRef = useRef(null);
             const clipboardNotificationTimeoutRef = useRef(null);
             const throttledTokenBroadcast = useRef(null);
@@ -1369,6 +1370,9 @@ useEffect(() => {
                             break;
                         }
                         
+                        // Set flag to prevent echo broadcast
+                        processingReceivedMoveRef.current = true;
+                        
                         setTokens(prev => prev.map(t => 
                             t.id === movedToken.id 
                                 ? { ...t, x: movedToken.x, y: movedToken.y }
@@ -1379,6 +1383,11 @@ useEffect(() => {
                                 ? { ...t, x: movedToken.x, y: movedToken.y }
                                 : t
                         );
+                        
+                        // Clear flag after state update
+                        setTimeout(() => {
+                            processingReceivedMoveRef.current = false;
+                        }, 50);
                         
                         // If host, relay to all OTHER players (not sender)
                         if (isHostRef.current) {
@@ -1811,7 +1820,8 @@ useEffect(() => {
             useEffect(() => {
                 tokensRef.current = tokens;
                 // Skip broadcasting during token drag (TOKEN_MOVE handles position updates)
-                if (isHost && isConnected && !draggedTokenRef.current) {
+                // Also skip when processing a received move (prevents echo)
+                if (isHost && isConnected && !draggedTokenRef.current && !processingReceivedMoveRef.current) {
                     broadcastState('TOKEN_UPDATE', tokens);
                 }
             }, [tokens, isHost, isConnected]);
