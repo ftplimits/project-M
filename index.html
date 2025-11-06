@@ -767,14 +767,11 @@ useEffect(() => {
         
         // Create peer and connect
         const newPeer = new Peer({
-            host: '0.peerjs.com',
-            port: 443,
-            path: '/',
-            secure: true,
             debug: 0,
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
                     { urls: 'stun:stun.cloudflare.com:3478' }
                 ],
                 iceTransportPolicy: 'all',
@@ -960,14 +957,11 @@ useEffect(() => {
                 setShowCreatingDialog(true);
                 
                 const newPeer = new Peer({
-                    host: '0.peerjs.com',
-                    port: 443,
-                    path: '/',
-                    secure: true,
                     debug: 0,
                     config: {
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun.cloudflare.com:3478' }
                         ],
                         iceTransportPolicy: 'all',
@@ -1087,14 +1081,11 @@ useEffect(() => {
                 console.log('Creating peer with name:', name);
                 
                 const newPeer = new Peer({
-                    host: '0.peerjs.com',
-                    port: 443,
-                    path: '/',
-                    secure: true,
                     debug: 0,
                     config: {
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun.cloudflare.com:3478' }
                         ],
                         iceTransportPolicy: 'all',
@@ -1208,14 +1199,11 @@ useEffect(() => {
                 setPlayerName(name);
                 
                 const newPeer = new Peer({
-                    host: '0.peerjs.com',
-                    port: 443,
-                    path: '/',
-                    secure: true,
                     debug: 0,
                     config: {
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun.cloudflare.com:3478' }
                         ],
                         iceTransportPolicy: 'all',
