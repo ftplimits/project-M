@@ -572,10 +572,10 @@
 
             const [characterSheets, setCharacterSheets] = useState([]);
             const [sheetSelectorVisible, setSheetSelectorVisible] = useState(false);
-            const [initiativeTrackerVisible, setInitiativeTrackerVisible] = useState(false);
-            const [initiativeList, setInitiativeList] = useState([]);
-            const [newInitName, setNewInitName] = useState('');
-            const [newInitValue, setNewInitValue] = useState('');
+            const [initiativeOrder, setInitiativeOrder] = useState([]); // Array of token IDs in turn order
+            const [initiativeValues, setInitiativeValues] = useState({}); // Map of tokenId -> initiative number
+            const [currentTurnIndex, setCurrentTurnIndex] = useState(0); // Index of current turn
+            const [draggingInitiativeToken, setDraggingInitiativeToken] = useState(null); // For reordering
             const [openSheets, setOpenSheets] = useState([]);
             const [draggedSheet, setDraggedSheet] = useState(null);
             const [resizingSheet, setResizingSheet] = useState(null);
@@ -2118,33 +2118,100 @@ useEffect(() => {
                 setSheetSelectorVisible(!sheetSelectorVisible);
             };
             
-            const handleInitiativeTabClick = () => {
-                setInitiativeTrackerVisible(!initiativeTrackerVisible);
-            };
-            
-            const addInitiativeEntry = () => {
-                if (!newInitName.trim() || !newInitValue.trim()) return;
+            const toggleTokenInInitiative = (tokenId) => {
+                const token = tokens.find(t => t.id === tokenId);
+                const tokenName = token?.name || 'Token';
                 
-                const newEntry = {
-                    id: Date.now(),
-                    name: newInitName.trim(),
-                    initiative: parseInt(newInitValue) || 0
-                };
-                
-                // Add and sort by initiative (descending)
-                setInitiativeList(prev => [...prev, newEntry].sort((a, b) => b.initiative - a.initiative));
-                setNewInitName('');
-                setNewInitValue('');
-            };
-            
-            const removeInitiativeEntry = (id) => {
-                setInitiativeList(prev => prev.filter(entry => entry.id !== id));
-            };
-            
-            const clearInitiativeList = () => {
-                if (window.confirm('Clear all initiative entries?')) {
-                    setInitiativeList([]);
+                if (initiativeOrder.includes(tokenId)) {
+                    // Remove token from initiative
+                    setInitiativeOrder(prev => {
+                        const newOrder = prev.filter(id => id !== tokenId);
+                        // Adjust current turn index if needed
+                        if (currentTurnIndex >= newOrder.length && newOrder.length > 0) {
+                            setCurrentTurnIndex(newOrder.length - 1);
+                        } else if (newOrder.length === 0) {
+                            setCurrentTurnIndex(0);
+                        }
+                        return newOrder;
+                    });
+                    // Remove initiative value
+                    setInitiativeValues(prev => {
+                        const newValues = { ...prev };
+                        delete newValues[tokenId];
+                        return newValues;
+                    });
+                } else {
+                    // Prompt for initiative roll
+                    const initiativeRoll = prompt(`Enter initiative roll for ${tokenName}:`, '10');
+                    if (initiativeRoll === null) return; // User cancelled
+                    
+                    const initValue = parseInt(initiativeRoll) || 0;
+                    
+                    // Add token and sort by initiative (highest first)
+                    setInitiativeValues(prev => ({
+                        ...prev,
+                        [tokenId]: initValue
+                    }));
+                    
+                    setInitiativeOrder(prev => {
+                        const newOrder = [...prev, tokenId];
+                        // Sort by initiative value (highest first)
+                        newOrder.sort((a, b) => {
+                            const aValue = a === tokenId ? initValue : (initiativeValues[a] || 0);
+                            const bValue = b === tokenId ? initValue : (initiativeValues[b] || 0);
+                            return bValue - aValue;
+                        });
+                        return newOrder;
+                    });
                 }
+            };
+            
+            const nextTurn = () => {
+                if (initiativeOrder.length === 0) return;
+                setCurrentTurnIndex(prev => (prev + 1) % initiativeOrder.length);
+            };
+            
+            const previousTurn = () => {
+                if (initiativeOrder.length === 0) return;
+                setCurrentTurnIndex(prev => (prev - 1 + initiativeOrder.length) % initiativeOrder.length);
+            };
+            
+            const removeTokenFromInitiative = (tokenId) => {
+                setInitiativeOrder(prev => {
+                    const newOrder = prev.filter(id => id !== tokenId);
+                    // Adjust current turn index if needed
+                    if (currentTurnIndex >= newOrder.length && newOrder.length > 0) {
+                        setCurrentTurnIndex(newOrder.length - 1);
+                    } else if (newOrder.length === 0) {
+                        setCurrentTurnIndex(0);
+                    }
+                    return newOrder;
+                });
+                // Remove initiative value
+                setInitiativeValues(prev => {
+                    const newValues = { ...prev };
+                    delete newValues[tokenId];
+                    return newValues;
+                });
+            };
+            
+            const reorderInitiativeToken = (dragIndex, dropIndex) => {
+                setInitiativeOrder(prev => {
+                    const newOrder = [...prev];
+                    const [removed] = newOrder.splice(dragIndex, 1);
+                    newOrder.splice(dropIndex, 0, removed);
+                    
+                    // Update current turn index to follow the moved token if it was the current turn
+                    if (currentTurnIndex === dragIndex) {
+                        setCurrentTurnIndex(dropIndex);
+                    } else if (dragIndex < currentTurnIndex && dropIndex >= currentTurnIndex) {
+                        setCurrentTurnIndex(currentTurnIndex - 1);
+                    } else if (dragIndex > currentTurnIndex && dropIndex <= currentTurnIndex) {
+                        setCurrentTurnIndex(currentTurnIndex + 1);
+                    }
+                    
+                    return newOrder;
+                });
             };
 
             const handleSheetUpload = async (e) => {
@@ -2921,9 +2988,16 @@ const handleAvatarUpload = async (e) => {
             };
 
             const handleTokenMouseDown = (e, tokenId) => {
-                // Anyone can drag tokens now
                 e.preventDefault();
                 e.stopPropagation();
+                
+                // CTRL+Click = Toggle token in initiative
+                if (e.ctrlKey || e.metaKey) {
+                    toggleTokenInInitiative(tokenId);
+                    return; // Don't start dragging
+                }
+                
+                // Normal drag behavior
                 const token = tokens.find(t => t.id === tokenId);
                 if (!token) return;
                 // Use consistent world-to-screen transformation matching token rendering
@@ -4112,8 +4186,8 @@ const handleHandoutUpload = async (e) => {
                                 ctx.textBaseline = 'middle';
                                 
                                 // Position chat bubble above token
-                                const bubbleX = transformedX + transformedSize / 2+45;
-                                const bubbleY = transformedY - bubbleSize * 0.5;
+                                const bubbleX = transformedX + transformedSize / 2;
+                                const bubbleY = transformedY - bubbleSize * 0.7;
                                 
                                 // Draw chat bubble emoji (no background)
                                 ctx.fillText('💬', bubbleX, bubbleY);
@@ -5292,6 +5366,198 @@ const handleHandoutUpload = async (e) => {
                         </div>
                     </div>
                 </div>
+
+                {/* Visual Initiative Tracker - appears below scene tabs when tokens are in initiative */}
+                {initiativeOrder.length > 0 && (
+                    <div style={{
+                        position: 'fixed',
+                        top: '62px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '10px 20px',
+                        backgroundColor: 'rgba(26, 26, 26, 0.7)',
+                        borderRadius: '0 0 12px 12px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
+                        zIndex: 999
+                    }}>
+                        {/* Previous Turn Arrow */}
+                        <button
+                            onClick={previousTurn}
+                            style={{
+                                backgroundColor: 'transparent',
+                                border: '2px solid #d4af37',
+                                borderRadius: '50%',
+                                width: '36px',
+                                height: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                color: '#d4af37',
+                                fontSize: '18px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#d4af37';
+                                e.currentTarget.style.color = '#1a1a1a';
+                                e.currentTarget.style.transform = 'scale(1.1)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                                e.currentTarget.style.color = '#d4af37';
+                                e.currentTarget.style.transform = 'scale(1)';
+                            }}
+                            title="Previous Turn"
+                        >
+                            ◀
+                        </button>
+
+                        {/* Token Images */}
+                        <div style={{
+                            display: 'flex',
+                            gap: '8px',
+                            alignItems: 'center'
+                        }}>
+                            {initiativeOrder.map((tokenId, index) => {
+                                const token = tokens.find(t => t.id === tokenId);
+                                if (!token) return null;
+                                
+                                const isCurrentTurn = index === currentTurnIndex;
+                                
+                                return (
+                                    <div
+                                        key={tokenId}
+                                        draggable
+                                        onDragStart={() => setDraggingInitiativeToken(index)}
+                                        onDragOver={(e) => e.preventDefault()}
+                                        onDrop={() => {
+                                            if (draggingInitiativeToken !== null) {
+                                                reorderInitiativeToken(draggingInitiativeToken, index);
+                                                setDraggingInitiativeToken(null);
+                                            }
+                                        }}
+                                        onDoubleClick={() => removeTokenFromInitiative(tokenId)}
+                                        style={{
+                                            position: 'relative',
+                                            width: '100px',
+                                            height: '100px',
+                                            borderRadius: '50%',
+                                            overflow: 'hidden',
+                                            border: isCurrentTurn ? '4px solid #d4af37' : '2px solid #444',
+                                            boxShadow: isCurrentTurn 
+                                                ? '0 0 20px rgba(212, 175, 55, 0.8), 0 4px 12px rgba(0,0,0,0.6)'
+                                                : '0 2px 8px rgba(0,0,0,0.4)',
+                                            cursor: 'grab',
+                                            transition: 'all 0.3s',
+                                            transform: isCurrentTurn ? 'scale(1.1)' : 'scale(1)'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (!isCurrentTurn) {
+                                                e.currentTarget.style.transform = 'scale(1.05)';
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.transform = isCurrentTurn ? 'scale(1.1)' : 'scale(1)';
+                                        }}
+                                        title={`${token.name || 'Token'} - ${isCurrentTurn ? 'CURRENT TURN' : 'Double-click to remove'}`}
+                                    >
+                                        <img
+                                            src={token.src}
+                                            alt={token.name || 'Token'}
+                                            style={{
+                                                width: '100%',
+                                                height: '100%',
+                                                objectFit: 'cover',
+                                                pointerEvents: 'none'
+                                            }}
+                                        />
+                                        {/* Initiative number badge */}
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '-8px',
+                                            right: '-8px',
+                                            backgroundColor: '#d4af37',
+                                            color: '#1a1a1a',
+                                            borderRadius: '50%',
+                                            width: '32px',
+                                            height: '32px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '14px',
+                                            fontWeight: 'bold',
+                                            fontFamily: 'Georgia, serif',
+                                            border: '2px solid #1a1a1a',
+                                            boxShadow: '0 2px 6px rgba(0,0,0,0.6)'
+                                        }}>
+                                            {initiativeValues[tokenId] || 0}
+                                        </div>
+                                        {/* Token name label */}
+                                        {token.name && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: 0,
+                                                left: 0,
+                                                right: 0,
+                                                backgroundColor: 'rgba(26, 26, 26, 0.9)',
+                                                color: '#d4af37',
+                                                fontSize: '11px',
+                                                fontWeight: 'bold',
+                                                textAlign: 'center',
+                                                padding: '4px 2px',
+                                                fontFamily: 'Times New Roman, serif',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis'
+                                            }}>
+                                                {token.name}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Next Turn Arrow */}
+                        <button
+                            onClick={nextTurn}
+                            style={{
+                                backgroundColor: 'transparent',
+                                border: '2px solid #d4af37',
+                                borderRadius: '50%',
+                                width: '36px',
+                                height: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                color: '#d4af37',
+                                fontSize: '18px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#d4af37';
+                                e.currentTarget.style.color = '#1a1a1a';
+                                e.currentTarget.style.transform = 'scale(1.1)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                                e.currentTarget.style.color = '#d4af37';
+                                e.currentTarget.style.transform = 'scale(1)';
+                            }}
+                            title="Next Turn"
+                        >
+                            ▶
+                        </button>
+                    </div>
+                )}
 
                 {/* Player List - Top Left */}
                     {isConnected && players.length > 0 && (
@@ -6607,284 +6873,6 @@ const handleHandoutUpload = async (e) => {
                             />
                         </div>
                     ))}
-
-                    {/* Initiative Tracker Tab - Bottom Right */}
-                    <div
-                        onClick={handleInitiativeTabClick}
-                        style={{
-                            position: 'fixed',
-                            right: '10px',
-                            bottom: '50%',
-                            transform: 'translateY(50%)',
-                            zIndex: 2000,
-                            backgroundColor: '#1a1a1a',
-                            border: '2px solid #3b82f6',
-                            borderRadius: '8px',
-                            padding: '11px 9px',
-                            cursor: 'pointer',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
-                            transition: 'all 0.2s',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: '8px'
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'translateY(50%) scale(1.05)';
-                            e.currentTarget.style.backgroundColor = '#2a2a2a';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'translateY(50%) scale(1)';
-                            e.currentTarget.style.backgroundColor = '#1a1a1a';
-                        }}
-                    >
-                        <div style={{ fontSize: '24px' }}>🎯</div>
-                        <div style={{
-                            fontSize: '8px',
-                            color: '#3b82f6',
-                            fontFamily: 'Arial, sans-serif',
-                            fontWeight: 'bold',
-                            writingMode: 'vertical-rl',
-                            textOrientation: 'mixed'
-                        }}>
-                            INITIATIVE
-                        </div>
-                    </div>
-
-                    {/* Initiative Tracker Panel */}
-                    {initiativeTrackerVisible && (
-                        <>
-                            <div 
-                                style={{
-                                    position: 'fixed',
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    bottom: 0,
-                                    zIndex: 2999
-                                }}
-                                onClick={() => setInitiativeTrackerVisible(false)}
-                            />
-                            <div style={{
-                                position: 'fixed',
-                                right: '80px',
-                                bottom: '50%',
-                                transform: 'translateY(50%)',
-                                backgroundColor: '#1a1a1a',
-                                border: '2px solid #3b82f6',
-                                borderRadius: '8px',
-                                padding: '12px',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
-                                zIndex: 3000,
-                                width: '320px',
-                                maxHeight: '500px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '12px'
-                            }}>
-                                {/* Header */}
-                                <div style={{
-                                    fontSize: '16px',
-                                    fontWeight: 'bold',
-                                    color: '#3b82f6',
-                                    fontFamily: 'Georgia, serif',
-                                    borderBottom: '2px solid #3b82f6',
-                                    paddingBottom: '8px',
-                                    textAlign: 'center'
-                                }}>
-                                    🎯 Initiative Tracker
-                                </div>
-
-                                {/* Add Entry Form */}
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '8px',
-                                    padding: '10px',
-                                    backgroundColor: '#2a2a2a',
-                                    borderRadius: '6px',
-                                    border: '1px solid #444'
-                                }}>
-                                    <input
-                                        type="text"
-                                        placeholder="Name (Player/Creature)"
-                                        value={newInitName}
-                                        onChange={(e) => setNewInitName(e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onKeyPress={(e) => {
-                                            if (e.key === 'Enter') addInitiativeEntry();
-                                        }}
-                                        style={{
-                                            padding: '8px',
-                                            backgroundColor: '#1a1a1a',
-                                            color: '#e0e0e0',
-                                            border: '1px solid #3b82f6',
-                                            borderRadius: '4px',
-                                            fontSize: '13px',
-                                            fontFamily: 'Arial, sans-serif'
-                                        }}
-                                    />
-                                    <input
-                                        type="number"
-                                        placeholder="Initiative Value"
-                                        value={newInitValue}
-                                        onChange={(e) => setNewInitValue(e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onKeyPress={(e) => {
-                                            if (e.key === 'Enter') addInitiativeEntry();
-                                        }}
-                                        style={{
-                                            padding: '8px',
-                                            backgroundColor: '#1a1a1a',
-                                            color: '#e0e0e0',
-                                            border: '1px solid #3b82f6',
-                                            borderRadius: '4px',
-                                            fontSize: '13px',
-                                            fontFamily: 'Arial, sans-serif'
-                                        }}
-                                    />
-                                    <button
-                                        onClick={addInitiativeEntry}
-                                        style={{
-                                            padding: '8px',
-                                            backgroundColor: '#3b82f6',
-                                            color: '#fff',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer',
-                                            fontSize: '13px',
-                                            fontFamily: 'Arial, sans-serif',
-                                            fontWeight: 'bold',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.backgroundColor = '#2563eb';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.backgroundColor = '#3b82f6';
-                                        }}
-                                    >
-                                        ➕ Add Entry
-                                    </button>
-                                </div>
-
-                                {/* Initiative List */}
-                                <div style={{
-                                    flex: 1,
-                                    overflowY: 'auto',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '6px',
-                                    maxHeight: '300px'
-                                }}>
-                                    {initiativeList.length === 0 ? (
-                                        <div style={{
-                                            color: '#888',
-                                            fontSize: '13px',
-                                            fontFamily: 'Arial, sans-serif',
-                                            textAlign: 'center',
-                                            padding: '20px'
-                                        }}>
-                                            No initiative entries yet
-                                        </div>
-                                    ) : (
-                                        initiativeList.map((entry, index) => (
-                                            <div
-                                                key={entry.id}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    padding: '10px',
-                                                    backgroundColor: index === 0 ? '#3b82f6' : '#2a2a2a',
-                                                    border: index === 0 ? '2px solid #3b82f6' : '1px solid #444',
-                                                    borderRadius: '6px',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                <div style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '12px',
-                                                    flex: 1
-                                                }}>
-                                                    <div style={{
-                                                        fontSize: '18px',
-                                                        fontWeight: 'bold',
-                                                        color: index === 0 ? '#fff' : '#3b82f6',
-                                                        fontFamily: 'Georgia, serif',
-                                                        minWidth: '35px',
-                                                        textAlign: 'center'
-                                                    }}>
-                                                        {entry.initiative}
-                                                    </div>
-                                                    <div style={{
-                                                        fontSize: '14px',
-                                                        color: index === 0 ? '#fff' : '#e0e0e0',
-                                                        fontFamily: 'Arial, sans-serif',
-                                                        fontWeight: index === 0 ? 'bold' : 'normal'
-                                                    }}>
-                                                        {entry.name}
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        removeInitiativeEntry(entry.id);
-                                                    }}
-                                                    style={{
-                                                        padding: '4px 8px',
-                                                        backgroundColor: '#dc3545',
-                                                        color: '#fff',
-                                                        border: 'none',
-                                                        borderRadius: '4px',
-                                                        cursor: 'pointer',
-                                                        fontSize: '12px',
-                                                        transition: 'all 0.2s'
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        e.currentTarget.style.backgroundColor = '#c82333';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.currentTarget.style.backgroundColor = '#dc3545';
-                                                    }}
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-
-                                {/* Clear All Button */}
-                                {initiativeList.length > 0 && (
-                                    <button
-                                        onClick={clearInitiativeList}
-                                        style={{
-                                            padding: '8px',
-                                            backgroundColor: '#dc3545',
-                                            color: '#fff',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer',
-                                            fontSize: '13px',
-                                            fontFamily: 'Arial, sans-serif',
-                                            fontWeight: 'bold',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.backgroundColor = '#c82333';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                        }}
-                                    >
-                                        🗑️ Clear All
-                                    </button>
-                                )}
-                            </div>
-                        </>
-                    )}
 
                     {diceVisible && (
                         <div style={{
@@ -8569,8 +8557,8 @@ const handleHandoutUpload = async (e) => {
                                     <input
                                         type="range"
                                         min="0.01"
-                                        max="0.4"
-                                        step="0.01"
+                                        max="0.2"
+                                        step="0.005"
                                         value={dmAvatarContextMenu.micSensitivity}
                                         onChange={(e) => {
                                             const sensitivity = parseFloat(e.target.value);
@@ -8722,8 +8710,8 @@ const handleHandoutUpload = async (e) => {
                                     <input
                                         type="range"
                                         min="0.01"
-                                        max="0.4"
-                                        step="0.01"
+                                        max="0.2"
+                                        step="0.005"
                                         value={avatarContextMenu.micSensitivity}
                                         onChange={(e) => {
                                             const sensitivity = parseFloat(e.target.value);
