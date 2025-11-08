@@ -2995,6 +2995,16 @@ const handleAvatarUpload = async (e) => {
             const handleTokenMouseDown = (e, tokenId) => {
                 e.preventDefault();
                 e.stopPropagation();
+
+                // Shift + Click = Toggle token visibility (host only)
+    if (e.shiftKey && isHost) {
+        setTokens(prevTokens => 
+            prevTokens.map(t => 
+                t.id === tokenId ? { ...t, hidden: !t.hidden } : t
+            )
+        );
+        return; // Don't start dragging
+    }
                 
                 // CTRL+Click = Toggle token in initiative
                 if (e.ctrlKey || e.metaKey) {
@@ -3247,7 +3257,8 @@ const handleAvatarUpload = async (e) => {
             size: size,
             sizeMultiplier: 1, 
             name: 'Token',
-            showMeasurement: false
+            showMeasurement: false,
+            hidden: false
         };
         setTokens(prev => [...prev, newToken]);
     } catch (err) {
@@ -4042,7 +4053,7 @@ const handleHandoutUpload = async (e) => {
                 ctx.clearRect(0, 0, width, height);
                 
                 ctx.strokeStyle = activeScene.grid.color;
-                ctx.lineWidth = 1.5 * gridTransform.zoom;
+                ctx.lineWidth = .25 * gridTransform.zoom;
                 ctx.globalAlpha = 0.9;
                 ctx.beginPath();
                 
@@ -4102,6 +4113,10 @@ const handleHandoutUpload = async (e) => {
                 // Render tokens using image cache
                 const renderTokens = async () => {
                     for (const token of tokens) {
+                         if (token.hidden && !isHost) {
+        continue;
+    }
+                        
                         const baseSize = token.size || 50;
                         const sizeMultiplier = token.sizeMultiplier || 1;
                         const actualSize = baseSize * sizeMultiplier;
