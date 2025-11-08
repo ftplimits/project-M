@@ -4191,8 +4191,8 @@ const handleHandoutUpload = async (e) => {
                                 ctx.textBaseline = 'middle';
                                 
                                 // Position chat bubble above token
-                                const bubbleX = transformedX + transformedSize / 2;
-                                const bubbleY = transformedY - bubbleSize * 0.7;
+                                const bubbleX = transformedX + transformedSize / 2 + 30;
+                                const bubbleY = transformedY - bubbleSize * 0.45;
                                 
                                 // Draw chat bubble emoji (no background)
                                 ctx.fillText('💬', bubbleX, bubbleY);
