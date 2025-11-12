@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    MONOMYTH VTT - V 0.72   
+    MONOMYTH VTT - V 0.76   
 -->
     
     <link rel="shortcut icon" type="image/png" href="favicon.png">
@@ -220,6 +220,22 @@
     };
 };
 
+        // Canvas roundRect polyfill for older browsers
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, width, height, radius) {
+                if (width < 2 * radius) radius = width / 2;
+                if (height < 2 * radius) radius = height / 2;
+                this.beginPath();
+                this.moveTo(x + radius, y);
+                this.arcTo(x + width, y, x + width, y + height, radius);
+                this.arcTo(x + width, y + height, x, y + height, radius);
+                this.arcTo(x, y + height, x, y, radius);
+                this.arcTo(x, y, x + width, y, radius);
+                this.closePath();
+                return this;
+            };
+        }
+
         // Image downscaling utility function
         const downscaleImage = (file, maxWidth = 2048, maxHeight = 2048) => {
             return new Promise((resolve, reject) => {
@@ -420,6 +436,13 @@
             const [playerContextMenu, setPlayerContextMenu] = useState(null); // { x, y, playerId, playerName }
             const [kickConfirmation, setKickConfirmation] = useState(null); // { playerId, playerName }
             const [kickedMessage, setKickedMessage] = useState(false);
+            
+            // HP Counter and Grid customization state
+            const [gridColor, setGridColor] = useState(() => localStorage.getItem('gridColor') || 'white');
+            const [zonesMode, setZonesMode] = useState(false);
+            const [gridContextMenu, setGridContextMenu] = useState(null);
+            const [hpEditingToken, setHpEditingToken] = useState(null);
+            const [tokenContextMenu, setTokenContextMenu] = useState(null);
 
             // EXISTING STATE
             const [scenes, setScenes] = useState(
@@ -1401,6 +1424,13 @@ useEffect(() => {
                         setDrawings(message.data);
                         break;
 
+                    case 'INITIATIVE_UPDATE':
+                        // Receive initiative state from host
+                        setInitiativeOrder(message.data.initiativeOrder);
+                        setInitiativeValues(message.data.initiativeValues);
+                        setCurrentTurnIndex(message.data.currentTurnIndex);
+                        break;
+
                     case 'POINTER_UPDATE':
                         // Update active pointers with remote player's pointer
                         setActivePointers(prev => {
@@ -1849,6 +1879,17 @@ useEffect(() => {
                 }
             }, [characterSheets, isHost, isConnected]);
 
+            // Sync initiative tracker when it changes (only if host)
+            useEffect(() => {
+                if (isHost && isConnected) {
+                    broadcastState('INITIATIVE_UPDATE', {
+                        initiativeOrder,
+                        initiativeValues,
+                        currentTurnIndex
+                    });
+                }
+            }, [initiativeOrder, initiativeValues, currentTurnIndex, isHost, isConnected]);
+
             // Sync scenes when they change (for grid and other scene properties) (only if host)
             useEffect(() => {
                 if (isHost && isConnected) {
@@ -2124,6 +2165,9 @@ useEffect(() => {
             };
             
             const toggleTokenInInitiative = (tokenId) => {
+                // Only host can manage initiative
+                if (!isHost && isConnected) return;
+                
                 const token = tokens.find(t => t.id === tokenId);
                 const tokenName = token?.name || 'Token';
                 
@@ -2172,16 +2216,23 @@ useEffect(() => {
             };
             
             const nextTurn = () => {
+                // Only host can manage initiative
+                if (!isHost && isConnected) return;
                 if (initiativeOrder.length === 0) return;
                 setCurrentTurnIndex(prev => (prev + 1) % initiativeOrder.length);
             };
             
             const previousTurn = () => {
+                // Only host can manage initiative
+                if (!isHost && isConnected) return;
                 if (initiativeOrder.length === 0) return;
                 setCurrentTurnIndex(prev => (prev - 1 + initiativeOrder.length) % initiativeOrder.length);
             };
             
             const removeTokenFromInitiative = (tokenId) => {
+                // Only host can manage initiative
+                if (!isHost && isConnected) return;
+                
                 setInitiativeOrder(prev => {
                     const newOrder = prev.filter(id => id !== tokenId);
                     // Adjust current turn index if needed
@@ -2201,6 +2252,9 @@ useEffect(() => {
             };
             
             const reorderInitiativeToken = (dragIndex, dropIndex) => {
+                // Only host can manage initiative
+                if (!isHost && isConnected) return;
+                
                 setInitiativeOrder(prev => {
                     const newOrder = [...prev];
                     const [removed] = newOrder.splice(dragIndex, 1);
@@ -3136,21 +3190,26 @@ const handleAvatarUpload = async (e) => {
     const worldX = (e.clientX - tokenDragOffset.x - gridTransform.panX) / gridTransform.zoom;
     const worldY = (canvasY - tokenDragOffset.y - gridTransform.panY) / gridTransform.zoom;
     
-    // Grid snapping: snap to nearest grid intersection when within 25% threshold
-    const gridSize = activeScene.grid?.size || 50;
-    const snapThreshold = gridSize * 0.50;
+    let finalX = worldX;
+    let finalY = worldY;
     
-    // Calculate nearest grid intersection
-    const nearestGridX = Math.round(worldX / gridSize) * gridSize;
-    const nearestGridY = Math.round(worldY / gridSize) * gridSize;
-    
-    // Calculate distance to nearest grid intersection
-    const distX = Math.abs(worldX - nearestGridX);
-    const distY = Math.abs(worldY - nearestGridY);
-    
-    // Snap if within threshold
-    const finalX = distX <= snapThreshold ? nearestGridX : worldX;
-    const finalY = distY <= snapThreshold ? nearestGridY : worldY;
+    // Grid snapping: only snap when NOT in zones mode
+    if (!zonesMode) {
+        const gridSize = activeScene.grid?.size || 50;
+        const snapThreshold = gridSize * 0.50;
+        
+        // Calculate nearest grid intersection
+        const nearestGridX = Math.round(worldX / gridSize) * gridSize;
+        const nearestGridY = Math.round(worldY / gridSize) * gridSize;
+        
+        // Calculate distance to nearest grid intersection
+        const distX = Math.abs(worldX - nearestGridX);
+        const distY = Math.abs(worldY - nearestGridY);
+        
+        // Snap if within threshold
+        finalX = distX <= snapThreshold ? nearestGridX : worldX;
+        finalY = distY <= snapThreshold ? nearestGridY : worldY;
+    }
     
     const updatedTokens = tokensRef.current.map(token => 
         token.id === draggedToken 
@@ -3325,6 +3384,32 @@ const setTokenCondition = (tokenId, emoji) => {
         )
     );
     setDiceCountMenu(null);
+};
+
+// Toggle HP counter for a specific token
+// Toggle HP counter for a specific token
+const toggleTokenHPCounter = (tokenId, enabled) => {
+    setTokens(prevTokens => 
+        prevTokens.map(t => {
+            if (t.id === tokenId) {
+                // If enabling and no HP set, default to 10
+                const hp = enabled && t.hp === undefined ? 10 : t.hp;
+                return { ...t, hpCounterEnabled: enabled, hp };
+            }
+            return t;
+        })
+    );
+    // Broadcasting happens automatically via useEffect
+};
+
+// Update HP value for a specific token
+const updateTokenHP = (tokenId, newHP) => {
+    setTokens(prevTokens => 
+        prevTokens.map(t => 
+            t.id === tokenId ? { ...t, hp: newHP } : t
+        )
+    );
+    // Broadcasting happens automatically via useEffect
 };
 
 // Handout upload handler
@@ -3693,12 +3778,13 @@ const handleHandoutUpload = async (e) => {
                 const handleClick = () => {
                     setContextMenu(null);
                     setDiceCountMenu(null);
+                    setGridContextMenu(null);
                 };
-                if (contextMenu || diceCountMenu) {
+                if (contextMenu || diceCountMenu || gridContextMenu) {
                     document.addEventListener('click', handleClick);
                     return () => document.removeEventListener('click', handleClick);
                 }
-            }, [contextMenu, diceCountMenu]);
+            }, [contextMenu, diceCountMenu, gridContextMenu]);
 
             // Pointer tool event handlers
             useEffect(() => {
@@ -4034,7 +4120,7 @@ const handleHandoutUpload = async (e) => {
                 renderImages().catch(err => console.error('Map rendering error:', err));
             }, [activeScene.images, activeScene.grid?.enabled, gridTransform]);
             
-            // Layer 2: Grid Canvas - renders grid lines (redraws on pan/zoom only)
+            // Layer 2: Grid Canvas - renders grid lines OR zones (redraws on pan/zoom only)
             useEffect(() => {
                 const canvas = gridCanvasRef.current;
                 if (!canvas || !activeScene.grid?.enabled) return;
@@ -4052,45 +4138,77 @@ const handleHandoutUpload = async (e) => {
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.clearRect(0, 0, width, height);
                 
-                ctx.strokeStyle = activeScene.grid.color;
+                // Get grid color (default to white if not set)
+                const colorMap = {
+                    'white': '#f5f5f5',
+                    'black': '#000000',
+                    'red': '#dc2626'
+                };
+                ctx.strokeStyle = colorMap[gridColor] || '#f5f5f5';
                 ctx.lineWidth = .25 * gridTransform.zoom;
                 ctx.globalAlpha = 0.9;
-                ctx.beginPath();
                 
-                // Fixed 100x100 grid centered at world origin (0, 0)
-                // Grid extends from -50 to +50 cells in both directions
-                const HALF_GRID = GRID_CELLS_TOTAL / 2;
-                
-                // Calculate grid bounding box in WORLD coordinates
-                const gridBoundsWorldLeft = -HALF_GRID * activeScene.grid.size;
-                const gridBoundsWorldRight = HALF_GRID * activeScene.grid.size;
-                const gridBoundsWorldTop = -HALF_GRID * activeScene.grid.size;
-                const gridBoundsWorldBottom = HALF_GRID * activeScene.grid.size;
-                
-                // Convert grid bounds to SCREEN coordinates
-                const gridBoundsScreenLeft = gridBoundsWorldLeft * gridTransform.zoom + gridTransform.panX;
-                const gridBoundsScreenRight = gridBoundsWorldRight * gridTransform.zoom + gridTransform.panX;
-                const gridBoundsScreenTop = gridBoundsWorldTop * gridTransform.zoom + gridTransform.panY;
-                const gridBoundsScreenBottom = gridBoundsWorldBottom * gridTransform.zoom + gridTransform.panY;
-                
-                // Vertical lines (101 lines for 100 cells) - CLIPPED to grid bounds
-                for (let i = 0; i <= GRID_CELLS_TOTAL; i++) {
-                    const worldX = (i - HALF_GRID) * activeScene.grid.size;
-                    const screenX = worldX * gridTransform.zoom + gridTransform.panX;
-                    ctx.moveTo(screenX, gridBoundsScreenTop);    // Clipped to grid top
-                    ctx.lineTo(screenX, gridBoundsScreenBottom); // Clipped to grid bottom
+                if (zonesMode) {
+                    // ZONES MODE: Draw 3 concentric circles at 6, 12, 18 grid units (30', 60', 90')
+                    // Center is at world origin (0, 0), same as grid
+                    const centerScreenX = gridTransform.panX;
+                    const centerScreenY = gridTransform.panY;
+                    
+                    // Zone radii in grid units (6 = 30', 12 = 60', 18 = 90')
+                    const zoneRadii = [6, 12, 18];
+                    
+                    ctx.beginPath();
+                    zoneRadii.forEach(radiusInGrids => {
+                        const radiusWorld = radiusInGrids * activeScene.grid.size;
+                        const radiusScreen = radiusWorld * gridTransform.zoom;
+                        ctx.moveTo(centerScreenX + radiusScreen, centerScreenY);
+                        ctx.arc(centerScreenX, centerScreenY, radiusScreen, 0, Math.PI * 2);
+                    });
+                    ctx.stroke();
+                } else {
+                    // GRID MODE: Draw square grid
+                    ctx.beginPath();
+                    
+                    // Fixed 100x100 grid centered at world origin (0, 0)
+                    // Grid extends from -50 to +50 cells in both directions
+                    const HALF_GRID = GRID_CELLS_TOTAL / 2;
+                    
+                    // Calculate grid bounding box in WORLD coordinates
+                    const gridBoundsWorldLeft = -HALF_GRID * activeScene.grid.size;
+                    const gridBoundsWorldRight = HALF_GRID * activeScene.grid.size;
+                    const gridBoundsWorldTop = -HALF_GRID * activeScene.grid.size;
+                    const gridBoundsWorldBottom = HALF_GRID * activeScene.grid.size;
+                    
+                    // Convert grid bounds to SCREEN coordinates
+                    const gridBoundsScreenLeft = gridBoundsWorldLeft * gridTransform.zoom + gridTransform.panX;
+                    const gridBoundsScreenRight = gridBoundsWorldRight * gridTransform.zoom + gridTransform.panX;
+                    const gridBoundsScreenTop = gridBoundsWorldTop * gridTransform.zoom + gridTransform.panY;
+                    const gridBoundsScreenBottom = gridBoundsWorldBottom * gridTransform.zoom + gridTransform.panY;
+                    
+                    // Vertical lines (101 lines for 100 cells) - CLIPPED to grid bounds
+                    for (let i = 0; i <= GRID_CELLS_TOTAL; i++) {
+                        const worldX = (i - HALF_GRID) * activeScene.grid.size;
+                        const screenX = worldX * gridTransform.zoom + gridTransform.panX;
+                        ctx.moveTo(screenX, gridBoundsScreenTop);    // Clipped to grid top
+                        ctx.lineTo(screenX, gridBoundsScreenBottom); // Clipped to grid bottom
+                    }
+                    
+                    // Horizontal lines (101 lines for 100 cells) - CLIPPED to grid bounds
+                    for (let i = 0; i <= GRID_CELLS_TOTAL; i++) {
+                        const worldY = (i - HALF_GRID) * activeScene.grid.size;
+                        const screenY = worldY * gridTransform.zoom + gridTransform.panY;
+                        ctx.moveTo(gridBoundsScreenLeft, screenY);   // Clipped to grid left
+                        ctx.lineTo(gridBoundsScreenRight, screenY);  // Clipped to grid right
+                    }
+                    
+                    ctx.stroke();
                 }
-                
-                // Horizontal lines (101 lines for 100 cells) - CLIPPED to grid bounds
-                for (let i = 0; i <= GRID_CELLS_TOTAL; i++) {
-                    const worldY = (i - HALF_GRID) * activeScene.grid.size;
-                    const screenY = worldY * gridTransform.zoom + gridTransform.panY;
-                    ctx.moveTo(gridBoundsScreenLeft, screenY);   // Clipped to grid left
-                    ctx.lineTo(gridBoundsScreenRight, screenY);  // Clipped to grid right
-                }
-                
-                ctx.stroke();
-            }, [activeScene.grid, gridTransform]);
+            }, [activeScene.grid, gridTransform, gridColor, zonesMode]);
+            
+            // Persist grid color preference to localStorage
+            useEffect(() => {
+                localStorage.setItem('gridColor', gridColor);
+            }, [gridColor]);
             
             // Layer 4: Token Canvas - renders tokens (redraws when tokens move)
             useEffect(() => {
@@ -4145,7 +4263,8 @@ const handleHandoutUpload = async (e) => {
                         
                         if (img.complete) {
                             ctx.save();
-                            ctx.globalAlpha = token.locked ? 0.5 : 1.0;
+                            // Dim locked tokens OR hidden tokens (for host)
+                            ctx.globalAlpha = (token.locked || (token.hidden && isHost)) ? 0.5 : 1.0;
                             
                             // Draw gold glow if token is talking
                             if (isTalking) {
@@ -4179,6 +4298,22 @@ const handleHandoutUpload = async (e) => {
                             
                             ctx.drawImage(img, transformedX, transformedY, transformedSize, transformedSize);
                             ctx.restore();
+                            
+                            // Draw red tint overlay for hidden tokens (host only)
+                            if (token.hidden && isHost) {
+                                ctx.save();
+                                ctx.fillStyle = 'rgba(220, 53, 69, 0.35)'; // Red tint with 35% opacity
+                                ctx.beginPath();
+                                ctx.arc(
+                                    transformedX + transformedSize / 2, 
+                                    transformedY + transformedSize / 2, 
+                                    transformedSize / 2, 
+                                    0, 
+                                    2 * Math.PI
+                                );
+                                ctx.fill();
+                                ctx.restore();
+                            }
                             
                             // Draw border if token has borderColor
                             if (token.borderColor) {
@@ -4262,6 +4397,34 @@ const handleHandoutUpload = async (e) => {
                                 
                                 // Draw emoji
                                 ctx.fillText(token.conditionEmoji, emojiX, emojiY);
+                                ctx.restore();
+                            }
+                            
+                            // Draw HP counter if enabled for this token
+                            if (token.hpCounterEnabled && token.hp !== undefined) {
+                                ctx.save();
+                                const counterSize = Math.max(18, transformedSize * 0.25);
+                                const fontSize = Math.max(11, counterSize * 0.6);
+                                
+                                // Position at top-left of token
+                                const counterX = transformedX + counterSize * 0.5;
+                                const counterY = transformedY + counterSize * 0.5;
+                                
+                                // Draw background box
+                                ctx.fillStyle = 'rgba(26, 26, 26, 0.95)';
+                                ctx.strokeStyle = '#d4af37';
+                                ctx.lineWidth = 2;
+                                ctx.beginPath();
+                                ctx.roundRect(counterX - counterSize * 0.45, counterY - counterSize * 0.45, counterSize, counterSize, 4);
+                                ctx.fill();
+                                ctx.stroke();
+                                
+                                // Draw HP value
+                                ctx.fillStyle = '#d4af37';
+                                ctx.font = `bold ${fontSize}px Arial`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillText(token.hp.toString(), counterX, counterY + 2);
                                 ctx.restore();
                             }
                             
@@ -5144,6 +5307,11 @@ const handleHandoutUpload = async (e) => {
                                 {/* Grid Button - More Prominent */}
                                 <button
                                     onClick={toggleGrid}
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        if (!isHost && isConnected) return; // Only host can change grid settings
+                                        setGridContextMenu({ x: e.clientX, y: e.clientY });
+                                    }}
                                     className={`px-4 py-2 font-bold rounded-lg text-base transition-all border-2 flex items-center gap-2 shadow-lg ${
                                         activeScene.grid?.enabled
                                             ? 'bg-amber-600 text-zinc-900 border-amber-500'
@@ -5155,7 +5323,7 @@ const handleHandoutUpload = async (e) => {
                                             ? '0 0 20px rgba(212, 175, 55, 0.6)' 
                                             : '0 4px 12px rgba(0,0,0,0.4)'
                                     }}
-                                    title="Toggle Grid (50px)"
+                                    title="Toggle Grid (Right-click for options)"
                                 >
                                     <Grid3x3Icon size={20} />
                                     GRID
@@ -6400,6 +6568,39 @@ const handleHandoutUpload = async (e) => {
     );
 })}
 
+                    {/* HP Counter click zones for tokens */}
+                    {activeScene.grid?.enabled && tokens.filter(t => t.hpCounterEnabled).map(token => {
+    const baseSize = token.size || 50;
+    const sizeMultiplier = token.sizeMultiplier || 1;
+    const actualSize = baseSize * sizeMultiplier;
+    const transformedX = token.x * gridTransform.zoom + gridTransform.panX;
+    const transformedY = token.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+    const transformedSize = actualSize * gridTransform.zoom;
+    const counterSize = Math.max(18, transformedSize * 0.32);
+    const counterX = transformedX + counterSize * 0.5 - counterSize * 0.45;
+    const counterY = transformedY + counterSize * 0.5 - counterSize * 0.45;
+    
+    return (
+        <div
+            key={`hp-${token.id}`}
+            className="fixed"
+            style={{
+                left: counterX,
+                top: counterY,
+                width: counterSize,
+                height: counterSize,
+                zIndex: 90,
+                cursor: 'pointer',
+                pointerEvents: 'auto'
+            }}
+            onClick={(e) => {
+                e.stopPropagation();
+                setHpEditingToken(token.id);
+            }}
+        />
+    );
+})}
+
                     {activeScene.grid?.enabled && drawToolsVisible && (
     <div 
         className="fixed bottom-4 bg-zinc-800 border-2 border-amber-600 rounded-lg shadow-2xl px-4 py-3 flex gap-4 items-center"
@@ -7122,6 +7323,140 @@ const handleHandoutUpload = async (e) => {
                         ))}
                     </div>
 
+                    {/* Grid Context Menu */}
+                    {gridContextMenu && (
+                        <>
+                            <div 
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    zIndex: 2999
+                                }}
+                                onClick={() => setGridContextMenu(null)}
+                            />
+                            <div style={{
+                                position: 'fixed',
+                                left: gridContextMenu.x,
+                                top: gridContextMenu.y,
+                                backgroundColor: '#1a1a1a',
+                                border: '2px solid #d4af37',
+                                borderRadius: '8px',
+                                padding: '8px',
+                                zIndex: 3000,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                minWidth: '160px'
+                            }}>
+                                <div style={{
+                                    color: '#d4af37',
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                    fontFamily: 'Georgia, serif',
+                                    marginBottom: '4px',
+                                    borderBottom: '1px solid #d4af37',
+                                    paddingBottom: '4px'
+                                }}>
+                                    Grid Options
+                                </div>
+                                
+                                {/* Grid Color Section */}
+                                <div style={{
+                                    color: '#888',
+                                    fontSize: '10px',
+                                    fontFamily: 'Arial, sans-serif',
+                                    marginTop: '4px',
+                                    marginBottom: '2px',
+                                    paddingLeft: '4px'
+                                }}>
+                                    Grid Color:
+                                </div>
+                                
+                                {['white', 'black', 'red'].map(color => (
+                                    <button
+                                        key={color}
+                                        onClick={() => {
+                                            setGridColor(color);
+                                            setGridContextMenu(null);
+                                        }}
+                                        style={{
+                                            padding: '6px 12px',
+                                            backgroundColor: gridColor === color ? '#d4af37' : '#2a2a2a',
+                                            color: gridColor === color ? '#000' : '#e0e0e0',
+                                            border: '1px solid #444',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            fontFamily: 'Arial, sans-serif',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s',
+                                            textTransform: 'capitalize'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (gridColor !== color) {
+                                                e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                                e.currentTarget.style.borderColor = '#d4af37';
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (gridColor !== color) {
+                                                e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                                e.currentTarget.style.borderColor = '#444';
+                                            }
+                                        }}
+                                    >
+                                        {color === 'white' && '⚪'} {color === 'black' && '⚫'} {color === 'red' && '🔴'} {color}
+                                    </button>
+                                ))}
+                                
+                                {/* Zones Mode Toggle */}
+                                <div style={{
+                                    color: '#888',
+                                    fontSize: '10px',
+                                    fontFamily: 'Arial, sans-serif',
+                                    marginTop: '8px',
+                                    marginBottom: '2px',
+                                    paddingLeft: '4px'
+                                }}>
+                                    Grid Style:
+                                </div>
+                                
+                                <button
+                                    onClick={() => {
+                                        setZonesMode(!zonesMode);
+                                        setGridContextMenu(null);
+                                    }}
+                                    style={{
+                                        padding: '6px 12px',
+                                        backgroundColor: '#2a2a2a',
+                                        color: '#e0e0e0',
+                                        border: '1px solid #444',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                        e.currentTarget.style.borderColor = '#d4af37';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                        e.currentTarget.style.borderColor = '#444';
+                                    }}
+                                >
+                                    {zonesMode ? '⬛ Switch to Grid' : '🎯 Switch to Zones'}
+                                </button>
+                            </div>
+                        </>
+                    )}
+
                     {diceCountMenu && (
     <>
         <div 
@@ -7450,6 +7785,47 @@ const handleHandoutUpload = async (e) => {
                 </button>
             ))}
         </div>
+        
+        {/* HP Counter Toggle */}
+        <div style={{
+            color: '#888',
+            fontSize: '10px',
+            fontFamily: 'Arial, sans-serif',
+            marginTop: '8px',
+            marginBottom: '2px',
+            paddingLeft: '4px'
+        }}>
+            HP Counter:
+        </div>
+        <button
+            onClick={() => {
+                const token = tokens.find(t => t.id === diceCountMenu.tokenId);
+                toggleTokenHPCounter(diceCountMenu.tokenId, !token?.hpCounterEnabled);
+                setDiceCountMenu(null);
+            }}
+            style={{
+                padding: '6px 12px',
+                backgroundColor: '#2a2a2a',
+                color: '#e0e0e0',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#3a3a3a';
+                e.currentTarget.style.borderColor = '#d4af37';
+            }}
+            onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#2a2a2a';
+                e.currentTarget.style.borderColor = '#444';
+            }}
+        >
+            {tokens.find(t => t.id === diceCountMenu.tokenId)?.hpCounterEnabled ? '✅ HP Counter ON' : '⬜ HP Counter OFF'}
+        </button>
         
         {/* Assign Player Section (DM Only) */}
         {isHost && (
@@ -8950,6 +9326,177 @@ const handleHandoutUpload = async (e) => {
                             </div>
                         </div>
                     )}
+                    
+                    {/* HP Editor Modal */}
+                    {hpEditingToken && (() => {
+                        const token = tokens.find(t => t.id === hpEditingToken);
+                        if (!token) return null;
+                        
+                        return (
+                            <div style={{
+                                position: 'fixed',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                                zIndex: 10000,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                            onClick={() => setHpEditingToken(null)}
+                            >
+                                <div style={{
+                                    backgroundColor: '#1a1a1a',
+                                    border: '3px solid #d4af37',
+                                    borderRadius: '12px',
+                                    padding: '25px 30px',
+                                    boxShadow: '0 8px 32px rgba(212, 175, 55, 0.4)',
+                                    textAlign: 'center',
+                                    minWidth: '300px'
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div style={{
+                                        fontSize: '18px',
+                                        fontWeight: 'bold',
+                                        color: '#d4af37',
+                                        fontFamily: 'Georgia, serif',
+                                        marginBottom: '15px'
+                                    }}>
+                                        {token.name || 'Token'} HP
+                                    </div>
+                                    
+                                    <div style={{
+                                        fontSize: '32px',
+                                        fontWeight: 'bold',
+                                        color: '#e0e0e0',
+                                        fontFamily: 'Arial, sans-serif',
+                                        marginBottom: '20px'
+                                    }}>
+                                        {token.hp}
+                                    </div>
+                                    
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '10px',
+                                        marginBottom: '15px',
+                                        justifyContent: 'center'
+                                    }}>
+                                        <input
+                                            type="number"
+                                            id="hp-modifier"
+                                            defaultValue="1"
+                                            style={{
+                                                width: '80px',
+                                                padding: '8px',
+                                                backgroundColor: '#2a2a2a',
+                                                color: '#e0e0e0',
+                                                border: '2px solid #444',
+                                                borderRadius: '6px',
+                                                fontSize: '16px',
+                                                fontFamily: 'Arial, sans-serif',
+                                                textAlign: 'center'
+                                            }}
+                                        />
+                                    </div>
+                                    
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '10px',
+                                        justifyContent: 'center',
+                                        marginBottom: '15px'
+                                    }}>
+                                        <button
+                                            onClick={() => {
+                                                const modifier = parseInt(document.getElementById('hp-modifier').value) || 0;
+                                                updateTokenHP(hpEditingToken, Math.max(0, token.hp + modifier));
+                                            }}
+                                            style={{
+                                                padding: '12px 24px',
+                                                backgroundColor: '#22c55e',
+                                                color: '#fff',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                fontSize: '18px',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer',
+                                                fontFamily: 'Arial, sans-serif',
+                                                transition: 'transform 0.1s, background-color 0.2s',
+                                                boxShadow: '0 4px 12px rgba(34, 197, 94, 0.4)'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.transform = 'scale(1.05)';
+                                                e.currentTarget.style.backgroundColor = '#16a34a';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.transform = 'scale(1)';
+                                                e.currentTarget.style.backgroundColor = '#22c55e';
+                                            }}
+                                        >
+                                            + Add
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                const modifier = parseInt(document.getElementById('hp-modifier').value) || 0;
+                                                updateTokenHP(hpEditingToken, Math.max(0, token.hp - modifier));
+                                            }}
+                                            style={{
+                                                padding: '12px 24px',
+                                                backgroundColor: '#dc3545',
+                                                color: '#fff',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                fontSize: '18px',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer',
+                                                fontFamily: 'Arial, sans-serif',
+                                                transition: 'transform 0.1s, background-color 0.2s',
+                                                boxShadow: '0 4px 12px rgba(220, 53, 69, 0.4)'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.transform = 'scale(1.05)';
+                                                e.currentTarget.style.backgroundColor = '#c82333';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.transform = 'scale(1)';
+                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                            }}
+                                        >
+                                            − Subtract
+                                        </button>
+                                    </div>
+                                    
+                                    <button
+                                        onClick={() => setHpEditingToken(null)}
+                                        style={{
+                                            padding: '10px 20px',
+                                            backgroundColor: '#4ecdc4',
+                                            color: '#000',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            fontSize: '14px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            fontFamily: 'Georgia, serif',
+                                            transition: 'transform 0.1s, background-color 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.transform = 'scale(1.05)';
+                                            e.currentTarget.style.backgroundColor = '#3dbdb3';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.transform = 'scale(1)';
+                                            e.currentTarget.style.backgroundColor = '#4ecdc4';
+                                        }}
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             );
         };
