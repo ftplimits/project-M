@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    MONOMYTH VTT - V 0.76   
+    MONOMYTH VTT - V 0.78
+    - Added text erasing support to eraser tool
+    - Replaced brush size buttons with a slider (1-20 range)
+    - Added up/down arrows to grid images for z-index control (move above/below grid)
 -->
     
     <link rel="shortcut icon" type="image/png" href="favicon.png">
@@ -507,6 +510,15 @@
             const [isDrawing, setIsDrawing] = useState(false);
             const drawCanvasRef = useRef(null);
             
+            // Text tool state
+            const [textToolSettings, setTextToolSettings] = useState({
+                color: '#ffffff',
+                size: 'medium', // 'small', 'medium', 'large'
+                style: 'normal' // 'normal', 'bold', 'italic'
+            });
+            const [showTextOptions, setShowTextOptions] = useState(false);
+            const [textOptionsPos, setTextOptionsPos] = useState({ x: 0, y: 0 });
+            
             // Multi-layer canvas refs for performance optimization
             const mapCanvasRef = useRef(null);
             const gridCanvasRef = useRef(null);
@@ -534,7 +546,8 @@
             const [diceCountMenu, setDiceCountMenu] = useState(null);
 
             // Pointer tool state
-            const [activePointers, setActivePointers] = useState({}); // { playerName: { x, y } }
+            const [activePointers, setActivePointers] = useState({}); // { playerName: { x, y } } - screen coords
+            const [remotePointerWorldCoords, setRemotePointerWorldCoords] = useState({}); // { playerName: { worldX, worldY } }
             const [isPointerActive, setIsPointerActive] = useState(false);
             const [pointerPosition, setPointerPosition] = useState({ x: 0, y: 0 });
             
@@ -1433,18 +1446,41 @@ useEffect(() => {
 
                     case 'POINTER_UPDATE':
                         // Update active pointers with remote player's pointer
-                        setActivePointers(prev => {
-                            const updated = { ...prev };
-                            if (message.data.active) {
-                                updated[message.data.playerName] = {
-                                    x: message.data.x,
-                                    y: message.data.y
-                                };
-                            } else {
+                        // Store world coordinates and convert to screen coordinates for this player's viewport
+                        if (message.data.active) {
+                            // Store world coordinates
+                            setRemotePointerWorldCoords(prev => ({
+                                ...prev,
+                                [message.data.playerName]: {
+                                    worldX: message.data.worldX,
+                                    worldY: message.data.worldY
+                                }
+                            }));
+                            
+                            // Convert from world coordinates to screen coordinates
+                            const screenX = message.data.worldX * gridTransformRef.current.zoom + gridTransformRef.current.panX;
+                            const screenY = message.data.worldY * gridTransformRef.current.zoom + gridTransformRef.current.panY + GRID_OFFSET_Y;
+                            
+                            setActivePointers(prev => ({
+                                ...prev,
+                                [message.data.playerName]: {
+                                    x: screenX,
+                                    y: screenY
+                                }
+                            }));
+                        } else {
+                            // Remove pointer
+                            setRemotePointerWorldCoords(prev => {
+                                const updated = { ...prev };
                                 delete updated[message.data.playerName];
-                            }
-                            return updated;
-                        });
+                                return updated;
+                            });
+                            setActivePointers(prev => {
+                                const updated = { ...prev };
+                                delete updated[message.data.playerName];
+                                return updated;
+                            });
+                        }
                         
                         // If host, re-broadcast to all other players
                         if (isHostRef.current) {
@@ -2761,6 +2797,34 @@ const handleAvatarUpload = async (e) => {
                 }));
             };
 
+            // Move image up in z-order (later in array = rendered on top)
+            const moveImageUp = (imageId) => {
+                setScenes(prev => prev.map((s, i) => {
+                    if (i !== activeSceneIndex) return s;
+                    const images = s.images || [];
+                    const index = images.findIndex(img => img.id === imageId);
+                    if (index === -1 || index === images.length - 1) return s; // Already at top
+                    
+                    const newImages = [...images];
+                    [newImages[index], newImages[index + 1]] = [newImages[index + 1], newImages[index]];
+                    return { ...s, images: newImages };
+                }));
+            };
+
+            // Move image down in z-order (earlier in array = rendered below)
+            const moveImageDown = (imageId) => {
+                setScenes(prev => prev.map((s, i) => {
+                    if (i !== activeSceneIndex) return s;
+                    const images = s.images || [];
+                    const index = images.findIndex(img => img.id === imageId);
+                    if (index === -1 || index === 0) return s; // Already at bottom
+                    
+                    const newImages = [...images];
+                    [newImages[index], newImages[index - 1]] = [newImages[index - 1], newImages[index]];
+                    return { ...s, images: newImages };
+                }));
+            };
+
             const updateAvatarName = (avatarId, newName) => {
                 setAvatars(prev => prev.map(av => av.id === avatarId ? { ...av, name: newName } : av));
             };
@@ -3493,6 +3557,46 @@ const handleHandoutUpload = async (e) => {
                 // Anyone can draw now
                 if (!drawingTool || !activeScene.grid?.enabled) return;
                 
+                // Handle text tool
+                if (drawingTool === 'text') {
+                    const canvas = drawCanvasRef.current;
+                    if (!canvas) return;
+                    const rect = canvas.getBoundingClientRect();
+                    const screenX = e.clientX - rect.left;
+                    const screenY = e.clientY - rect.top;
+                    const worldX = (screenX - gridTransform.panX) / gridTransform.zoom;
+                    const worldY = (screenY - gridTransform.panY) / gridTransform.zoom;
+                    
+                    // Prompt for text input
+                    const text = prompt('Enter text:');
+                    if (!text || text.trim() === '') return;
+                    
+                    // Map size to font size
+                    const fontSizeMap = { small: 16, medium: 24, large: 36 };
+                    const fontSize = fontSizeMap[textToolSettings.size] || 24;
+                    
+                    // Map style to font weight/style
+                    let fontWeight = 'normal';
+                    let fontStyle = 'normal';
+                    if (textToolSettings.style === 'bold') fontWeight = 'bold';
+                    if (textToolSettings.style === 'italic') fontStyle = 'italic';
+                    
+                    // Create text drawing
+                    const textDrawing = {
+                        tool: 'text',
+                        text: text,
+                        x: worldX,
+                        y: worldY,
+                        color: textToolSettings.color,
+                        fontSize: fontSize,
+                        fontWeight: fontWeight,
+                        fontStyle: fontStyle
+                    };
+                    
+                    setDrawings(prev => [...prev, textDrawing]);
+                    return;
+                }
+                
                 if (drawingTool === 'eraser') {
                     const canvas = drawCanvasRef.current;
                     if (!canvas) return;
@@ -3518,6 +3622,10 @@ const handleHandoutUpload = async (e) => {
                             const inX = worldX >= Math.min(drawing.startX, drawing.endX) - 20 && worldX <= Math.max(drawing.startX, drawing.endX) + 20;
                             const inY = worldY >= Math.min(drawing.startY, drawing.endY) - 20 && worldY <= Math.max(drawing.startY, drawing.endY) + 20;
                             return !(inX && inY);
+                        } else if (drawing.tool === 'text') {
+                            // Erase text if click is near the text position
+                            const dist = Math.sqrt(Math.pow(drawing.x - worldX, 2) + Math.pow(drawing.y - worldY, 2));
+                            return dist > 30; // Slightly larger hit area for text
                         }
                         return true;
                     }));
@@ -3779,12 +3887,13 @@ const handleHandoutUpload = async (e) => {
                     setContextMenu(null);
                     setDiceCountMenu(null);
                     setGridContextMenu(null);
+                    setShowTextOptions(false);
                 };
-                if (contextMenu || diceCountMenu || gridContextMenu) {
+                if (contextMenu || diceCountMenu || gridContextMenu || showTextOptions) {
                     document.addEventListener('click', handleClick);
                     return () => document.removeEventListener('click', handleClick);
                 }
-            }, [contextMenu, diceCountMenu, gridContextMenu]);
+            }, [contextMenu, diceCountMenu, gridContextMenu, showTextOptions]);
 
             // Pointer tool event handlers
             useEffect(() => {
@@ -3795,11 +3904,15 @@ const handleHandoutUpload = async (e) => {
                         setIsPointerActive(true);
                         setPointerPosition({ x: e.clientX, y: e.clientY });
                         
-                        // Broadcast pointer activation
+                        // Convert screen coordinates to world coordinates before broadcasting
+                        const worldX = (e.clientX - gridTransformRef.current.panX) / gridTransformRef.current.zoom;
+                        const worldY = (e.clientY - GRID_OFFSET_Y - gridTransformRef.current.panY) / gridTransformRef.current.zoom;
+                        
+                        // Broadcast pointer activation with WORLD coordinates
                         const pointerData = {
                             playerName: playerName,
-                            x: e.clientX,
-                            y: e.clientY,
+                            worldX: worldX,
+                            worldY: worldY,
                             active: true
                         };
                         
@@ -3820,11 +3933,15 @@ const handleHandoutUpload = async (e) => {
                     if (isPointerActive) {
                         setPointerPosition({ x: e.clientX, y: e.clientY });
                         
-                        // Broadcast pointer movement
+                        // Convert screen coordinates to world coordinates before broadcasting
+                        const worldX = (e.clientX - gridTransformRef.current.panX) / gridTransformRef.current.zoom;
+                        const worldY = (e.clientY - GRID_OFFSET_Y - gridTransformRef.current.panY) / gridTransformRef.current.zoom;
+                        
+                        // Broadcast pointer movement with WORLD coordinates
                         const pointerData = {
                             playerName: playerName,
-                            x: e.clientX,
-                            y: e.clientY,
+                            worldX: worldX,
+                            worldY: worldY,
                             active: true
                         };
                         
@@ -3846,11 +3963,15 @@ const handleHandoutUpload = async (e) => {
                     if (e.button === 1) {
                         setIsPointerActive(false);
                         
-                        // Broadcast pointer deactivation
+                        // Convert screen coordinates to world coordinates before broadcasting
+                        const worldX = (e.clientX - gridTransformRef.current.panX) / gridTransformRef.current.zoom;
+                        const worldY = (e.clientY - GRID_OFFSET_Y - gridTransformRef.current.panY) / gridTransformRef.current.zoom;
+                        
+                        // Broadcast pointer deactivation with WORLD coordinates
                         const pointerData = {
                             playerName: playerName,
-                            x: e.clientX,
-                            y: e.clientY,
+                            worldX: worldX,
+                            worldY: worldY,
                             active: false
                         };
                         
@@ -3877,6 +3998,19 @@ const handleHandoutUpload = async (e) => {
                     document.removeEventListener('mouseup', handleMouseUp);
                 };
             }, [isPointerActive, playerName]);
+
+            // Update remote pointer screen positions when gridTransform changes
+            useEffect(() => {
+                // Recalculate screen positions for all remote pointers based on current gridTransform
+                const updatedPointers = {};
+                Object.entries(remotePointerWorldCoords).forEach(([playerName, coords]) => {
+                    const screenX = coords.worldX * gridTransform.zoom + gridTransform.panX;
+                    const screenY = coords.worldY * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+                    updatedPointers[playerName] = { x: screenX, y: screenY };
+                });
+                setActivePointers(updatedPointers);
+            }, [gridTransform, remotePointerWorldCoords]);
+
 
             useEffect(() => {
                 const canvas = drawCanvasRef.current;
@@ -3947,6 +4081,30 @@ const handleHandoutUpload = async (e) => {
                         const sw = (drawing.endX - drawing.startX) * gridTransform.zoom;
                         const sh = (drawing.endY - drawing.startY) * gridTransform.zoom;
                         ctx.fillRect(sx, sy, sw, sh);
+                    } else if (drawing.tool === 'text') {
+                        // Render text
+                        const screenX = worldToScreenX(drawing.x);
+                        const screenY = worldToScreenY(drawing.y);
+                        const scaledFontSize = drawing.fontSize * gridTransform.zoom;
+                        
+                        ctx.font = `${drawing.fontStyle} ${drawing.fontWeight} ${scaledFontSize}px Arial, sans-serif`;
+                        ctx.fillStyle = drawing.color;
+                        ctx.textBaseline = 'middle';
+                        ctx.textAlign = 'center';
+                        
+                        // Add text shadow for better readability
+                        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+                        ctx.shadowBlur = 4;
+                        ctx.shadowOffsetX = 2;
+                        ctx.shadowOffsetY = 2;
+                        
+                        ctx.fillText(drawing.text, screenX, screenY);
+                        
+                        // Reset shadow
+                        ctx.shadowColor = 'transparent';
+                        ctx.shadowBlur = 0;
+                        ctx.shadowOffsetX = 0;
+                        ctx.shadowOffsetY = 0;
                     }
                 });
 
@@ -5310,7 +5468,8 @@ const handleHandoutUpload = async (e) => {
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         if (!isHost && isConnected) return; // Only host can change grid settings
-                                        setGridContextMenu({ x: e.clientX, y: e.clientY });
+                                        // Manual Y adjustment: change the +60 value to adjust height
+                                        setGridContextMenu({ x: e.clientX - 100, y: e.clientY + 10 }); // 60px below cursor
                                     }}
                                     className={`px-4 py-2 font-bold rounded-lg text-base transition-all border-2 flex items-center gap-2 shadow-lg ${
                                         activeScene.grid?.enabled
@@ -6364,6 +6523,32 @@ const handleHandoutUpload = async (e) => {
                 )}
             </button>
 
+            {/* Z-Index Controls - Up/Down arrows */}
+            <div className="absolute top-1 left-12 flex flex-col gap-1" style={{ pointerEvents: 'auto' }}>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        moveImageUp(image.id);
+                    }}
+                    className="p-1 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all"
+                    title="Move Above Grid"
+                    style={{ fontSize: '12px', lineHeight: '12px' }}
+                >
+                    <span className="text-amber-500">▲</span>
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        moveImageDown(image.id);
+                    }}
+                    className="p-1 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all"
+                    title="Move Below Grid"
+                    style={{ fontSize: '12px', lineHeight: '12px' }}
+                >
+                    <span className="text-amber-500">▼</span>
+                </button>
+            </div>
+
             <button
                 onClick={(e) => {
                     e.stopPropagation();
@@ -6467,7 +6652,7 @@ const handleHandoutUpload = async (e) => {
                                 left: 0,
                                 width: '100%',
                                 height: `calc(100% - ${GRID_OFFSET_Y}px)`,
-                                cursor: drawingTool === 'eraser' ? 'crosshair' : (drawingTool ? 'crosshair' : 'default'),
+                                cursor: drawingTool === 'eraser' ? 'crosshair' : (drawingTool === 'text' ? 'text' : (drawingTool ? 'crosshair' : 'default')),
                                 zIndex: 100,
                                 pointerEvents: drawingTool ? 'auto' : 'none'
                             }}
@@ -6684,46 +6869,44 @@ const handleHandoutUpload = async (e) => {
                                 >
                                     🧹
                                 </button>
+                                <button
+                                    onClick={() => setDrawingTool(drawingTool === 'text' ? null : 'text')}
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        // Manual Y adjustment: change the -350 value to adjust height
+                                        setTextOptionsPos({ x: e.clientX, y: e.clientY - 550 }); // 350px above cursor
+                                        setShowTextOptions(!showTextOptions);
+                                    }}
+                                    className={`px-3 py-2 font-bold rounded text-sm border-2 ${
+                                        drawingTool === 'text'
+                                            ? 'bg-amber-600 text-zinc-900 border-amber-500'
+                                            : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600'
+                                    }`}
+                                    style={{ fontFamily: 'Georgia, serif' }}
+                                    title="Text Tool (Right-click for options)"
+                                >
+                                    <span style={{ fontSize: '16px', fontWeight: 'bold' }}>T</span>
+                                </button>
                             </div>
 
-                            <div className="flex gap-1 items-center">
+                            <div className="flex gap-2 items-center">
                                 <span className="text-amber-500 text-xs font-bold mr-1" style={{ fontFamily: 'Georgia, serif' }}>Size:</span>
-                                <button
-                                    onClick={() => setBrushWidth(1)}
-                                    className={`px-2 py-1 font-bold rounded text-xs border-2 ${
-                                        brushWidth === 1
-                                            ? 'bg-amber-600 text-zinc-900 border-amber-500'
-                                            : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600'
-                                    }`}
-                                    style={{ fontFamily: 'Georgia, serif' }}
-                                    title="Normal"
-                                >
-                                    ━
-                                </button>
-                                <button
-                                    onClick={() => setBrushWidth(6)}
-                                    className={`px-2 py-1 font-bold rounded text-xs border-2 ${
-                                        brushWidth === 2
-                                            ? 'bg-amber-600 text-zinc-900 border-amber-500'
-                                            : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600'
-                                    }`}
-                                    style={{ fontFamily: 'Georgia, serif' }}
-                                    title="Large"
-                                >
-                                    ━━
-                                </button>
-                                <button
-                                    onClick={() => setBrushWidth(12)}
-                                    className={`px-2 py-1 font-bold rounded text-xs border-2 ${
-                                        brushWidth === 3
-                                            ? 'bg-amber-600 text-zinc-900 border-amber-500'
-                                            : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600'
-                                    }`}
-                                    style={{ fontFamily: 'Georgia, serif' }}
-                                    title="Jumbo"
-                                >
-                                    ━━━
-                                </button>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="20"
+                                    value={brushWidth}
+                                    onChange={(e) => setBrushWidth(parseInt(e.target.value))}
+                                    className="w-24"
+                                    style={{
+                                        accentColor: '#d4af37',
+                                        cursor: 'pointer'
+                                    }}
+                                    title={`Brush Size: ${brushWidth}`}
+                                />
+                                <span className="text-amber-500 text-xs font-bold" style={{ fontFamily: 'monospace', minWidth: '24px' }}>
+                                    {brushWidth}
+                                </span>
                             </div>
 
                             <div className="flex gap-1">
@@ -7453,6 +7636,204 @@ const handleHandoutUpload = async (e) => {
                                 >
                                     {zonesMode ? '⬛ Switch to Grid' : '🎯 Switch to Zones'}
                                 </button>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Text Tool Options Menu */}
+                    {showTextOptions && (
+                        <>
+                            <div 
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    zIndex: 2999
+                                }}
+                                onClick={() => setShowTextOptions(false)}
+                            />
+                            <div style={{
+                                position: 'fixed',
+                                left: textOptionsPos.x,
+                                top: textOptionsPos.y,
+                                backgroundColor: '#1a1a1a',
+                                border: '2px solid #d4af37',
+                                borderRadius: '8px',
+                                padding: '8px',
+                                zIndex: 3000,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                minWidth: '160px'
+                            }}>
+                                <div style={{
+                                    color: '#d4af37',
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                    fontFamily: 'Georgia, serif',
+                                    marginBottom: '4px',
+                                    borderBottom: '1px solid #d4af37',
+                                    paddingBottom: '4px'
+                                }}>
+                                    Text Options
+                                </div>
+                                
+                                {/* Color Section */}
+                                <div style={{
+                                    color: '#888',
+                                    fontSize: '10px',
+                                    fontFamily: 'Arial, sans-serif',
+                                    marginTop: '4px',
+                                    marginBottom: '2px',
+                                    paddingLeft: '4px'
+                                }}>
+                                    Color:
+                                </div>
+                                
+                                {['white', 'red', 'blue', 'green', 'yellow'].map(color => (
+                                    <button
+                                        key={color}
+                                        onClick={() => {
+                                            setTextToolSettings(prev => ({ ...prev, color }));
+                                            setShowTextOptions(false);
+                                        }}
+                                        style={{
+                                            padding: '6px 12px',
+                                            backgroundColor: textToolSettings.color === color ? '#d4af37' : '#2a2a2a',
+                                            color: textToolSettings.color === color ? '#000' : color,
+                                            border: '1px solid #444',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            fontFamily: 'Arial, sans-serif',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s',
+                                            textTransform: 'capitalize'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (textToolSettings.color !== color) {
+                                                e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                                e.currentTarget.style.borderColor = '#d4af37';
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (textToolSettings.color !== color) {
+                                                e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                                e.currentTarget.style.borderColor = '#444';
+                                            }
+                                        }}
+                                    >
+                                        {color}
+                                    </button>
+                                ))}
+                                
+                                {/* Size Section */}
+                                <div style={{
+                                    color: '#888',
+                                    fontSize: '10px',
+                                    fontFamily: 'Arial, sans-serif',
+                                    marginTop: '8px',
+                                    marginBottom: '2px',
+                                    paddingLeft: '4px'
+                                }}>
+                                    Size:
+                                </div>
+                                
+                                {[
+                                    { key: 'small', label: 'Small' },
+                                    { key: 'medium', label: 'Medium' },
+                                    { key: 'large', label: 'Large' }
+                                ].map(({ key, label }) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => {
+                                            setTextToolSettings(prev => ({ ...prev, size: key }));
+                                            setShowTextOptions(false);
+                                        }}
+                                        style={{
+                                            padding: '6px 12px',
+                                            backgroundColor: textToolSettings.size === key ? '#d4af37' : '#2a2a2a',
+                                            color: textToolSettings.size === key ? '#000' : '#e0e0e0',
+                                            border: '1px solid #444',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            fontFamily: 'Arial, sans-serif',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (textToolSettings.size !== key) {
+                                                e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                                e.currentTarget.style.borderColor = '#d4af37';
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (textToolSettings.size !== key) {
+                                                e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                                e.currentTarget.style.borderColor = '#444';
+                                            }
+                                        }}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                                
+                                {/* Style Section */}
+                                <div style={{
+                                    color: '#888',
+                                    fontSize: '10px',
+                                    fontFamily: 'Arial, sans-serif',
+                                    marginTop: '8px',
+                                    marginBottom: '2px',
+                                    paddingLeft: '4px'
+                                }}>
+                                    Style:
+                                </div>
+                                
+                                {[
+                                    { key: 'normal', label: 'Normal' },
+                                    { key: 'bold', label: 'Bold' },
+                                    { key: 'italic', label: 'Italic' }
+                                ].map(({ key, label }) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => {
+                                            setTextToolSettings(prev => ({ ...prev, style: key }));
+                                            setShowTextOptions(false);
+                                        }}
+                                        style={{
+                                            padding: '6px 12px',
+                                            backgroundColor: textToolSettings.style === key ? '#d4af37' : '#2a2a2a',
+                                            color: textToolSettings.style === key ? '#000' : '#e0e0e0',
+                                            border: '1px solid #444',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            fontFamily: 'Arial, sans-serif',
+                                            fontWeight: key === 'bold' ? 'bold' : 'normal',
+                                            fontStyle: key === 'italic' ? 'italic' : 'normal',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (textToolSettings.style !== key) {
+                                                e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                                e.currentTarget.style.borderColor = '#d4af37';
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (textToolSettings.style !== key) {
+                                                e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                                e.currentTarget.style.borderColor = '#444';
+                                            }
+                                        }}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
                             </div>
                         </>
                     )}
