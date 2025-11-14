@@ -609,6 +609,17 @@
             
             // Draw tools visibility state
             const [drawToolsVisible, setDrawToolsVisible] = useState(false);
+            const [colorPickerVisible, setColorPickerVisible] = useState(false);
+            
+            // Player-specific unique ID for localStorage
+            const [playerUniqueId] = useState(() => {
+                let id = localStorage.getItem('playerUniqueId');
+                if (!id) {
+                    id = `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    localStorage.setItem('playerUniqueId', id);
+                }
+                return id;
+            });
 
             const [characterSheets, setCharacterSheets] = useState([]);
             const [sheetSelectorVisible, setSheetSelectorVisible] = useState(false);
@@ -645,7 +656,6 @@
                         drawings,
                         activeSceneIndex,
                         gridTransform,
-                        dicePresets,
                         characterSheets,
                         diceModifiers,
                         dmAvatar,
@@ -671,7 +681,7 @@
             // Auto-save whenever game state changes
             useEffect(() => {
                 scheduleAutoSave();
-            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers, dmAvatar]);
+            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, characterSheets, diceModifiers, dmAvatar]);
 
             // Auto-load on startup
             useEffect(() => {
@@ -690,7 +700,6 @@
                             setDrawings(parsed.drawings || []);
                             setActiveSceneIndex(parsed.activeSceneIndex || 0);
                             setGridTransform(parsed.gridTransform || { zoom: 1.25, panX: 0, panY: 0 });
-                            setDicePresets(parsed.dicePresets || dicePresets);
                             setCharacterSheets(parsed.characterSheets || []);
                             setDiceModifiers(parsed.diceModifiers || {});
                             setDmAvatar(parsed.dmAvatar || null);
@@ -723,7 +732,33 @@
                 return () => {
                     window.removeEventListener('beforeunload', handleBeforeUnload);
                 };
-            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, dicePresets, characterSheets, diceModifiers, dmAvatar, isHost, isConnected, players]);            
+            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, characterSheets, diceModifiers, dmAvatar, isHost, isConnected, players]);            
+
+            // Player-specific dice presets save/load
+            useEffect(() => {
+                // Load player-specific dice presets on mount
+                const presetsKey = `monomyth_dice_presets_${playerUniqueId}`;
+                const savedPresets = localStorage.getItem(presetsKey);
+                if (savedPresets) {
+                    try {
+                        const parsed = JSON.parse(savedPresets);
+                        setDicePresets(parsed);
+                        console.log('Loaded player-specific dice presets');
+                    } catch (err) {
+                        console.error('Failed to load player presets', err);
+                    }
+                }
+            }, [playerUniqueId]);
+
+            // Save player-specific dice presets whenever they change
+            useEffect(() => {
+                const presetsKey = `monomyth_dice_presets_${playerUniqueId}`;
+                try {
+                    localStorage.setItem(presetsKey, JSON.stringify(dicePresets));
+                } catch (err) {
+                    console.error('Failed to save player presets', err);
+                }
+            }, [dicePresets, playerUniqueId]);
 
 const dice = [
   { type: 'd4',  sides: 4,  image: 'https://res.cloudinary.com/dmbibsole/image/upload/v1761679707/4_ze8lej.png' },
@@ -1200,7 +1235,6 @@ useEffect(() => {
                                 drawings,
                                 activeSceneIndex,
                                 gridTransform,
-                                dicePresets,
                                 characterSheets,
                                 diceModifiers,
                                 dmAvatar,
@@ -1317,7 +1351,6 @@ useEffect(() => {
                         setDrawings(message.data.drawings || []);
                         setActiveSceneIndex(message.data.activeSceneIndex || 0);
                         setGridTransform(message.data.gridTransform || { zoom: 1, panX: 0, panY: 0 });
-                        setDicePresets(message.data.dicePresets || dicePresets);
                         setCharacterSheets(message.data.characterSheets || []);
                         setDiceModifiers(message.data.diceModifiers || {});
                         setDmAvatar(message.data.dmAvatar || null);
@@ -1348,7 +1381,6 @@ useEffect(() => {
                                         drawings,
                                         activeSceneIndex,
                                         gridTransform,
-                                        dicePresets,
                                         characterSheets,
                                         diceModifiers,
                                         dmAvatar,
@@ -1773,7 +1805,6 @@ useEffect(() => {
                             drawings,
                             activeSceneIndex,
                             gridTransform,
-                            dicePresets,
                             characterSheets,
                             diceModifiers,
                             dmAvatar,
@@ -4654,7 +4685,6 @@ const handleHandoutUpload = async (e) => {
                         drawings,
                         activeSceneIndex,
                         gridTransform,
-                        dicePresets,
                         characterSheets,
                         diceModifiers
                     };
@@ -4696,7 +4726,6 @@ const handleHandoutUpload = async (e) => {
                         setDrawings(parsed.drawings || []);
                         setActiveSceneIndex(parsed.activeSceneIndex || 0);
                         setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
-                        setDicePresets(parsed.dicePresets || dicePresets);
                         setCharacterSheets(parsed.characterSheets || []);
                         setDiceModifiers(parsed.diceModifiers || {});
                         alert('Loaded from localStorage.');
@@ -4718,7 +4747,6 @@ const handleHandoutUpload = async (e) => {
                         drawings,
                         activeSceneIndex,
                         gridTransform,
-                        dicePresets,
                         characterSheets,
                         diceModifiers,
                         exportedAt: new Date().toISOString()
@@ -4764,7 +4792,6 @@ const handleHandoutUpload = async (e) => {
                             setDrawings(parsed.drawings || []);
                             setActiveSceneIndex(parsed.activeSceneIndex || 0);
                             setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
-                            setDicePresets(parsed.dicePresets || dicePresets);
                             setCharacterSheets(parsed.characterSheets || []);
                             setDiceModifiers(parsed.diceModifiers || {});
                             setDmAvatar(parsed.dmAvatar || null);
@@ -6909,18 +6936,59 @@ const handleHandoutUpload = async (e) => {
                                 </span>
                             </div>
 
-                            <div className="flex gap-1">
-                                {['#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500', '#800080', '#8B4513', '#808080', '#000000'].map(color => (
-                                    <button
-                                        key={color}
-                                        onClick={() => setDrawingColor(color)}
-                                        className={`w-8 h-8 rounded border-2 ${
-                                            drawingColor === color ? 'border-amber-500 scale-110' : 'border-zinc-600'
-                                        }`}
-                                        style={{ backgroundColor: color }}
-                                        title={color}
-                                    />
-                                ))}
+                            <div style={{ position: 'relative' }}>
+                                <button
+                                    onClick={() => setColorPickerVisible(!colorPickerVisible)}
+                                    className="w-10 h-10 rounded border-2 border-amber-500 hover:scale-110 transition-transform"
+                                    style={{ backgroundColor: drawingColor }}
+                                    title="Color Picker"
+                                />
+                                
+                                {colorPickerVisible && (
+                                    <>
+                                        <div 
+                                            style={{
+                                                position: 'fixed',
+                                                top: 0,
+                                                left: 0,
+                                                right: 0,
+                                                bottom: 0,
+                                                zIndex: 199
+                                            }}
+                                            onClick={() => setColorPickerVisible(false)}
+                                        />
+                                        <div style={{
+                                            position: 'absolute',
+                                            bottom: '50px',
+                                            left: '50%',
+                                            transform: 'translateX(-50%)',
+                                            backgroundColor: '#1a1a1a',
+                                            border: '2px solid #d4af37',
+                                            borderRadius: '8px',
+                                            padding: '8px',
+                                            display: 'grid',
+                                            gridTemplateColumns: 'repeat(4, 1fr)',
+                                            gap: '6px',
+                                            zIndex: 200,
+                                            boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
+                                        }}>
+                                            {['#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500', '#800080', '#8B4513', '#808080', '#000000'].map(color => (
+                                                <button
+                                                    key={color}
+                                                    onClick={() => {
+                                                        setDrawingColor(color);
+                                                        setColorPickerVisible(false);
+                                                    }}
+                                                    className={`w-8 h-8 rounded border-2 hover:scale-110 transition-transform ${
+                                                        drawingColor === color ? 'border-amber-500' : 'border-zinc-600'
+                                                    }`}
+                                                    style={{ backgroundColor: color }}
+                                                    title={color}
+                                                />
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             <button
