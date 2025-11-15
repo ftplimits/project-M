@@ -1,10 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    MONOMYTH VTT - V 0.78
-    - Added text erasing support to eraser tool
-    - Replaced brush size buttons with a slider (1-20 range)
-    - Added up/down arrows to grid images for z-index control (move above/below grid)
+    MONOMYTH VTT - V 0.80
+    - Added Fog of War system with three tools:
+      * FOG: Draw filled polyline fog shapes (click points, right-click to finish)
+      * STATE: Toggle individual fog shapes between visible/hidden (revealed)
+      * CUT: Delete fog shapes by clicking them
+    - Fog appears as 50% black for host (with red outlines), 100% black for players
+    - Fog renders above tokens (true fog of war)
+    - Fog syncs across multiplayer sessions
+    - Fog persists in save/load/export/import
 -->
     
     <link rel="shortcut icon" type="image/png" href="favicon.png">
@@ -510,6 +515,12 @@
             const [isDrawing, setIsDrawing] = useState(false);
             const drawCanvasRef = useRef(null);
             
+            // Fog of War state
+            const [fogShapes, setFogShapes] = useState([]);
+            const [fogTool, setFogTool] = useState(null); // 'draw', 'state', 'cut'
+            const [currentFogShape, setCurrentFogShape] = useState(null);
+            const fogCanvasRef = useRef(null);
+            
             // Text tool state
             const [textToolSettings, setTextToolSettings] = useState({
                 color: '#ffffff',
@@ -521,6 +532,7 @@
             
             // Multi-layer canvas refs for performance optimization
             const mapCanvasRef = useRef(null);
+            const aboveGridCanvasRef = useRef(null);
             const gridCanvasRef = useRef(null);
             const tokenCanvasRef = useRef(null);
             const uiCanvasRef = useRef(null);
@@ -1469,6 +1481,10 @@ useEffect(() => {
                         setDrawings(message.data);
                         break;
 
+                    case 'FOG_UPDATE':
+                        setFogShapes(message.data);
+                        break;
+
                     case 'INITIATIVE_UPDATE':
                         // Receive initiative state from host
                         setInitiativeOrder(message.data.initiativeOrder);
@@ -1924,6 +1940,13 @@ useEffect(() => {
                     broadcastState('DRAWING_UPDATE', drawings);
                 }
             }, [drawings, isHost, isConnected]);
+
+            // Sync fog shapes when they change (only if host)
+            useEffect(() => {
+                if (isHost && isConnected) {
+                    broadcastState('FOG_UPDATE', fogShapes);
+                }
+            }, [fogShapes, isHost, isConnected]);
 
             // Sync avatars when they change (only if host)
             useEffect(() => {
@@ -2828,30 +2851,16 @@ const handleAvatarUpload = async (e) => {
                 }));
             };
 
-            // Move image up in z-order (later in array = rendered on top)
-            const moveImageUp = (imageId) => {
+            // Toggle image above/below grid (controls z-index layering)
+            const toggleImageAboveGrid = (imageId) => {
                 setScenes(prev => prev.map((s, i) => {
                     if (i !== activeSceneIndex) return s;
                     const images = s.images || [];
-                    const index = images.findIndex(img => img.id === imageId);
-                    if (index === -1 || index === images.length - 1) return s; // Already at top
-                    
-                    const newImages = [...images];
-                    [newImages[index], newImages[index + 1]] = [newImages[index + 1], newImages[index]];
-                    return { ...s, images: newImages };
-                }));
-            };
-
-            // Move image down in z-order (earlier in array = rendered below)
-            const moveImageDown = (imageId) => {
-                setScenes(prev => prev.map((s, i) => {
-                    if (i !== activeSceneIndex) return s;
-                    const images = s.images || [];
-                    const index = images.findIndex(img => img.id === imageId);
-                    if (index === -1 || index === 0) return s; // Already at bottom
-                    
-                    const newImages = [...images];
-                    [newImages[index], newImages[index - 1]] = [newImages[index - 1], newImages[index]];
+                    const newImages = images.map(img => 
+                        img.id === imageId 
+                            ? { ...img, aboveGrid: !img.aboveGrid }
+                            : img
+                    );
                     return { ...s, images: newImages };
                 }));
             };
@@ -3745,6 +3754,132 @@ const handleHandoutUpload = async (e) => {
                 setIsDrawing(false);
             };
 
+            // === FOG OF WAR FUNCTIONS ===
+            
+            const startFogDrawing = (e) => {
+                if (fogTool !== 'draw') return;
+                if (!isHost && isConnected) return; // Only host can draw fog
+                
+                const canvas = fogCanvasRef.current;
+                if (!canvas) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                
+                // Convert to world coordinates
+                const worldX = (clickX - gridTransform.panX) / gridTransform.zoom;
+                const worldY = (clickY - gridTransform.panY) / gridTransform.zoom;
+                
+                // Start new fog polyline
+                setCurrentFogShape({
+                    id: Date.now(),
+                    type: 'fog',
+                    points: [{ x: worldX, y: worldY }],
+                    visible: true // fog is visible (active) by default
+                });
+            };
+            
+            const continueFogDrawing = (e) => {
+                if (fogTool !== 'draw' || !currentFogShape) return;
+                
+                const canvas = fogCanvasRef.current;
+                if (!canvas) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                
+                // Convert to world coordinates
+                const worldX = (clickX - gridTransform.panX) / gridTransform.zoom;
+                const worldY = (clickY - gridTransform.panY) / gridTransform.zoom;
+                
+                // Add point to current fog shape
+                setCurrentFogShape(prev => ({
+                    ...prev,
+                    points: [...prev.points, { x: worldX, y: worldY }]
+                }));
+            };
+            
+            const endFogDrawing = () => {
+                if (currentFogShape && currentFogShape.points.length >= 3) {
+                    // Close the polygon and save it
+                    setFogShapes(prev => [...prev, currentFogShape]);
+                    setCurrentFogShape(null);
+                }
+            };
+            
+            const toggleFogVisibility = (e) => {
+                if (fogTool !== 'state') return;
+                if (!isHost && isConnected) return;
+                
+                const canvas = fogCanvasRef.current;
+                if (!canvas) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                
+                // Convert to world coordinates
+                const worldX = (clickX - gridTransform.panX) / gridTransform.zoom;
+                const worldY = (clickY - gridTransform.panY) / gridTransform.zoom;
+                
+                // Find fog shape at this position
+                const clickedShape = fogShapes.find(shape => {
+                    // Check if point is inside polygon
+                    return isPointInPolygon({ x: worldX, y: worldY }, shape.points);
+                });
+                
+                if (clickedShape) {
+                    // Toggle visibility
+                    setFogShapes(prev => prev.map(shape =>
+                        shape.id === clickedShape.id
+                            ? { ...shape, visible: !shape.visible }
+                            : shape
+                    ));
+                }
+            };
+            
+            const deleteFogShape = (e) => {
+                if (fogTool !== 'cut') return;
+                if (!isHost && isConnected) return;
+                
+                const canvas = fogCanvasRef.current;
+                if (!canvas) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                
+                // Convert to world coordinates
+                const worldX = (clickX - gridTransform.panX) / gridTransform.zoom;
+                const worldY = (clickY - gridTransform.panY) / gridTransform.zoom;
+                
+                // Find fog shape at this position
+                const clickedShape = fogShapes.find(shape => {
+                    return isPointInPolygon({ x: worldX, y: worldY }, shape.points);
+                });
+                
+                if (clickedShape) {
+                    // Delete the shape
+                    setFogShapes(prev => prev.filter(shape => shape.id !== clickedShape.id));
+                }
+            };
+            
+            // Helper function to check if point is inside polygon
+            const isPointInPolygon = (point, polygon) => {
+                let inside = false;
+                for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                    const xi = polygon[i].x, yi = polygon[i].y;
+                    const xj = polygon[j].x, yj = polygon[j].y;
+                    
+                    const intersect = ((yi > point.y) !== (yj > point.y))
+                        && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+                    if (intersect) inside = !inside;
+                }
+                return inside;
+            };
+
             // Center all players' views to host's current view
             const centerAllViews = () => {
                 if (!isHost || !isConnected) return;
@@ -4269,8 +4404,8 @@ const handleHandoutUpload = async (e) => {
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.clearRect(0, 0, width, height);
                 
-                // Render grid images (map backgrounds) with caching
-                const gridImages = (activeScene.images || []).filter(img => img.isGridImage);
+                // Render grid images (map backgrounds) with caching - BELOW GRID ONLY
+                const gridImages = (activeScene.images || []).filter(img => img.isGridImage && !img.aboveGrid);
                 
                 if (gridImages.length === 0) return;
                 
@@ -4307,6 +4442,64 @@ const handleHandoutUpload = async (e) => {
                 };
                 
                 renderImages().catch(err => console.error('Map rendering error:', err));
+            }, [activeScene.images, activeScene.grid?.enabled, gridTransform]);
+            
+            // Layer 1.5: Above-Grid Canvas - renders images above grid but below tokens
+            useEffect(() => {
+                const canvas = aboveGridCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                
+                // Render grid images that are above grid
+                const aboveGridImages = (activeScene.images || []).filter(img => img.isGridImage && img.aboveGrid);
+                
+                if (aboveGridImages.length === 0) return;
+                
+                // Load and render images using cache
+                const renderImages = async () => {
+                    ctx.clearRect(0, 0, width, height);
+                    
+                    for (const image of aboveGridImages) {
+                        const displayX = image.x * gridTransform.zoom + gridTransform.panX;
+                        const displayY = image.y * gridTransform.zoom + gridTransform.panY;
+                        const displayWidth = image.width * gridTransform.zoom;
+                        const displayHeight = image.height * gridTransform.zoom;
+                        
+                        // Check cache first
+                        let img = imageCache.current.get(image.src);
+                        if (!img) {
+                            img = new Image();
+                            img.src = image.src;
+                            imageCache.current.set(image.src, img);
+                            
+                            // Wait for new image to load
+                            if (!img.complete) {
+                                await new Promise((resolve, reject) => {
+                                    img.onload = resolve;
+                                    img.onerror = reject;
+                                });
+                            }
+                        }
+                        
+                        if (img.complete) {
+                            ctx.drawImage(img, displayX, displayY, displayWidth, displayHeight);
+                        }
+                    }
+                };
+                
+                renderImages().catch(err => console.error('Above-grid rendering error:', err));
             }, [activeScene.images, activeScene.grid?.enabled, gridTransform]);
             
             // Layer 2: Grid Canvas - renders grid lines OR zones (redraws on pan/zoom only)
@@ -4624,6 +4817,110 @@ const handleHandoutUpload = async (e) => {
                 renderTokens().catch(err => console.error('Token rendering error:', err));
             }, [tokens, activeScene.grid?.enabled, gridTransform, talkingPlayers]);
             
+            // Layer 4.5: Fog Canvas - renders fog of war (above tokens)
+            useEffect(() => {
+                const canvas = fogCanvasRef.current;
+                if (!canvas || !activeScene.grid?.enabled) return;
+                
+                const width = window.innerWidth;
+                const height = window.innerHeight - GRID_OFFSET_Y;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                
+                // Render completed fog shapes
+                for (const shape of fogShapes) {
+                    if (!shape.visible) continue; // Skip hidden fog (revealed areas)
+                    
+                    if (shape.points.length < 3) continue;
+                    
+                    ctx.beginPath();
+                    const firstPoint = shape.points[0];
+                    ctx.moveTo(
+                        firstPoint.x * gridTransform.zoom + gridTransform.panX,
+                        firstPoint.y * gridTransform.zoom + gridTransform.panY
+                    );
+                    
+                    for (let i = 1; i < shape.points.length; i++) {
+                        const point = shape.points[i];
+                        ctx.lineTo(
+                            point.x * gridTransform.zoom + gridTransform.panX,
+                            point.y * gridTransform.zoom + gridTransform.panY
+                        );
+                    }
+                    ctx.closePath();
+                    
+                    // Fill with black - opacity depends on isHost
+                    ctx.fillStyle = isHost ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 1.0)';
+                    ctx.fill();
+                    
+                    // Red outline (only visible to host)
+                    if (isHost) {
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                }
+                
+                // Render current fog shape being drawn (only for host)
+                if (currentFogShape && isHost) {
+                    const shape = currentFogShape;
+                    if (shape.points.length >= 2) {
+                        ctx.beginPath();
+                        const firstPoint = shape.points[0];
+                        ctx.moveTo(
+                            firstPoint.x * gridTransform.zoom + gridTransform.panX,
+                            firstPoint.y * gridTransform.zoom + gridTransform.panY
+                        );
+                        
+                        for (let i = 1; i < shape.points.length; i++) {
+                            const point = shape.points[i];
+                            ctx.lineTo(
+                                point.x * gridTransform.zoom + gridTransform.panX,
+                                point.y * gridTransform.zoom + gridTransform.panY
+                            );
+                        }
+                        
+                        // Preview line back to start
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.lineTo(
+                            firstPoint.x * gridTransform.zoom + gridTransform.panX,
+                            firstPoint.y * gridTransform.zoom + gridTransform.panY
+                        );
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        
+                        // Show preview fill
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                        ctx.fill();
+                    }
+                    
+                    // Draw points
+                    for (const point of shape.points) {
+                        ctx.fillStyle = '#ff0000';
+                        ctx.beginPath();
+                        ctx.arc(
+                            point.x * gridTransform.zoom + gridTransform.panX,
+                            point.y * gridTransform.zoom + gridTransform.panY,
+                            5,
+                            0,
+                            2 * Math.PI
+                        );
+                        ctx.fill();
+                    }
+                }
+                
+            }, [fogShapes, currentFogShape, activeScene.grid?.enabled, gridTransform, isHost]);
+            
             // Layer 5: UI Canvas - renders pointer and measurement (60fps when active)
             useEffect(() => {
                 const canvas = uiCanvasRef.current;
@@ -4683,6 +4980,7 @@ const handleHandoutUpload = async (e) => {
                         avatars,
                         tokens,
                         drawings,
+                        fogShapes,
                         activeSceneIndex,
                         gridTransform,
                         characterSheets,
@@ -4724,6 +5022,7 @@ const handleHandoutUpload = async (e) => {
                         setScenes(parsed.scenes);
                         setTokens(parsed.tokens || []);
                         setDrawings(parsed.drawings || []);
+                        setFogShapes(parsed.fogShapes || []);
                         setActiveSceneIndex(parsed.activeSceneIndex || 0);
                         setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
                         setCharacterSheets(parsed.characterSheets || []);
@@ -4745,6 +5044,7 @@ const handleHandoutUpload = async (e) => {
                         avatars,
                         tokens,
                         drawings,
+                        fogShapes,
                         activeSceneIndex,
                         gridTransform,
                         characterSheets,
@@ -4790,6 +5090,7 @@ const handleHandoutUpload = async (e) => {
                             setScenes(parsed.scenes);
                             setTokens(parsed.tokens || []);
                             setDrawings(parsed.drawings || []);
+                            setFogShapes(parsed.fogShapes || []);
                             setActiveSceneIndex(parsed.activeSceneIndex || 0);
                             setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
                             setCharacterSheets(parsed.characterSheets || []);
@@ -6398,6 +6699,20 @@ const handleHandoutUpload = async (e) => {
                                 onMouseDown={handleGridMouseDown}
                             />
                             
+                            {/* Layer 2.5: Above-Grid Canvas - Images above grid but below tokens */}
+                            <canvas
+                                ref={aboveGridCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    zIndex: 70,
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                            
                             {/* Layer 4: Token Canvas - Token rendering */}
                             <canvas
                                 ref={tokenCanvasRef}
@@ -6409,6 +6724,40 @@ const handleHandoutUpload = async (e) => {
                                     height: `calc(100% - ${GRID_OFFSET_Y}px)`,
                                     zIndex: 80,
                                     pointerEvents: 'none'
+                                }}
+                            />
+                            
+                            {/* Layer 4.5: Fog Canvas - Fog of war rendering (above tokens) */}
+                            <canvas
+                                ref={fogCanvasRef}
+                                style={{
+                                    position: 'fixed',
+                                    top: `${GRID_OFFSET_Y}px`,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `calc(100% - ${GRID_OFFSET_Y}px)`,
+                                    zIndex: 85,
+                                    cursor: fogTool === 'draw' ? 'crosshair' : (fogTool === 'state' || fogTool === 'cut' ? 'pointer' : 'default'),
+                                    pointerEvents: fogTool ? 'auto' : 'none'
+                                }}
+                                onClick={(e) => {
+                                    if (fogTool === 'draw') {
+                                        if (!currentFogShape) {
+                                            startFogDrawing(e);
+                                        } else {
+                                            continueFogDrawing(e);
+                                        }
+                                    } else if (fogTool === 'state') {
+                                        toggleFogVisibility(e);
+                                    } else if (fogTool === 'cut') {
+                                        deleteFogShape(e);
+                                    }
+                                }}
+                                onContextMenu={(e) => {
+                                    if (fogTool === 'draw' && currentFogShape) {
+                                        e.preventDefault();
+                                        endFogDrawing();
+                                    }
                                 }}
                             />
                             
@@ -6550,31 +6899,18 @@ const handleHandoutUpload = async (e) => {
                 )}
             </button>
 
-            {/* Z-Index Controls - Up/Down arrows */}
-            <div className="absolute top-1 left-12 flex flex-col gap-1" style={{ pointerEvents: 'auto' }}>
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        moveImageUp(image.id);
-                    }}
-                    className="p-1 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all"
-                    title="Move Above Grid"
-                    style={{ fontSize: '12px', lineHeight: '12px' }}
-                >
-                    <span className="text-amber-500">▲</span>
-                </button>
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        moveImageDown(image.id);
-                    }}
-                    className="p-1 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all"
-                    title="Move Below Grid"
-                    style={{ fontSize: '12px', lineHeight: '12px' }}
-                >
-                    <span className="text-amber-500">▼</span>
-                </button>
-            </div>
+            {/* Z-Index Toggle - Single button to move above/below grid */}
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    toggleImageAboveGrid(image.id);
+                }}
+                className="absolute top-1 left-12 p-2 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all"
+                title={image.aboveGrid ? 'Move Below Grid' : 'Move Above Grid'}
+                style={{ pointerEvents: 'auto', fontSize: '14px', lineHeight: '14px' }}
+            >
+                <span className="text-amber-500">{image.aboveGrid ? '▼' : '▲'}</span>
+            </button>
 
             <button
                 onClick={(e) => {
@@ -6825,7 +7161,10 @@ const handleHandoutUpload = async (e) => {
     >
                             <div className="flex gap-2">
                                 <button
-                                    onClick={() => setDrawingTool(drawingTool === 'freehand' ? null : 'freehand')}
+                                    onClick={() => {
+                                        setDrawingTool(drawingTool === 'freehand' ? null : 'freehand');
+                                        setFogTool(null);
+                                    }}
                                     className={`px-3 py-2 font-bold rounded text-sm border-2 ${
                                         drawingTool === 'freehand'
                                             ? 'bg-amber-600 text-zinc-900 border-amber-500'
@@ -6837,7 +7176,10 @@ const handleHandoutUpload = async (e) => {
                                     ✏️
                                 </button>
                                 <button
-                                    onClick={() => setDrawingTool(drawingTool === 'line' ? null : 'line')}
+                                    onClick={() => {
+                                        setDrawingTool(drawingTool === 'line' ? null : 'line');
+                                        setFogTool(null);
+                                    }}
                                     className={`px-3 py-2 font-bold rounded text-sm border-2 ${
                                         drawingTool === 'line'
                                             ? 'bg-amber-600 text-zinc-900 border-amber-500'
@@ -6849,7 +7191,10 @@ const handleHandoutUpload = async (e) => {
                                     📏
                                 </button>
                                 <button
-                                    onClick={() => setDrawingTool(drawingTool === 'circle' ? null : 'circle')}
+                                    onClick={() => {
+                                        setDrawingTool(drawingTool === 'circle' ? null : 'circle');
+                                        setFogTool(null);
+                                    }}
                                     className={`px-3 py-2 font-bold rounded text-sm border-2 ${
                                         drawingTool === 'circle'
                                             ? 'bg-amber-600 text-zinc-900 border-amber-500'
@@ -6861,7 +7206,10 @@ const handleHandoutUpload = async (e) => {
                                     ⭕
                                 </button>
                                 <button
-                                    onClick={() => setDrawingTool(drawingTool === 'rectangle' ? null : 'rectangle')}
+                                    onClick={() => {
+                                        setDrawingTool(drawingTool === 'rectangle' ? null : 'rectangle');
+                                        setFogTool(null);
+                                    }}
                                     className={`px-3 py-2 font-bold rounded text-sm border-2 ${
                                         drawingTool === 'rectangle'
                                             ? 'bg-amber-600 text-zinc-900 border-amber-500'
@@ -6885,7 +7233,10 @@ const handleHandoutUpload = async (e) => {
                                     {fillMode ? '⬛' : '⬜'}
                                 </button>
                                 <button
-                                    onClick={() => setDrawingTool(drawingTool === 'eraser' ? null : 'eraser')}
+                                    onClick={() => {
+                                        setDrawingTool(drawingTool === 'eraser' ? null : 'eraser');
+                                        setFogTool(null);
+                                    }}
                                     className={`px-3 py-2 font-bold rounded text-sm border-2 ${
                                         drawingTool === 'eraser'
                                             ? 'bg-amber-600 text-zinc-900 border-amber-500'
@@ -6897,7 +7248,10 @@ const handleHandoutUpload = async (e) => {
                                     🧹
                                 </button>
                                 <button
-                                    onClick={() => setDrawingTool(drawingTool === 'text' ? null : 'text')}
+                                    onClick={() => {
+                                        setDrawingTool(drawingTool === 'text' ? null : 'text');
+                                        setFogTool(null);
+                                    }}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         // Manual Y adjustment: change the -350 value to adjust height
@@ -7000,6 +7354,73 @@ const handleHandoutUpload = async (e) => {
                                 Clear
                             </button>
 
+                            {/* Fog of War Tools */}
+                            <div className="w-px h-8 bg-amber-600"></div>
+                            
+                            <button
+                                onClick={() => {
+                                    if (fogTool === 'draw') {
+                                        setFogTool(null);
+                                        setCurrentFogShape(null);
+                                    } else {
+                                        setFogTool('draw');
+                                        setDrawingTool(null); // Disable regular drawing tools
+                                    }
+                                }}
+                                className={`px-4 py-2 font-bold rounded text-sm border-2 flex items-center gap-2 ${
+                                    fogTool === 'draw'
+                                        ? 'bg-purple-700 hover:bg-purple-600 text-white border-purple-500'
+                                        : 'bg-purple-900 hover:bg-purple-800 text-purple-300 border-purple-700'
+                                }`}
+                                style={{ fontFamily: 'Georgia, serif' }}
+                                title="Draw Fog (click points, right-click to finish)"
+                                disabled={!isHost && isConnected}
+                            >
+                                Fog
+                            </button>
+                            
+                            <button
+                                onClick={() => {
+                                    if (fogTool === 'state') {
+                                        setFogTool(null);
+                                    } else {
+                                        setFogTool('state');
+                                        setDrawingTool(null);
+                                    }
+                                }}
+                                className={`px-4 py-2 font-bold rounded text-sm border-2 flex items-center gap-2 ${
+                                    fogTool === 'state'
+                                        ? 'bg-blue-700 hover:bg-blue-600 text-white border-blue-500'
+                                        : 'bg-blue-900 hover:bg-blue-800 text-blue-300 border-blue-700'
+                                }`}
+                                style={{ fontFamily: 'Georgia, serif' }}
+                                title="Toggle fog visibility (click fog to reveal/hide)"
+                                disabled={!isHost && isConnected}
+                            >
+                                State
+                            </button>
+                            
+                            <button
+                                onClick={() => {
+                                    if (fogTool === 'cut') {
+                                        setFogTool(null);
+                                    } else {
+                                        setFogTool('cut');
+                                        setDrawingTool(null);
+                                    }
+                                }}
+                                className={`px-4 py-2 font-bold rounded text-sm border-2 flex items-center gap-2 ${
+                                    fogTool === 'cut'
+                                        ? 'bg-red-700 hover:bg-red-600 text-white border-red-500'
+                                        : 'bg-red-900 hover:bg-red-800 text-red-300 border-red-700'
+                                }`}
+                                style={{ fontFamily: 'Georgia, serif' }}
+                                title="Delete fog (click fog to remove)"
+                                disabled={!isHost && isConnected}
+                            >
+                                Cut
+                            </button>
+
                             <div className="w-px h-8 bg-amber-600"></div>
 
                             <button
@@ -7035,7 +7456,7 @@ const handleHandoutUpload = async (e) => {
                                 position: 'fixed',
                                 bottom: drawToolsVisible ? '82px' : '5px',
                                 left: '50%',
-                                transform: diceVisible ? 'translateX(calc(-50% + 750px))' : 'translateX(calc(-50% + 600px))',
+                                transform: diceVisible ? 'translateX(calc(-50% + 800px))' : 'translateX(calc(-50% + 550px))',
                                 zIndex: 115,
                                 backgroundColor: '#1a1a1a',
                                 padding: '8px 16px',
