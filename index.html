@@ -1,16 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-<!--
-    MONOMYTH VTT - V 0.80
-    - Added Fog of War system with three tools:
-      * FOG: Draw filled polyline fog shapes (click points, right-click to finish)
-      * STATE: Toggle individual fog shapes between visible/hidden (revealed)
-      * CUT: Delete fog shapes by clicking them
-    - Fog appears as 50% black for host (with red outlines), 100% black for players
-    - Fog renders above tokens (true fog of war)
-    - Fog syncs across multiplayer sessions
-    - Fog persists in save/load/export/import
--->
     
     <link rel="shortcut icon" type="image/png" href="favicon.png">
     
@@ -617,10 +606,12 @@
             // DM Avatar state
             const [dmAvatar, setDmAvatar] = useState(null); // { src, name }
             const [dmAvatarBouncing, setDmAvatarBouncing] = useState(false);
+            const [spotlightedAvatarId, setSpotlightedAvatarId] = useState(null); // Avatar ID being spotlighted
             const dmAvatarInputRef = useRef(null);
             
             // Draw tools visibility state
             const [drawToolsVisible, setDrawToolsVisible] = useState(false);
+            const [playersListVisible, setPlayersListVisible] = useState(true); // Players list starts visible
             const [colorPickerVisible, setColorPickerVisible] = useState(false);
             
             // Player-specific unique ID for localStorage
@@ -705,7 +696,15 @@
                             console.log('Auto-load: Found saved game from', parsed.autoSavedAt);
                             // Silently restore state
                             if (parsed.avatars) {
-                                setAvatars(parsed.avatars.map(a => ({ ...a, flipped: !!a.flipped })));
+                                // Constrain avatar Y positions when loading to ensure labels stay visible
+                                const constrainedAvatars = parsed.avatars.map(a => {
+                                    const viewportHeight = viewportRef.current?.clientHeight || 0;
+                                    const safeY = viewportHeight > 0 
+                                        ? calculateSafeAvatarY(a.y, a.width, viewportHeight)
+                                        : a.y;
+                                    return { ...a, y: safeY, flipped: !!a.flipped };
+                                });
+                                setAvatars(constrainedAvatars);
                             }
                             setScenes(parsed.scenes);
                             setTokens(parsed.tokens || []);
@@ -856,24 +855,46 @@ useEffect(() => {
             debug: 2,
             config: {
                 iceServers: [
+                    // Google STUN servers
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun1.l.google.com:19302' },
                     { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun.cloudflare.com:3478' }
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' },
+                    // Cloudflare STUN
+                    { urls: 'stun:stun.cloudflare.com:3478' },
+                    // Open TURN servers for better NAT traversal
+                    {
+                        urls: 'turn:openrelay.metered.ca:80',
+                        username: 'openrelayproject',
+                        credential: 'openrelayproject'
+                    },
+                    {
+                        urls: 'turn:openrelay.metered.ca:443',
+                        username: 'openrelayproject',
+                        credential: 'openrelayproject'
+                    },
+                    {
+                        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                        username: 'openrelayproject',
+                        credential: 'openrelayproject'
+                    }
                 ],
                 iceTransportPolicy: 'all',
-                iceCandidatePoolSize: 10
+                iceCandidatePoolSize: 10,
+                bundlePolicy: 'max-bundle',
+                rtcpMuxPolicy: 'require'
             }
         });
         
-        // Add connection timeout - 30 seconds for reliability
+        // Extended connection timeout - 45 seconds for reliability
         const connectionTimeout = setTimeout(() => {
             if (!newPeer.open) {
-                console.error('Peer connection timeout after 30 seconds');
+                console.error('Peer connection timeout after 45 seconds');
                 newPeer.destroy();
-                alert('Connection timed out. Please check your internet connection and try again.');
+                alert('Connection timed out.\n\nThis could be due to:\n• Firewall blocking WebRTC\n• Network issues\n• PeerJS server overload\n\nPlease try again in a moment.');
             }
-        }, 30000); // 30 second timeout
+        }, 45000); // 45 second timeout
         
         newPeer.on('open', (id) => {
             clearTimeout(connectionTimeout);
@@ -925,8 +946,24 @@ useEffect(() => {
         });
         
         newPeer.on('error', (err) => {
+            clearTimeout(connectionTimeout);
             console.error('Auto-join peer error:', err);
-            alert(`Connection error: ${err.type}\n\nDetails: ${err.message || 'Unknown error'}\n\nPlease try again or check your internet connection.`);
+            
+            let errorMessage = 'Connection error';
+            if (err.type === 'peer-unavailable') {
+                errorMessage = 'Room not found. The room may have closed.';
+            } else if (err.type === 'network') {
+                errorMessage = 'Network error. Please check your internet connection.';
+            } else if (err.type === 'server-error') {
+                errorMessage = 'PeerJS server error. Please try again in a moment.';
+            } else if (err.type === 'socket-error') {
+                errorMessage = 'Socket connection failed. Check firewall settings.';
+            } else {
+                errorMessage = `${err.type}: ${err.message || 'Unknown error'}`;
+            }
+            
+            alert(`${errorMessage}\n\nTroubleshooting:\n• Check internet connection\n• Disable VPN if active\n• Check firewall/antivirus settings\n• Try a different browser`);
+            
             // Clean up URL parameter on error
             window.history.replaceState({}, document.title, window.location.pathname);
         });
@@ -1047,25 +1084,47 @@ useEffect(() => {
                     debug: 2,
                     config: {
                         iceServers: [
+                            // Google STUN servers
                             { urls: 'stun:stun.l.google.com:19302' },
                             { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun2.l.google.com:19302' },
-                            { urls: 'stun:stun.cloudflare.com:3478' }
+                            { urls: 'stun:stun3.l.google.com:19302' },
+                            { urls: 'stun:stun4.l.google.com:19302' },
+                            // Cloudflare STUN
+                            { urls: 'stun:stun.cloudflare.com:3478' },
+                            // Open TURN servers for better NAT traversal
+                            {
+                                urls: 'turn:openrelay.metered.ca:80',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            },
+                            {
+                                urls: 'turn:openrelay.metered.ca:443',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            },
+                            {
+                                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            }
                         ],
                         iceTransportPolicy: 'all',
-                        iceCandidatePoolSize: 10
+                        iceCandidatePoolSize: 10,
+                        bundlePolicy: 'max-bundle',
+                        rtcpMuxPolicy: 'require'
                     }
                 });
                 
-                // Add connection timeout - 30 seconds for reliability
+                // Extended connection timeout - 45 seconds for reliability
                 const connectionTimeout = setTimeout(() => {
                     if (!newPeer.open) {
-                        console.error('Peer connection timeout after 30 seconds');
+                        console.error('Peer connection timeout after 45 seconds');
                         newPeer.destroy();
                         setShowCreatingDialog(false);
-                        alert('Connection timed out. Please check your internet connection and try again.');
+                        alert('Connection timed out.\n\nThis could be due to:\n• Firewall blocking WebRTC\n• Network issues\n• PeerJS server overload\n\nPlease try again in a moment.');
                     }
-                }, 30000); // 30 second timeout
+                }, 45000); // 45 second timeout
                 
                 newPeer.on('open', (id) => {
                     clearTimeout(connectionTimeout);
@@ -1152,9 +1211,26 @@ useEffect(() => {
                 });
 
                 newPeer.on('error', (err) => {
+                    clearTimeout(connectionTimeout);
                     console.error('Peer error:', err);
                     setShowCreatingDialog(false);
-                    alert(`Connection error: ${err.type}\n\nDetails: ${err.message || 'Unknown error'}\n\nPlease try again or check your internet connection.`);
+                    
+                    let errorMessage = 'Connection error';
+                    if (err.type === 'peer-unavailable') {
+                        errorMessage = 'Room not found. The room may have closed.';
+                    } else if (err.type === 'network') {
+                        errorMessage = 'Network error. Please check your internet connection.';
+                    } else if (err.type === 'server-error') {
+                        errorMessage = 'PeerJS server error. Please try again in a moment.';
+                    } else if (err.type === 'socket-error') {
+                        errorMessage = 'Socket connection failed. Check firewall settings.';
+                    } else if (err.type === 'unavailable-id') {
+                        errorMessage = 'ID unavailable. Please try creating a new session.';
+                    } else {
+                        errorMessage = `${err.type}: ${err.message || 'Unknown error'}`;
+                    }
+                    
+                    alert(`${errorMessage}\n\nTroubleshooting:\n• Check internet connection\n• Disable VPN if active\n• Check firewall/antivirus settings\n• Try a different browser`);
                 });
             };
 
@@ -1172,24 +1248,46 @@ useEffect(() => {
                     debug: 2,
                     config: {
                         iceServers: [
+                            // Google STUN servers
                             { urls: 'stun:stun.l.google.com:19302' },
                             { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun2.l.google.com:19302' },
-                            { urls: 'stun:stun.cloudflare.com:3478' }
+                            { urls: 'stun:stun3.l.google.com:19302' },
+                            { urls: 'stun:stun4.l.google.com:19302' },
+                            // Cloudflare STUN
+                            { urls: 'stun:stun.cloudflare.com:3478' },
+                            // Open TURN servers for better NAT traversal
+                            {
+                                urls: 'turn:openrelay.metered.ca:80',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            },
+                            {
+                                urls: 'turn:openrelay.metered.ca:443',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            },
+                            {
+                                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            }
                         ],
                         iceTransportPolicy: 'all',
-                        iceCandidatePoolSize: 10
+                        iceCandidatePoolSize: 10,
+                        bundlePolicy: 'max-bundle',
+                        rtcpMuxPolicy: 'require'
                     }
                 });
                 
-                // Add connection timeout - 30 seconds for reliability
+                // Extended connection timeout - 45 seconds for reliability
                 const connectionTimeout = setTimeout(() => {
                     if (!newPeer.open) {
-                        console.error('Peer connection timeout after 30 seconds');
+                        console.error('Peer connection timeout after 45 seconds');
                         newPeer.destroy();
-                        alert('Connection timed out. Please check your internet connection and try again.');
+                        alert('Connection timed out.\n\nThis could be due to:\n• Firewall blocking WebRTC\n• Network issues\n• PeerJS server overload\n\nPlease try again in a moment.');
                     }
-                }, 30000); // 30 second timeout
+                }, 45000); // 45 second timeout
                 
                 newPeer.on('open', (id) => {
                     clearTimeout(connectionTimeout);
@@ -1272,8 +1370,25 @@ useEffect(() => {
                 });
 
                 newPeer.on('error', (err) => {
+                    clearTimeout(connectionTimeout);
                     console.error('Peer error:', err);
-                    alert(`Connection error: ${err.type}\n\nDetails: ${err.message || 'Unknown error'}\n\nPlease try again or check your internet connection.`);
+                    
+                    let errorMessage = 'Connection error';
+                    if (err.type === 'peer-unavailable') {
+                        errorMessage = 'Room not found. The room may have closed.';
+                    } else if (err.type === 'network') {
+                        errorMessage = 'Network error. Please check your internet connection.';
+                    } else if (err.type === 'server-error') {
+                        errorMessage = 'PeerJS server error. Please try again in a moment.';
+                    } else if (err.type === 'socket-error') {
+                        errorMessage = 'Socket connection failed. Check firewall settings.';
+                    } else if (err.type === 'unavailable-id') {
+                        errorMessage = 'ID unavailable. Please try creating a new session.';
+                    } else {
+                        errorMessage = `${err.type}: ${err.message || 'Unknown error'}`;
+                    }
+                    
+                    alert(`${errorMessage}\n\nTroubleshooting:\n• Check internet connection\n• Disable VPN if active\n• Check firewall/antivirus settings\n• Try a different browser`);
                 });
             };
 
@@ -1290,24 +1405,46 @@ useEffect(() => {
                     debug: 2,
                     config: {
                         iceServers: [
+                            // Google STUN servers
                             { urls: 'stun:stun.l.google.com:19302' },
                             { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun2.l.google.com:19302' },
-                            { urls: 'stun:stun.cloudflare.com:3478' }
+                            { urls: 'stun:stun3.l.google.com:19302' },
+                            { urls: 'stun:stun4.l.google.com:19302' },
+                            // Cloudflare STUN
+                            { urls: 'stun:stun.cloudflare.com:3478' },
+                            // Open TURN servers for better NAT traversal
+                            {
+                                urls: 'turn:openrelay.metered.ca:80',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            },
+                            {
+                                urls: 'turn:openrelay.metered.ca:443',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            },
+                            {
+                                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            }
                         ],
                         iceTransportPolicy: 'all',
-                        iceCandidatePoolSize: 10
+                        iceCandidatePoolSize: 10,
+                        bundlePolicy: 'max-bundle',
+                        rtcpMuxPolicy: 'require'
                     }
                 });
                 
-                // Add connection timeout - 30 seconds for reliability
+                // Extended connection timeout - 45 seconds for reliability
                 const connectionTimeout = setTimeout(() => {
                     if (!newPeer.open) {
-                        console.error('Peer connection timeout after 30 seconds');
+                        console.error('Peer connection timeout after 45 seconds');
                         newPeer.destroy();
-                        alert('Connection timed out. Please check your internet connection and try again.');
+                        alert('Connection timed out.\n\nThis could be due to:\n• Firewall blocking WebRTC\n• Network issues\n• PeerJS server overload\n\nPlease try again in a moment.');
                     }
-                }, 30000); // 30 second timeout
+                }, 45000); // 45 second timeout
                 
                 newPeer.on('open', (id) => {
                     clearTimeout(connectionTimeout);
@@ -1361,8 +1498,10 @@ useEffect(() => {
                         setAvatars(message.data.avatars || []);
                         setTokens(message.data.tokens || []);
                         setDrawings(message.data.drawings || []);
+                        setFogShapes(message.data.fogShapes || []);
                         setActiveSceneIndex(message.data.activeSceneIndex || 0);
                         setGridTransform(message.data.gridTransform || { zoom: 1, panX: 0, panY: 0 });
+                        if (message.data.gridColor) setGridColor(message.data.gridColor);
                         setCharacterSheets(message.data.characterSheets || []);
                         setDiceModifiers(message.data.diceModifiers || {});
                         setDmAvatar(message.data.dmAvatar || null);
@@ -1391,8 +1530,10 @@ useEffect(() => {
                                         avatars,
                                         tokens,
                                         drawings,
+                                        fogShapes,
                                         activeSceneIndex,
                                         gridTransform,
+                                        gridColor,
                                         characterSheets,
                                         diceModifiers,
                                         dmAvatar,
@@ -1582,6 +1723,14 @@ useEffect(() => {
 
                     case 'GRID_TRANSFORM':
                         setGridTransform(message.data);
+                        break;
+
+                    case 'GRID_COLOR_UPDATE':
+                        setGridColor(message.data);
+                        break;
+
+                    case 'SPOTLIGHT_UPDATE':
+                        setSpotlightedAvatarId(message.data);
                         break;
 
                     case 'SCENE_IMAGE_UPDATE':
@@ -1819,8 +1968,10 @@ useEffect(() => {
                             avatars,
                             tokens,
                             drawings,
+                            fogShapes,
                             activeSceneIndex,
                             gridTransform,
+                            gridColor,
                             characterSheets,
                             diceModifiers,
                             dmAvatar,
@@ -1986,6 +2137,13 @@ useEffect(() => {
                     broadcastState('SCENE_IMAGE_UPDATE', filterScenesForPlayers(scenes));
                 }
             }, [scenes]);
+
+            // Sync grid color when it changes (only if host)
+            useEffect(() => {
+                if (isHost && isConnected) {
+                    broadcastState('GRID_COLOR_UPDATE', gridColor);
+                }
+            }, [gridColor, isHost, isConnected]);
 
             // Automatic avatar animations - adds life to the table!
             useEffect(() => {
@@ -2754,6 +2912,21 @@ const handleGridImageUpload = async (e) => {
     
     e.target.value = '';
 };
+// Calculate safe Y position for avatar to keep label visible
+const calculateSafeAvatarY = (yPosition, avatarWidth, viewportHeight) => {
+    if (!viewportHeight) return yPosition; // Can't constrain without viewport height
+    
+    const avatarImageHeight = (avatarWidth || 180) * 1.25; // Avatar aspect ratio
+    const labelHeight = 45; // Approximate height of name label
+    const bottomMargin = 20; // Minimum margin from bottom border
+    
+    // Calculate maximum allowed Y (to keep label visible)
+    const maxY = viewportHeight - avatarImageHeight - labelHeight - bottomMargin;
+    
+    // Constrain Y to safe range
+    return Math.min(yPosition, Math.max(0, maxY));
+};
+
 const handleAvatarUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !file.type.startsWith('image/')) return;
@@ -2763,17 +2936,23 @@ const handleAvatarUpload = async (e) => {
         const downscaledDataUrl = await downscaleImage(file, 2048, 2048);
         
         if (!viewportRef.current) return;
+        
+        const viewportHeight = viewportRef.current.clientHeight;
+        
         setAvatars(prev => {
             if (prev.length >= 6) {
                 alert('Maximum 6 avatars allowed.');
                 return prev;
             }
+            const width = 180;
+            const safeY = calculateSafeAvatarY(0, width, viewportHeight);
+            
             const newAvatar = {
                 id: Date.now(),
                 src: downscaledDataUrl,
                 x: 0,
-                y: 0,
-                width: 180,
+                y: safeY,
+                width: width,
                 height: 225,
                 name: `Player ${prev.length + 1}`,
                 flipped: false
@@ -4837,8 +5016,6 @@ const handleHandoutUpload = async (e) => {
                 
                 // Render completed fog shapes
                 for (const shape of fogShapes) {
-                    if (!shape.visible) continue; // Skip hidden fog (revealed areas)
-                    
                     if (shape.points.length < 3) continue;
                     
                     ctx.beginPath();
@@ -4857,11 +5034,19 @@ const handleHandoutUpload = async (e) => {
                     }
                     ctx.closePath();
                     
-                    // Fill with black - opacity depends on isHost
-                    ctx.fillStyle = isHost ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 1.0)';
-                    ctx.fill();
+                    // Fill with black - opacity depends on visibility and isHost
+                    if (shape.visible) {
+                        // Visible fog: normal opacity for both host and players
+                        ctx.fillStyle = isHost ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 1.0)';
+                        ctx.fill();
+                    } else if (isHost) {
+                        // Hidden fog: only show transparent fill for host (revealed areas)
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                        ctx.fill();
+                    }
+                    // Players don't see hidden fog at all (no fill or outline)
                     
-                    // Red outline (only visible to host)
+                    // Red outline (always visible to host, even when fog is hidden)
                     if (isHost) {
                         ctx.strokeStyle = '#ff0000';
                         ctx.lineWidth = 2;
@@ -5077,7 +5262,15 @@ const handleHandoutUpload = async (e) => {
                                 return;
                             }
                             if (parsed.avatars) {
-                                setAvatars(parsed.avatars.map(a => ({ ...a, flipped: !!a.flipped })));
+                                // Constrain avatar Y positions when importing
+                                const viewportHeight = viewportRef.current?.clientHeight || 0;
+                                const constrainedAvatars = parsed.avatars.map(a => {
+                                    const safeY = viewportHeight > 0 
+                                        ? calculateSafeAvatarY(a.y, a.width, viewportHeight)
+                                        : a.y;
+                                    return { ...a, y: safeY, flipped: !!a.flipped };
+                                });
+                                setAvatars(constrainedAvatars);
                             } else {
                                 const collected = [];
                                 parsed.scenes.forEach(s => {
@@ -5085,7 +5278,15 @@ const handleHandoutUpload = async (e) => {
                                         collected.push(...s.avatars);
                                     }
                                 });
-                                setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
+                                // Constrain avatar Y positions when importing
+                                const viewportHeight = viewportRef.current?.clientHeight || 0;
+                                const constrainedAvatars = collected.slice(0, 6).map(a => {
+                                    const safeY = viewportHeight > 0 
+                                        ? calculateSafeAvatarY(a.y, a.width, viewportHeight)
+                                        : a.y;
+                                    return { ...a, y: safeY, flipped: !!a.flipped };
+                                });
+                                setAvatars(constrainedAvatars);
                             }
                             setScenes(parsed.scenes);
                             setTokens(parsed.tokens || []);
@@ -5106,7 +5307,15 @@ const handleHandoutUpload = async (e) => {
                             parsed.forEach(s => {
                                 if (Array.isArray(s.avatars)) collected.push(...s.avatars);
                             });
-                            setAvatars(collected.slice(0, 6).map(a => ({ ...a, flipped: !!a.flipped })));
+                            // Constrain avatar Y positions when importing
+                            const viewportHeight = viewportRef.current?.clientHeight || 0;
+                            const constrainedAvatars = collected.slice(0, 6).map(a => {
+                                const safeY = viewportHeight > 0 
+                                    ? calculateSafeAvatarY(a.y, a.width, viewportHeight)
+                                    : a.y;
+                                return { ...a, y: safeY, flipped: !!a.flipped };
+                            });
+                            setAvatars(constrainedAvatars);
                             setScenes(parsed);
                             alert('Import successful (scenes only).');
                         } else {
@@ -5683,78 +5892,96 @@ const handleHandoutUpload = async (e) => {
                                     )}
                                 </button>
 
-                                <div className="flex gap-2 items-center">
-                                    {/* Re-copy Link Button - Only visible when host */}
-                                    {isHost && (
+                                {/* Host-only buttons - Only show when host or not connected */}
+                                {(isHost || !isConnected) && (
+                                    <div className="flex gap-2 items-center">
+                                        {/* Re-copy Link Button - Only visible when host */}
+                                        {isHost && (
+                                            <button
+                                                onClick={() => {
+                                                    const shareableLink = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+                                                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                                                        navigator.clipboard.writeText(shareableLink)
+                                                            .then(() => {
+                                                                console.log('Shareable link copied to clipboard:', shareableLink);
+                                                                
+                                                                // Show clipboard notification
+                                                                if (clipboardNotificationTimeoutRef.current) {
+                                                                    clearTimeout(clipboardNotificationTimeoutRef.current);
+                                                                }
+                                                                
+                                                                setClipboardNotification(true);
+                                                                
+                                                                clipboardNotificationTimeoutRef.current = setTimeout(() => {
+                                                                    setClipboardNotification(false);
+                                                                    clipboardNotificationTimeoutRef.current = null;
+                                                                }, 2000);
+                                                            })
+                                                            .catch(err => {
+                                                                console.warn('Could not copy shareable link to clipboard:', err);
+                                                            });
+                                                    }
+                                                }}
+                                                className="px-2 py-1 font-semibold rounded text-sm bg-zinc-800 text-amber-500 hover:bg-amber-500 hover:text-zinc-900 transition-all"
+                                                title="Re-copy shareable link"
+                                            >
+                                                📋Re-Copy Code
+                                            </button>
+                                        )}
                                         <button
-                                            onClick={() => {
-                                                const shareableLink = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
-                                                if (navigator.clipboard && navigator.clipboard.writeText) {
-                                                    navigator.clipboard.writeText(shareableLink)
-                                                        .then(() => {
-                                                            console.log('Shareable link copied to clipboard:', shareableLink);
-                                                            
-                                                            // Show clipboard notification
-                                                            if (clipboardNotificationTimeoutRef.current) {
-                                                                clearTimeout(clipboardNotificationTimeoutRef.current);
-                                                            }
-                                                            
-                                                            setClipboardNotification(true);
-                                                            
-                                                            clipboardNotificationTimeoutRef.current = setTimeout(() => {
-                                                                setClipboardNotification(false);
-                                                                clipboardNotificationTimeoutRef.current = null;
-                                                            }, 2000);
-                                                        })
-                                                        .catch(err => {
-                                                            console.warn('Could not copy shareable link to clipboard:', err);
-                                                        });
-                                                }
-                                            }}
-                                            className="px-2 py-1 font-semibold rounded text-sm bg-zinc-800 text-amber-500 hover:bg-amber-500 hover:text-zinc-900 transition-all"
-                                            title="Re-copy shareable link"
+                                            onClick={exportScenes}
+                                            className="px-2 py-1 font-semibold rounded text-sm bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600"
+                                            title="Save game to JSON file"
+                                            disabled={!isHost && isConnected}
                                         >
-                                            📋Re-Copy Code
+                                            Save
                                         </button>
-                                    )}
-                                    <button
-                                        onClick={exportScenes}
-                                        className="px-2 py-1 font-semibold rounded text-sm bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600"
-                                        title="Save game to JSON file"
-                                        disabled={!isHost && isConnected}
-                                    >
-                                        Save
-                                    </button>
-                                    <button
-                                        onClick={() => importInputRef.current?.click()}
-                                        className="px-2 py-1 font-semibold rounded text-sm bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600"
-                                        title="Load game from JSON file"
-                                        disabled={!isHost && isConnected}
-                                    >
-                                        Load
-                                    </button>
-                                </div>
+                                        <button
+                                            onClick={() => importInputRef.current?.click()}
+                                            className="px-2 py-1 font-semibold rounded text-sm bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600"
+                                            title="Load game from JSON file"
+                                            disabled={!isHost && isConnected}
+                                        >
+                                            Load
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                             
-                            {/* Center - Scene buttons (absolute positioning for perfect centering) */}
-                            <div className="absolute left-1/2 transform -translate-x-1/2 flex gap-1.5">
-                                {scenes.map((scene, index) => (
-                                    <button
-                                        key={index}
-                                        onClick={() => handleSceneClick(index)}
-                                        onContextMenu={(e) => handleSceneRightClick(e, index)}
-                                        className={`px-3 py-1.5 font-bold rounded text-sm transition-all border ${
-                                            activeSceneIndex === index
-                                                ? 'bg-amber-600 text-zinc-900 border-amber-500 shadow-md'
-                                                : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600 hover:border-amber-700'
-                                        }`}
-                                        style={{ fontFamily: 'Georgia, serif' }}
-                                        disabled={!isHost && isConnected}
+                            {/* Center - Scene buttons for Host, Scene Banner for Players */}
+                            {(isHost || !isConnected) ? (
+                                <div className="absolute left-1/2 transform -translate-x-1/2 flex gap-1.5">
+                                    {scenes.map((scene, index) => (
+                                        <button
+                                            key={index}
+                                            onClick={() => handleSceneClick(index)}
+                                            onContextMenu={(e) => handleSceneRightClick(e, index)}
+                                            className={`px-3 py-1.5 font-bold rounded text-sm transition-all border ${
+                                                activeSceneIndex === index
+                                                    ? 'bg-amber-600 text-zinc-900 border-amber-500 shadow-md'
+                                                    : 'bg-zinc-700 text-amber-500 border-red-900 hover:bg-zinc-600 hover:border-amber-700'
+                                            }`}
+                                            style={{ fontFamily: 'Georgia, serif' }}
+                                            disabled={!isHost && isConnected}
+                                        >
+                                            {scene.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="absolute left-1/2 transform -translate-x-1/2">
+                                    <div 
+                                        className="px-6 py-1.5 font-bold rounded text-xl text-amber-500 border-2 border-amber-600 bg-zinc-800 shadow-lg"
+                                        style={{ 
+                                            fontFamily: 'Georgia, serif',
+                                            textShadow: '0 0 8px rgba(212, 175, 55, 0.4)',
+                                            letterSpacing: '0.05em'
+                                        }}
                                     >
-                                        {scene.name}
-                                    </button>
-                                ))}
-                            </div>
+                                        {scenes[activeSceneIndex]?.name || 'Scene'}
+                                    </div>
+                                </div>
+                            )}
                             
                             {/* Right side - Grid button, Handouts button, and Help button */}
                             <div className="flex gap-3 items-center">
@@ -5790,31 +6017,33 @@ const handleHandoutUpload = async (e) => {
                                     </button>
                                 )}
                                 
-                                {/* Grid Button - More Prominent */}
-                                <button
-                                    onClick={toggleGrid}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        if (!isHost && isConnected) return; // Only host can change grid settings
-                                        // Manual Y adjustment: change the +60 value to adjust height
-                                        setGridContextMenu({ x: e.clientX - 100, y: e.clientY + 10 }); // 60px below cursor
-                                    }}
-                                    className={`px-4 py-2 font-bold rounded-lg text-base transition-all border-2 flex items-center gap-2 shadow-lg ${
-                                        activeScene.grid?.enabled
-                                            ? 'bg-amber-600 text-zinc-900 border-amber-500'
-                                            : 'bg-zinc-700 text-amber-500 border-amber-600 hover:bg-amber-600 hover:text-zinc-900 hover:border-amber-500'
-                                    }`}
-                                    style={{ 
-                                        fontFamily: 'Georgia, serif',
-                                        boxShadow: activeScene.grid?.enabled 
-                                            ? '0 0 20px rgba(212, 175, 55, 0.6)' 
-                                            : '0 4px 12px rgba(0,0,0,0.4)'
-                                    }}
-                                    title="Toggle Grid (Right-click for options)"
-                                >
-                                    <Grid3x3Icon size={20} />
-                                    GRID
-                                </button>
+                                {/* Grid Button - Host Only */}
+                                {(isHost || !isConnected) && (
+                                    <button
+                                        onClick={toggleGrid}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            if (!isHost && isConnected) return; // Only host can change grid settings
+                                            // Manual Y adjustment: change the +60 value to adjust height
+                                            setGridContextMenu({ x: e.clientX - 100, y: e.clientY + 10 }); // 60px below cursor
+                                        }}
+                                        className={`px-4 py-2 font-bold rounded-lg text-base transition-all border-2 flex items-center gap-2 shadow-lg ${
+                                            activeScene.grid?.enabled
+                                                ? 'bg-amber-600 text-zinc-900 border-amber-500'
+                                                : 'bg-zinc-700 text-amber-500 border-amber-600 hover:bg-amber-600 hover:text-zinc-900 hover:border-amber-500'
+                                        }`}
+                                        style={{ 
+                                            fontFamily: 'Georgia, serif',
+                                            boxShadow: activeScene.grid?.enabled 
+                                                ? '0 0 20px rgba(212, 175, 55, 0.6)' 
+                                                : '0 4px 12px rgba(0,0,0,0.4)'
+                                        }}
+                                        title="Toggle Grid (Right-click for options)"
+                                    >
+                                        <Grid3x3Icon size={20} />
+                                        GRID
+                                    </button>
+                                )}
                                 
                                 {/* Help Button */}
                                 <div                                     
@@ -6236,83 +6465,123 @@ const handleHandoutUpload = async (e) => {
 
                 {/* Player List - Top Left */}
                     {isConnected && players.length > 0 && (
-                        <div
-                            style={{
-                                position: 'fixed',
-                                top: '80px',
-                                left: '10px',
-                                backgroundColor: 'rgba(26, 26, 26, 0.95)',
-                                border: '2px solid #d4af37',
-                                borderRadius: '8px',
-                                padding: '12px',
-                                minWidth: '200px',
-                                maxWidth: '280px',
-                                boxShadow: '0 4px 20px rgba(0,0,0,0.8)',
-                                zIndex: 1000
-                            }}
-                        >
-                            <div style={{
-                                fontSize: '14px',
-                                fontWeight: 'bold',
-                                color: '#d4af37',
-                                marginBottom: '10px',
-                                fontFamily: 'Georgia, serif',
-                                borderBottom: '1px solid #444',
-                                paddingBottom: '6px'
-                            }}>
-                                🎭 Players ({players.length})
-                            </div>
-                            {players.map((player, idx) => (
-                                <div
-                                    key={player.id || idx}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        padding: '6px 8px',
-                                        marginBottom: '4px',
-                                        backgroundColor: '#2a2a2a',
-                                        borderRadius: '6px',
-                                        border: '1px solid #444',
-                                        cursor: isHost && !player.isHost ? 'pointer' : 'default'
-                                    }}
-                                    onContextMenu={(e) => {
-                                        // Only show context menu if host and player is not the host
-                                        if (isHost && !player.isHost) {
-                                            e.preventDefault();
-                                            setPlayerContextMenu({
-                                                x: e.clientX,
-                                                y: e.clientY,
-                                                playerId: player.id,
-                                                playerName: player.name
-                                            });
-                                        }
-                                    }}
-                                >
-                                    <div style={{
-                                        width: '8px',
-                                        height: '8px',
-                                        borderRadius: '50%',
-                                        backgroundColor: '#4ecdc4',
-                                        flexShrink: 0
-                                    }} />
-                                    <div style={{
-                                        color: '#e0e0e0',
-                                        fontSize: '13px',
-                                        fontFamily: 'Arial, sans-serif',
-                                        flex: 1,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap'
-                                    }}>
-                                        {player.name}
-                                    </div>
-                                    {player.isHost && (
-                                        <span className="host-badge">HOST</span>
-                                    )}
+                        <>
+                            <div
+                                style={{
+                                    position: 'fixed',
+                                    top: '80px',
+                                    left: playersListVisible ? '10px' : '-270px',
+                                    backgroundColor: 'rgba(26, 26, 26, 0.95)',
+                                    border: '2px solid #d4af37',
+                                    borderRadius: '8px',
+                                    padding: '12px',
+                                    minWidth: '200px',
+                                    maxWidth: '280px',
+                                    boxShadow: '0 4px 20px rgba(0,0,0,0.8)',
+                                    zIndex: 1000,
+                                    transition: 'left 0.3s ease-in-out'
+                                }}
+                            >
+                                <div style={{
+                                    fontSize: '14px',
+                                    fontWeight: 'bold',
+                                    color: '#d4af37',
+                                    marginBottom: '10px',
+                                    fontFamily: 'Georgia, serif',
+                                    borderBottom: '1px solid #444',
+                                    paddingBottom: '6px'
+                                }}>
+                                    🎭 Players ({players.length})
                                 </div>
-                            ))}
-                        </div>
+                                {players.map((player, idx) => (
+                                    <div
+                                        key={player.id || idx}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '6px 8px',
+                                            marginBottom: '4px',
+                                            backgroundColor: '#2a2a2a',
+                                            borderRadius: '6px',
+                                            border: '1px solid #444',
+                                            cursor: isHost && !player.isHost ? 'pointer' : 'default'
+                                        }}
+                                        onContextMenu={(e) => {
+                                            // Only show context menu if host and player is not the host
+                                            if (isHost && !player.isHost) {
+                                                e.preventDefault();
+                                                setPlayerContextMenu({
+                                                    x: e.clientX,
+                                                    y: e.clientY,
+                                                    playerId: player.id,
+                                                    playerName: player.name
+                                                });
+                                            }
+                                        }}
+                                    >
+                                        <div style={{
+                                            width: '8px',
+                                            height: '8px',
+                                            borderRadius: '50%',
+                                            backgroundColor: '#4ecdc4',
+                                            flexShrink: 0
+                                        }} />
+                                        <div style={{
+                                            color: '#e0e0e0',
+                                            fontSize: '13px',
+                                            fontFamily: 'Arial, sans-serif',
+                                            flex: 1,
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap'
+                                        }}>
+                                            {player.name}
+                                        </div>
+                                        {player.isHost && (
+                                            <span className="host-badge">HOST</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            
+                            {/* Players List Toggle Tab */}
+                            <div
+                                onClick={() => setPlayersListVisible(!playersListVisible)}
+                                style={{
+                                    position: 'fixed',
+                                    top: '80px',
+                                    left: playersListVisible ? '185px' : '10px',
+                                    backgroundColor: '#1a1a1a',
+                                    border: '2px solid #d4af37',
+                                    borderLeft: playersListVisible ? '2px solid #d4af37' : 'none',
+                                    borderRadius: playersListVisible ? '0 8px 8px 0' : '8px',
+                                    padding: '12px 8px',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
+                                    cursor: 'pointer',
+                                    zIndex: 1001,
+                                    transition: 'left 0.3s ease-in-out, background-color 0.2s',
+                                    userSelect: 'none'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#1a1a1a';
+                                }}
+                            >
+                                <div style={{
+                                    fontSize: '14px',
+                                    color: '#d4af37',
+                                    fontWeight: 'bold',
+                                    fontFamily: 'Arial, sans-serif',
+                                    writingMode: 'vertical-rl',
+                                    textOrientation: 'mixed'
+                                }}>
+                                    {playersListVisible ? '◀' : '▶'}
+                                </div>
+                            </div>
+                        </>
                     )}
 
                     {/* Dice Roll Notification - Top Center */}
@@ -6502,7 +6771,7 @@ const handleHandoutUpload = async (e) => {
                             e.stopPropagation();
                             toggleImageLock(image.id);
                         }}
-                        className="absolute top-1 left-1 p-2 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all z-10"
+                        className="absolute top-1 right-12 p-2 bg-zinc-800 hover:bg-zinc-700 border-2 border-amber-600 rounded shadow-lg transition-all z-10"
                         title={image.locked ? 'Unlock' : 'Lock'}
                     >
                         {image.locked ? (
@@ -6538,16 +6807,51 @@ const handleHandoutUpload = async (e) => {
                             {avatars.map((avatar) => {
                                 const isBouncing = bouncingAvatarIds.includes(avatar.id);
                                 const isTalking = avatar.assignedPlayerId && talkingPlayers.has(avatar.assignedPlayerId);
+                                
+                                // Calculate constrained Y position to keep label visible
+                                // Avatar image height approximation based on width and aspect ratio (1.25)
+                                const avatarImageHeight = (avatar.width || 180) * 1.25;
+                                const labelHeight = 45; // Approximate height of name label
+                                const bottomMargin = 20; // Minimum margin from bottom border
+                                
+                                // Get viewport height (use ref if available, otherwise estimate from aspect ratio)
+                                let viewportHeight = 0;
+                                if (viewportRef.current) {
+                                    viewportHeight = viewportRef.current.clientHeight;
+                                }
+                                
+                                // Calculate minimum Y position (maximum top value before label goes off screen)
+                                const maxY = viewportHeight > 0 
+                                    ? viewportHeight - avatarImageHeight - labelHeight - bottomMargin 
+                                    : avatar.y; // If viewport height unknown, use original Y
+                                
+                                // Constrain Y to prevent label from going below bottom border
+                                const constrainedY = viewportHeight > 0 
+                                    ? Math.min(avatar.y, Math.max(0, maxY))
+                                    : avatar.y;
+                                
                                 return (
                                     <div
                                         key={avatar.id}
+                                        data-avatar-id={avatar.id}
                                         className={`absolute avatar ${isBouncing ? 'bouncing' : ''} ${isTalking ? 'talking' : ''} ${avatar.flipped ? 'flipped' : ''}`}
                                         style={{
                                             left: avatar.x,
-                                            top: avatar.y,
+                                            top: constrainedY,
                                             width: avatar.width
                                         }}
-                                        onClick={(e) => { e.stopPropagation(); handleAvatarClick(avatar.id); }}
+                                        onClick={(e) => { 
+                                            if (e.shiftKey && isHost) {
+                                                // Shift + click toggles spotlight
+                                                e.stopPropagation();
+                                                const newSpotlight = spotlightedAvatarId === avatar.id ? null : avatar.id;
+                                                setSpotlightedAvatarId(newSpotlight);
+                                                broadcastState('SPOTLIGHT_UPDATE', newSpotlight);
+                                            } else {
+                                                e.stopPropagation(); 
+                                                handleAvatarClick(avatar.id);
+                                            }
+                                        }}
                                         onDoubleClick={(e) => { e.stopPropagation(); handleAvatarDoubleClick(avatar.id); }}
                                         onContextMenu={(e) => {
                                             e.preventDefault();
@@ -6593,6 +6897,7 @@ const handleHandoutUpload = async (e) => {
                     {/* DM Host Avatar - Positioned ABOVE the theatre box */}
                     {dmAvatar && (
                         <div
+                            data-avatar-id="dm-avatar"
                             className={`fixed avatar floating ${dmAvatar.assignedPlayerId && talkingPlayers.has(dmAvatar.assignedPlayerId) ? 'talking' : ''}`}
                             style={{
                                 left: '12%',
@@ -6601,9 +6906,17 @@ const handleHandoutUpload = async (e) => {
                                 zIndex: 100
                             }}
                             onClick={(e) => {
-                                e.stopPropagation();
-                                if (isHost || !isConnected) {
-                                    handleDmAvatarClick();
+                                if (e.shiftKey && isHost) {
+                                    // Shift + click toggles spotlight
+                                    e.stopPropagation();
+                                    const newSpotlight = spotlightedAvatarId === 'dm-avatar' ? null : 'dm-avatar';
+                                    setSpotlightedAvatarId(newSpotlight);
+                                    broadcastState('SPOTLIGHT_UPDATE', newSpotlight);
+                                } else {
+                                    e.stopPropagation();
+                                    if (isHost || !isConnected) {
+                                        handleDmAvatarClick();
+                                    }
                                 }
                             }}
                             onContextMenu={(e) => {
@@ -6776,6 +7089,64 @@ const handleHandoutUpload = async (e) => {
                             />
                         </>
                     )}
+
+                    {/* Spotlight Overlay - Avatar spotlight effect */}
+                    {spotlightedAvatarId && (() => {
+                        let spotlightX = 0;
+                        let spotlightY = 0;
+                        
+                        if (spotlightedAvatarId === 'dm-avatar' && dmAvatar) {
+                            // Get the actual rendered DM avatar element
+                            const dmAvatarElement = document.querySelector(`[data-avatar-id="dm-avatar"]`);
+                            
+                            if (dmAvatarElement) {
+                                // Get the DM avatar's actual screen position
+                                const dmAvatarRect = dmAvatarElement.getBoundingClientRect();
+                                const dmAvatarWidth = 175;
+                                const dmAvatarHeight = dmAvatarWidth * 1.25;
+                                
+                                // Center on the DM avatar image (not the label below it)
+                                spotlightX = dmAvatarRect.left + (dmAvatarWidth / 2);
+                                spotlightY = dmAvatarRect.top + (dmAvatarHeight / 2);
+                            }
+                        } else {
+                            // Find the player avatar in theatre box
+                            const avatar = avatars.find(a => a.id === spotlightedAvatarId);
+                            if (avatar) {
+                                // Get the actual rendered avatar element using data attribute
+                                const avatarElement = document.querySelector(`[data-avatar-id="${avatar.id}"]`);
+                                
+                                if (avatarElement) {
+                                    // Get the avatar's actual screen position (accounts for constrainedY)
+                                    const avatarRect = avatarElement.getBoundingClientRect();
+                                    const avatarWidth = avatar.width || 180;
+                                    const avatarImageHeight = avatarWidth * 1.25;
+                                    
+                                    // Center on the avatar image (not the label below it)
+                                    spotlightX = avatarRect.left + (avatarWidth / 2);
+                                    spotlightY = avatarRect.top + (avatarImageHeight / 2);
+                                }
+                            }
+                        }
+                        
+                        return (
+                            <div
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    zIndex: 95,
+                                    pointerEvents: 'none',
+                                    background: `radial-gradient(circle 240px at ${spotlightX}px ${spotlightY}px, 
+                                        rgba(0, 0, 0, 0) 0%, 
+                                        rgba(0, 0, 0, 0) 40%,
+                                        rgba(0, 0, 0, 0.7) 100%)`
+                                }}
+                            />
+                        );
+                    })()}
 
                     {/* Grid Images - LEGACY DOM RENDERING - Now handled by Map Canvas */}
                     {activeScene.grid?.enabled && false && (activeScene.images || []).filter(image => image.isGridImage).map(image => {
