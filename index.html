@@ -486,13 +486,13 @@
             const [talkingPlayers, setTalkingPlayers] = useState(new Set()); // Set of player IDs currently talking
             const [avatarContextMenu, setAvatarContextMenu] = useState(null); // { x, y, avatarId }
             const [dmAvatarContextMenu, setDmAvatarContextMenu] = useState(null); // { x, y }
-            const [micSensitivity, setMicSensitivity] = useState(0.02); // Default sensitivity (2%)
+            const [micSensitivity, setMicSensitivity] = useState(0.10); // Default sensitivity (10%)
             const audioContextRef = useRef(null);
             const audioStreamRef = useRef(null);
             const analyserRef = useRef(null);
             const animationFrameRef = useRef(null);
             const isTalkingRef = useRef(false);
-            const micSensitivityRef = useRef(0.02); // Track current sensitivity for detection loop
+            const micSensitivityRef = useRef(0.10); // Track current sensitivity for detection loop (10%)
             const talkingStopTimeoutRef = useRef(null); // Delay before deactivating talking state
             const [micEnabled, setMicEnabled] = useState(false);
 
@@ -1769,6 +1769,7 @@ useEffect(() => {
                         
                         // If this is our avatar, update our monitoring sensitivity
                         if (message.data.assignedPlayerId === myPeerIdRef.current && message.data.micSensitivity) {
+                            console.log(`Player received DM avatar sensitivity update: ${(message.data.micSensitivity * 100).toFixed(1)}%`);
                             setMicSensitivity(message.data.micSensitivity);
                             micSensitivityRef.current = message.data.micSensitivity; // Update ref
                         }
@@ -1817,18 +1818,23 @@ useEffect(() => {
                     
                     case 'AVATAR_SENSITIVITY':
                         // Update avatar sensitivity for all players
-                        setAvatars(prev => prev.map(av => 
-                            av.id === message.data.avatarId 
-                                ? { ...av, micSensitivity: message.data.sensitivity } 
-                                : av
-                        ));
-                        
-                        // If this is our avatar, update our monitoring
-                        const myAvatarSens = avatars.find(av => av.id === message.data.avatarId);
-                        if (myAvatarSens && myAvatarSens.assignedPlayerId === myPeerIdRef.current) {
-                            setMicSensitivity(message.data.sensitivity);
-                            micSensitivityRef.current = message.data.sensitivity; // Update ref
-                        }
+                        setAvatars(prev => {
+                            const updated = prev.map(av => 
+                                av.id === message.data.avatarId 
+                                    ? { ...av, micSensitivity: message.data.sensitivity } 
+                                    : av
+                            );
+                            
+                            // Check if this is our avatar and update monitoring immediately
+                            const myAvatar = updated.find(av => av.id === message.data.avatarId);
+                            if (myAvatar && myAvatar.assignedPlayerId === myPeerIdRef.current) {
+                                console.log(`Player received sensitivity update: ${(message.data.sensitivity * 100).toFixed(1)}%`);
+                                setMicSensitivity(message.data.sensitivity);
+                                micSensitivityRef.current = message.data.sensitivity;
+                            }
+                            
+                            return updated;
+                        });
                         
                         // If host, re-broadcast to all other players
                         if (isHostRef.current) {
@@ -2977,7 +2983,7 @@ const handleAvatarUpload = async (e) => {
                 height: 225,
                 name: `Player ${prev.length + 1}`,
                 flipped: false,
-                micSensitivity: 0.02 // Default 2% sensitivity
+                micSensitivity: 0.10 // Default 10% sensitivity
             };
             return [...prev, newAvatar];
         });
@@ -3132,32 +3138,22 @@ const handleAvatarUpload = async (e) => {
                 // Check if this is our avatar BEFORE updating state
                 const isOurAvatar = dmAvatar && dmAvatar.assignedPlayerId === myPeerIdRef.current;
                 
-                setDmAvatar(prev => ({ ...prev, micSensitivity: sensitivity }));
+                // Create updated avatar data
+                const updatedAvatar = { ...dmAvatar, micSensitivity: sensitivity };
+                
+                setDmAvatar(updatedAvatar);
                 
                 // If this is our avatar, update our monitoring sensitivity immediately
                 if (isOurAvatar) {
-                    console.log(`Updating DM avatar mic sensitivity to ${(sensitivity * 100).toFixed(1)}%`);
+                    console.log(`Host: Updating DM avatar mic sensitivity locally to ${(sensitivity * 100).toFixed(1)}%`);
                     setMicSensitivity(sensitivity);
                     micSensitivityRef.current = sensitivity; // Update ref for voice detection loop
                 }
                 
-                // Broadcast sensitivity to all players OR send to host
-                if (isConnectedRef.current) {
-                    const updated = { ...dmAvatar, micSensitivity: sensitivity };
-                    if (isHostRef.current) {
-                        // Host broadcasts to all players
-                        broadcastState('DM_AVATAR_UPDATE', updated);
-                    } else {
-                        // Player sends to host
-                        connectionsRef.current.forEach(conn => {
-                            if (conn && conn.open) {
-                                conn.send({
-                                    type: 'DM_AVATAR_UPDATE',
-                                    data: updated
-                                });
-                            }
-                        });
-                    }
+                // Broadcast sensitivity to all players
+                if (isConnectedRef.current && isHostRef.current) {
+                    console.log(`Host: Broadcasting DM avatar sensitivity ${(sensitivity * 100).toFixed(1)}% to all players`);
+                    broadcastState('DM_AVATAR_UPDATE', updatedAvatar);
                 }
             };
             
@@ -3172,27 +3168,15 @@ const handleAvatarUpload = async (e) => {
                 
                 // If this is our avatar, update our monitoring sensitivity immediately
                 if (isOurAvatar) {
-                    console.log(`Updating local mic sensitivity to ${(sensitivity * 100).toFixed(1)}%`);
+                    console.log(`Host: Updating local avatar mic sensitivity to ${(sensitivity * 100).toFixed(1)}%`);
                     setMicSensitivity(sensitivity);
                     micSensitivityRef.current = sensitivity; // Update ref for voice detection loop
                 }
                 
-                // Broadcast sensitivity to all players OR send to host
-                if (isConnectedRef.current) {
-                    if (isHostRef.current) {
-                        // Host broadcasts to all players
-                        broadcastState('AVATAR_SENSITIVITY', { avatarId, sensitivity });
-                    } else {
-                        // Player sends to host
-                        connectionsRef.current.forEach(conn => {
-                            if (conn && conn.open) {
-                                conn.send({
-                                    type: 'AVATAR_SENSITIVITY',
-                                    data: { avatarId, sensitivity }
-                                });
-                            }
-                        });
-                    }
+                // Broadcast sensitivity to all players (host only)
+                if (isConnectedRef.current && isHostRef.current) {
+                    console.log(`Host: Broadcasting avatar sensitivity ${(sensitivity * 100).toFixed(1)}% to all players`);
+                    broadcastState('AVATAR_SENSITIVITY', { avatarId, sensitivity });
                 }
             };
             
@@ -3833,7 +3817,7 @@ const handleHandoutUpload = async (e) => {
                     const avatarData = {
                         src: downscaledDataUrl,
                         name: 'DM Host',
-                        micSensitivity: 0.02 // Default 2% sensitivity
+                        micSensitivity: 0.10 // Default 10% sensitivity
                     };
                     
                     setDmAvatar(avatarData);
@@ -6959,7 +6943,7 @@ const handleHandoutUpload = async (e) => {
                                                     y: e.clientY,
                                                     avatarId: avatar.id,
                                                     assignedPlayerId: avatar.assignedPlayerId,
-                                                    micSensitivity: avatar.micSensitivity || 0.02
+                                                    micSensitivity: avatar.micSensitivity || 0.10
                                                 });
                                             }
                                         }}
@@ -7024,7 +7008,7 @@ const handleHandoutUpload = async (e) => {
                                         x: e.clientX,
                                         y: e.clientY,
                                         assignedPlayerId: dmAvatar.assignedPlayerId,
-                                        micSensitivity: dmAvatar.micSensitivity || 0.02
+                                        micSensitivity: dmAvatar.micSensitivity || 0.10
                                     });
                                 }
                             }}
@@ -10299,6 +10283,7 @@ const handleHandoutUpload = async (e) => {
                                         onChange={(e) => {
                                             const percentValue = parseInt(e.target.value);
                                             const sensitivity = percentValue / 100; // Convert 0-100 to 0.0-1.0
+                                            console.log(`Host setting DM avatar sensitivity to ${percentValue}%`);
                                             setDmAvatarContextMenu(prev => ({ ...prev, micSensitivity: sensitivity }));
                                             updateDmAvatarSensitivity(sensitivity);
                                         }}
@@ -10314,8 +10299,8 @@ const handleHandoutUpload = async (e) => {
                                         color: '#666',
                                         marginTop: '2px'
                                     }}>
-                                        <span>0%</span>
-                                        <span>100%</span>
+                                        <span>0% (Very Open)</span>
+                                        <span>100% (Muted)</span>
                                     </div>
                                 </div>
                                 
@@ -10453,6 +10438,7 @@ const handleHandoutUpload = async (e) => {
                                         onChange={(e) => {
                                             const percentValue = parseInt(e.target.value);
                                             const sensitivity = percentValue / 100; // Convert 0-100 to 0.0-1.0
+                                            console.log(`Host setting avatar sensitivity to ${percentValue}%`);
                                             setAvatarContextMenu(prev => ({ ...prev, micSensitivity: sensitivity }));
                                             updateAvatarSensitivity(avatarContextMenu.avatarId, sensitivity);
                                         }}
@@ -10468,8 +10454,8 @@ const handleHandoutUpload = async (e) => {
                                         color: '#666',
                                         marginTop: '2px'
                                     }}>
-                                        <span>0%</span>
-                                        <span>100%</span>
+                                        <span>0% (Very Open)</span>
+                                        <span>100% (Muted)</span>
                                     </div>
                                 </div>
                                 
