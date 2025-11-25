@@ -3129,10 +3129,14 @@ const handleAvatarUpload = async (e) => {
             };
             
             const updateDmAvatarSensitivity = (sensitivity) => {
+                // Check if this is our avatar BEFORE updating state
+                const isOurAvatar = dmAvatar && dmAvatar.assignedPlayerId === myPeerIdRef.current;
+                
                 setDmAvatar(prev => ({ ...prev, micSensitivity: sensitivity }));
                 
-                // If this is our avatar, update our monitoring sensitivity
-                if (dmAvatar && dmAvatar.assignedPlayerId === myPeerIdRef.current) {
+                // If this is our avatar, update our monitoring sensitivity immediately
+                if (isOurAvatar) {
+                    console.log(`Updating DM avatar mic sensitivity to ${(sensitivity * 100).toFixed(1)}%`);
                     setMicSensitivity(sensitivity);
                     micSensitivityRef.current = sensitivity; // Update ref for voice detection loop
                 }
@@ -3158,13 +3162,17 @@ const handleAvatarUpload = async (e) => {
             };
             
             const updateAvatarSensitivity = (avatarId, sensitivity) => {
+                // Check if this is our avatar BEFORE updating state
+                const avatar = avatars.find(av => av.id === avatarId);
+                const isOurAvatar = avatar && avatar.assignedPlayerId === myPeerIdRef.current;
+                
                 setAvatars(prev => prev.map(av => 
                     av.id === avatarId ? { ...av, micSensitivity: sensitivity } : av
                 ));
                 
-                // If this is our avatar, update our monitoring sensitivity
-                const avatar = avatars.find(av => av.id === avatarId);
-                if (avatar && avatar.assignedPlayerId === myPeerIdRef.current) {
+                // If this is our avatar, update our monitoring sensitivity immediately
+                if (isOurAvatar) {
+                    console.log(`Updating local mic sensitivity to ${(sensitivity * 100).toFixed(1)}%`);
                     setMicSensitivity(sensitivity);
                     micSensitivityRef.current = sensitivity; // Update ref for voice detection loop
                 }
