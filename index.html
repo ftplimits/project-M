@@ -1772,6 +1772,11 @@ useEffect(() => {
                             setMicSensitivity(message.data.micSensitivity);
                             micSensitivityRef.current = message.data.micSensitivity; // Update ref
                         }
+                        
+                        // If host, re-broadcast to all other players
+                        if (isHostRef.current) {
+                            broadcastState('DM_AVATAR_UPDATE', message.data);
+                        }
                         break;
                     
                     case 'DM_AVATAR_REMOVE':
@@ -1823,6 +1828,11 @@ useEffect(() => {
                         if (myAvatarSens && myAvatarSens.assignedPlayerId === myPeerIdRef.current) {
                             setMicSensitivity(message.data.sensitivity);
                             micSensitivityRef.current = message.data.sensitivity; // Update ref
+                        }
+                        
+                        // If host, re-broadcast to all other players
+                        if (isHostRef.current) {
+                            broadcastState('AVATAR_SENSITIVITY', message.data);
                         }
                         break;
                     
@@ -2966,7 +2976,8 @@ const handleAvatarUpload = async (e) => {
                 width: width,
                 height: 225,
                 name: `Player ${prev.length + 1}`,
-                flipped: false
+                flipped: false,
+                micSensitivity: 0.02 // Default 2% sensitivity
             };
             return [...prev, newAvatar];
         });
@@ -3126,10 +3137,23 @@ const handleAvatarUpload = async (e) => {
                     micSensitivityRef.current = sensitivity; // Update ref for voice detection loop
                 }
                 
-                // Broadcast sensitivity to all players
-                if (isConnectedRef.current && isHostRef.current) {
+                // Broadcast sensitivity to all players OR send to host
+                if (isConnectedRef.current) {
                     const updated = { ...dmAvatar, micSensitivity: sensitivity };
-                    broadcastState('DM_AVATAR_UPDATE', updated);
+                    if (isHostRef.current) {
+                        // Host broadcasts to all players
+                        broadcastState('DM_AVATAR_UPDATE', updated);
+                    } else {
+                        // Player sends to host
+                        connectionsRef.current.forEach(conn => {
+                            if (conn && conn.open) {
+                                conn.send({
+                                    type: 'DM_AVATAR_UPDATE',
+                                    data: updated
+                                });
+                            }
+                        });
+                    }
                 }
             };
             
@@ -3145,9 +3169,22 @@ const handleAvatarUpload = async (e) => {
                     micSensitivityRef.current = sensitivity; // Update ref for voice detection loop
                 }
                 
-                // Broadcast sensitivity to all players
-                if (isConnectedRef.current && isHostRef.current) {
-                    broadcastState('AVATAR_SENSITIVITY', { avatarId, sensitivity });
+                // Broadcast sensitivity to all players OR send to host
+                if (isConnectedRef.current) {
+                    if (isHostRef.current) {
+                        // Host broadcasts to all players
+                        broadcastState('AVATAR_SENSITIVITY', { avatarId, sensitivity });
+                    } else {
+                        // Player sends to host
+                        connectionsRef.current.forEach(conn => {
+                            if (conn && conn.open) {
+                                conn.send({
+                                    type: 'AVATAR_SENSITIVITY',
+                                    data: { avatarId, sensitivity }
+                                });
+                            }
+                        });
+                    }
                 }
             };
             
@@ -3787,7 +3824,8 @@ const handleHandoutUpload = async (e) => {
                     
                     const avatarData = {
                         src: downscaledDataUrl,
-                        name: 'DM Host'
+                        name: 'DM Host',
+                        micSensitivity: 0.02 // Default 2% sensitivity
                     };
                     
                     setDmAvatar(avatarData);
