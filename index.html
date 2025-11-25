@@ -10242,16 +10242,17 @@ const handleHandoutUpload = async (e) => {
                                         display: 'block',
                                         marginBottom: '4px'
                                     }}>
-                                        Mic Sensitivity: {Math.round(dmAvatarContextMenu.micSensitivity * 100)}
+                                        Mic Sensitivity: {Math.round(dmAvatarContextMenu.micSensitivity * 100)}%
                                     </label>
                                     <input
                                         type="range"
-                                        min="0.01"
-                                        max="0.7"
-                                        step="0.01"
-                                        value={dmAvatarContextMenu.micSensitivity}
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        value={Math.round(dmAvatarContextMenu.micSensitivity * 100)}
                                         onChange={(e) => {
-                                            const sensitivity = parseFloat(e.target.value);
+                                            const percentValue = parseInt(e.target.value);
+                                            const sensitivity = percentValue / 100; // Convert 0-100 to 0.0-1.0
                                             setDmAvatarContextMenu(prev => ({ ...prev, micSensitivity: sensitivity }));
                                             updateDmAvatarSensitivity(sensitivity);
                                         }}
@@ -10267,8 +10268,8 @@ const handleHandoutUpload = async (e) => {
                                         color: '#666',
                                         marginTop: '2px'
                                     }}>
-                                        <span>Quiet</span>
-                                        <span>Loud</span>
+                                        <span>0%</span>
+                                        <span>100%</span>
                                     </div>
                                 </div>
                                 
@@ -10395,16 +10396,17 @@ const handleHandoutUpload = async (e) => {
                                         display: 'block',
                                         marginBottom: '4px'
                                     }}>
-                                        Mic Sensitivity: {Math.round(avatarContextMenu.micSensitivity * 100)}
+                                        Mic Sensitivity: {Math.round(avatarContextMenu.micSensitivity * 100)}%
                                     </label>
                                     <input
                                         type="range"
-                                        min="0.01"
-                                        max="0.2"
-                                        step="0.005"
-                                        value={avatarContextMenu.micSensitivity}
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        value={Math.round(avatarContextMenu.micSensitivity * 100)}
                                         onChange={(e) => {
-                                            const sensitivity = parseFloat(e.target.value);
+                                            const percentValue = parseInt(e.target.value);
+                                            const sensitivity = percentValue / 100; // Convert 0-100 to 0.0-1.0
                                             setAvatarContextMenu(prev => ({ ...prev, micSensitivity: sensitivity }));
                                             updateAvatarSensitivity(avatarContextMenu.avatarId, sensitivity);
                                         }}
@@ -10420,8 +10422,8 @@ const handleHandoutUpload = async (e) => {
                                         color: '#666',
                                         marginTop: '2px'
                                     }}>
-                                        <span>Quiet</span>
-                                        <span>Loud</span>
+                                        <span>0%</span>
+                                        <span>100%</span>
                                     </div>
                                 </div>
                                 
