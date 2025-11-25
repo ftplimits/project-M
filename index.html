@@ -1,5 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
+<!--
+    MONOMYTH VTT - V 0.80
+    - Added Fog of War system with three tools:
+      * FOG: Draw filled polyline fog shapes (click points, right-click to finish)
+      * STATE: Toggle individual fog shapes between visible/hidden (revealed)
+      * CUT: Delete fog shapes by clicking them
+    - Fog appears as 50% black for host (with red outlines), 100% black for players
+    - Fog renders above tokens (true fog of war)
+    - Fog syncs across multiplayer sessions
+    - Fog persists in save/load/export/import
+-->
     
     <link rel="shortcut icon" type="image/png" href="favicon.png">
     
@@ -3375,10 +3386,50 @@ const handleAvatarUpload = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Create context menu - position it lower on screen
+    // Menu dimensions (measured from actual content)
+    const menuWidth = 220;  // Approximate width of the menu with padding
+    const menuHeight = 750; // Approximate height - this menu is quite tall!
+    const padding = 10;     // Padding from screen edges
+    const cursorOffset = 5; // Small offset from cursor
+    
+    // Get viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Get cursor position
+    const cursorX = e.clientX;
+    const cursorY = e.clientY;
+    
+    // Calculate X position
+    let x = cursorX + cursorOffset;
+    
+    // Check if menu would go off right edge
+    if (x + menuWidth + padding > viewportWidth) {
+        // Position to left of cursor instead
+        x = cursorX - menuWidth - cursorOffset;
+        // If still off-screen, clamp to padding
+        if (x < padding) {
+            x = padding;
+        }
+    }
+    
+    // Calculate Y position
+    let y = cursorY;
+    
+    // Check if menu would go off bottom edge
+    if (y + menuHeight + padding > viewportHeight) {
+        // Try to position so bottom aligns with viewport bottom
+        y = viewportHeight - menuHeight - padding;
+        // If that puts it off the top, clamp to padding
+        if (y < padding) {
+            y = padding;
+        }
+    }
+    
+    // Create context menu with smart positioning
     setDiceCountMenu({
-        x: e.clientX,
-        y: e.clientY - 350,  // Adjust this value to move menu up/down (lower number = higher on screen)
+        x: x,
+        y: y,
         tokenId: tokenId,
         isTokenMenu: true
     });
@@ -8723,7 +8774,9 @@ const handleHandoutUpload = async (e) => {
             boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '4px'
+            gap: '4px',
+            maxHeight: 'calc(100vh - 20px)',
+            overflowY: 'auto'
         }}>
             {/* Token Menu */}
             {/* Token Menu */}
