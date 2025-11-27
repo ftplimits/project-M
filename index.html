@@ -1,7 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    MONOMYTH VTT - V 0.80
+    MONOMYTH VTT - V 0.90 "VOICE ACTIVITY DETECTION"
+    🎙️ MAJOR FEATURE: Advanced Voice Activity Detection (VAD)
+    - Auto-Sensitivity mode uses multi-feature speech detection algorithm
+    - Analyzes energy, spectral bands (300-3400Hz), zero-crossing rate, and spectral flux
+    - 3-second calibration learns background noise floor automatically
+    - Adaptive threshold adjusts to changing environments
+    - Reduces false positives from background noise, keyboard typing, etc.
+    - Toggle between Auto (VAD) and Manual sensitivity modes
+    - Re-calibrate button for changing environments
+    - VAD enabled by default for best user experience
+    
+    Previous updates:
+    - Fixed avatar "jitter" by adding smooth transitions to talking state (200ms ease-out)
+    - Prevented bouncing animation from conflicting with talking state
+    - Added smooth transitions to border glow effects
+    - Reduced verbose console logging for voice detection
+    - Increased avatar animation stop delay from 0.5s to 1.0s for smoother transitions
     - Added Fog of War system with three tools:
       * FOG: Draw filled polyline fog shapes (click points, right-click to finish)
       * STATE: Toggle individual fog shapes between visible/hidden (revealed)
@@ -84,6 +100,12 @@
             animation: avatar-bounce 420ms cubic-bezier(.2,.8,.2,1);
             z-index: 9999;
         }
+        
+        /* Prevent bouncing animation when talking - talking state takes priority */
+        .avatar.bouncing.talking {
+            animation: none;
+        }
+        
         @keyframes avatar-bounce {
             0% { transform: translateY(0) scale(1); }
             25% { transform: translateY(-18px) scale(1.06); }
@@ -102,6 +124,7 @@
         .avatar.talking {
             transform: translateY(-15px) scale(1.15);
             filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
+            transition: transform 200ms ease-out, filter 200ms ease-out;
         }
         
         /* When DM avatar is both floating and talking, stay elevated */
@@ -109,11 +132,13 @@
             animation: none;
             transform: translateY(-50%) translateY(-15px) scale(1.15);
             filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
+            transition: transform 200ms ease-out, filter 200ms ease-out;
         }
 
         .avatar.talking img {
             border: 4px solid #d4af37 !important;
             box-shadow: 0 0 25px rgba(212, 175, 55, 0.9), inset 0 0 20px rgba(212, 175, 55, 0.3) !important;
+            transition: border 200ms ease-out, box-shadow 200ms ease-out;
         }
 
         .avatar.flipped img {
@@ -461,7 +486,8 @@
                         enabled: false,
                         size: 50,
                         color: '#f5f5f5'
-                    }
+                    },
+                    weatherEffect: null // 'rain', 'snow', 'embers', or null
                 }))
             );
             const [avatars, setAvatars] = useState([]);
@@ -487,6 +513,8 @@
             const [avatarContextMenu, setAvatarContextMenu] = useState(null); // { x, y, avatarId }
             const [dmAvatarContextMenu, setDmAvatarContextMenu] = useState(null); // { x, y }
             const [micSensitivity, setMicSensitivity] = useState(0.10); // Default sensitivity (10%)
+            const [autoSensitivity, setAutoSensitivity] = useState(true); // Auto VAD mode enabled by default
+            const [vadCalibrated, setVadCalibrated] = useState(false); // Whether VAD has been calibrated
             const audioContextRef = useRef(null);
             const audioStreamRef = useRef(null);
             const analyserRef = useRef(null);
@@ -495,6 +523,21 @@
             const micSensitivityRef = useRef(0.10); // Track current sensitivity for detection loop (10%)
             const talkingStopTimeoutRef = useRef(null); // Delay before deactivating talking state
             const [micEnabled, setMicEnabled] = useState(false);
+            
+            // VAD (Voice Activity Detection) state
+            const vadStateRef = useRef({
+                noiseFloor: 0,          // Baseline noise level
+                noiseSamples: [],       // Rolling window of noise samples
+                energyThreshold: 0.015, // Dynamic energy threshold
+                zeroCrossingRate: 0,    // Current zero-crossing rate
+                spectralFlux: 0,        // Rate of spectral change
+                speechBands: [0, 0, 0], // Energy in speech frequency bands (300-1000Hz, 1000-2000Hz, 2000-3400Hz)
+                lastUpdateTime: 0,
+                calibrationSamples: [],
+                isCalibrating: false,
+                framesSinceSpeech: 0,   // Frames since last speech detected
+                consecutiveSpeechFrames: 0, // Consecutive frames of speech detected
+            });
 
             const [gridTransform, setGridTransform] = useState({
                 zoom: 1.5,
@@ -520,6 +563,9 @@
             const [fogTool, setFogTool] = useState(null); // 'draw', 'state', 'cut'
             const [currentFogShape, setCurrentFogShape] = useState(null);
             const fogCanvasRef = useRef(null);
+            
+            // Weather effects ref
+            const weatherCanvasRef = useRef(null);
             
             // Text tool state
             const [textToolSettings, setTextToolSettings] = useState({
@@ -1853,19 +1899,16 @@ useEffect(() => {
                     
                     case 'PLAYER_TALKING_START':
                         // Mark player as talking
-                        console.log(`Received PLAYER_TALKING_START for player: ${message.data.playerId}`);
                         setTalkingPlayers(prev => new Set([...prev, message.data.playerId]));
                         
                         // If host, re-broadcast to all other players
                         if (isHostRef.current) {
-                            console.log('Host re-broadcasting PLAYER_TALKING_START');
                             broadcastState('PLAYER_TALKING_START', message.data);
                         }
                         break;
                     
                     case 'PLAYER_TALKING_STOP':
                         // Mark player as not talking
-                        console.log(`Received PLAYER_TALKING_STOP for player: ${message.data.playerId}`);
                         setTalkingPlayers(prev => {
                             const newSet = new Set(prev);
                             newSet.delete(message.data.playerId);
@@ -1874,7 +1917,6 @@ useEffect(() => {
                         
                         // If host, re-broadcast to all other players
                         if (isHostRef.current) {
-                            console.log('Host re-broadcasting PLAYER_TALKING_STOP');
                             broadcastState('PLAYER_TALKING_STOP', message.data);
                         }
                         break;
@@ -2835,6 +2877,19 @@ useEffect(() => {
                 }
             };
 
+            const handleSceneWeather = (effect) => {
+                if (contextMenu) {
+                    const updatedScenes = scenes.map((s, i) => 
+                        i === contextMenu.sceneIndex 
+                            ? { ...s, weatherEffect: effect } 
+                            : s
+                    );
+                    setScenes(updatedScenes);
+                    broadcastState('SCENE_IMAGE_UPDATE', filterScenesForPlayers(updatedScenes));
+                    setContextMenu(null);
+                }
+            };
+
             const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !file.type.startsWith('image/')) return;
@@ -3191,17 +3246,194 @@ const handleAvatarUpload = async (e) => {
                     
                     const source = audioContext.createMediaStreamSource(stream);
                     const analyser = audioContext.createAnalyser();
-                    analyser.fftSize = 256;
+                    analyser.fftSize = 2048; // Higher resolution for better frequency analysis
+                    analyser.smoothingTimeConstant = 0.3; // Moderate smoothing
                     source.connect(analyser);
                     analyserRef.current = analyser;
                     
                     setMicEnabled(true);
                     console.log('Microphone access granted, starting voice detection...');
-                    startVoiceDetection();
+                    
+                    // Start calibration if auto mode is enabled
+                    if (autoSensitivity) {
+                        console.log('🎙️ Auto-sensitivity enabled, starting VAD calibration...');
+                        startVadCalibration();
+                    } else {
+                        startVoiceDetection();
+                    }
                 } catch (error) {
                     console.error('Microphone permission denied:', error);
                     alert('Microphone access denied. Voice animations will not work for your avatar.');
                 }
+            };
+            
+            // VAD Calibration - Learn the noise floor
+            const startVadCalibration = () => {
+                if (!analyserRef.current) return;
+                
+                console.log('📊 VAD Calibration: Analyzing background noise for 3 seconds...');
+                vadStateRef.current.isCalibrating = true;
+                vadStateRef.current.calibrationSamples = [];
+                
+                const analyser = analyserRef.current;
+                const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+                const timeDomainData = new Uint8Array(analyser.fftSize);
+                let calibrationFrames = 0;
+                const targetFrames = 180; // ~3 seconds at 60fps
+                
+                const calibrate = () => {
+                    analyser.getByteFrequencyData(frequencyData);
+                    analyser.getByteTimeDomainData(timeDomainData);
+                    
+                    // Calculate energy
+                    const energy = frequencyData.reduce((sum, val) => sum + val, 0) / frequencyData.length / 255;
+                    vadStateRef.current.calibrationSamples.push(energy);
+                    
+                    calibrationFrames++;
+                    
+                    if (calibrationFrames < targetFrames) {
+                        requestAnimationFrame(calibrate);
+                    } else {
+                        // Calibration complete - calculate noise floor
+                        const samples = vadStateRef.current.calibrationSamples;
+                        samples.sort((a, b) => a - b);
+                        
+                        // Use median of lower 60% as noise floor (robust to occasional sounds)
+                        const noiseFloorIdx = Math.floor(samples.length * 0.6);
+                        vadStateRef.current.noiseFloor = samples[noiseFloorIdx];
+                        
+                        // Set threshold at 2.5x noise floor (adaptive)
+                        vadStateRef.current.energyThreshold = vadStateRef.current.noiseFloor * 2.5;
+                        
+                        vadStateRef.current.isCalibrating = false;
+                        setVadCalibrated(true);
+                        
+                        console.log(`✅ VAD Calibration complete!`);
+                        console.log(`   Noise floor: ${(vadStateRef.current.noiseFloor * 100).toFixed(2)}%`);
+                        console.log(`   Speech threshold: ${(vadStateRef.current.energyThreshold * 100).toFixed(2)}%`);
+                        
+                        // Start normal voice detection
+                        startVoiceDetection();
+                    }
+                };
+                
+                calibrate();
+            };
+            
+            // Advanced VAD Algorithm - Multi-feature speech detection
+            const detectSpeechVad = (analyser) => {
+                const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+                const timeDomainData = new Uint8Array(analyser.fftSize);
+                
+                analyser.getByteFrequencyData(frequencyData);
+                analyser.getByteTimeDomainData(timeDomainData);
+                
+                const vad = vadStateRef.current;
+                
+                // 1. ENERGY DETECTION
+                const totalEnergy = frequencyData.reduce((sum, val) => sum + val, 0) / frequencyData.length / 255;
+                
+                // 2. SPECTRAL ANALYSIS - Energy in speech frequency bands
+                // Human speech is typically 300-3400 Hz
+                const binWidth = (audioContextRef.current.sampleRate / 2) / analyser.frequencyBinCount;
+                
+                const getLowBand = () => { // 300-1000 Hz
+                    const start = Math.floor(300 / binWidth);
+                    const end = Math.floor(1000 / binWidth);
+                    let sum = 0;
+                    for (let i = start; i < end && i < frequencyData.length; i++) {
+                        sum += frequencyData[i];
+                    }
+                    return sum / (end - start) / 255;
+                };
+                
+                const getMidBand = () => { // 1000-2000 Hz
+                    const start = Math.floor(1000 / binWidth);
+                    const end = Math.floor(2000 / binWidth);
+                    let sum = 0;
+                    for (let i = start; i < end && i < frequencyData.length; i++) {
+                        sum += frequencyData[i];
+                    }
+                    return sum / (end - start) / 255;
+                };
+                
+                const getHighBand = () => { // 2000-3400 Hz
+                    const start = Math.floor(2000 / binWidth);
+                    const end = Math.floor(3400 / binWidth);
+                    let sum = 0;
+                    for (let i = start; i < end && i < frequencyData.length; i++) {
+                        sum += frequencyData[i];
+                    }
+                    return sum / (end - start) / 255;
+                };
+                
+                const lowBand = getLowBand();
+                const midBand = getMidBand();
+                const highBand = getHighBand();
+                
+                // 3. ZERO CROSSING RATE - Speech has moderate ZCR
+                let zeroCrossings = 0;
+                for (let i = 1; i < timeDomainData.length; i++) {
+                    if ((timeDomainData[i] >= 128 && timeDomainData[i - 1] < 128) ||
+                        (timeDomainData[i] < 128 && timeDomainData[i - 1] >= 128)) {
+                        zeroCrossings++;
+                    }
+                }
+                const zcr = zeroCrossings / timeDomainData.length;
+                
+                // 4. SPECTRAL FLUX - Detect changes in frequency content
+                const currentFlux = Math.abs(lowBand - vad.speechBands[0]) +
+                                   Math.abs(midBand - vad.speechBands[1]) +
+                                   Math.abs(highBand - vad.speechBands[2]);
+                
+                vad.speechBands = [lowBand, midBand, highBand];
+                vad.spectralFlux = currentFlux;
+                vad.zeroCrossingRate = zcr;
+                
+                // Update rolling noise floor during silence
+                if (vad.framesSinceSpeech > 120) { // Update after 2 seconds of silence
+                    if (vad.noiseSamples.length > 60) {
+                        vad.noiseSamples.shift();
+                    }
+                    vad.noiseSamples.push(totalEnergy);
+                    
+                    // Recalculate noise floor from recent samples
+                    if (vad.noiseSamples.length >= 30) {
+                        const sorted = [...vad.noiseSamples].sort((a, b) => a - b);
+                        vad.noiseFloor = sorted[Math.floor(sorted.length * 0.6)];
+                        vad.energyThreshold = vad.noiseFloor * 2.5;
+                    }
+                }
+                
+                // SPEECH DETECTION LOGIC
+                // Speech typically has:
+                // - Energy above threshold
+                // - Strong presence in speech frequency bands (especially mid)
+                // - Moderate ZCR (0.05-0.30)
+                // - Spectral flux (changing frequency content)
+                
+                const energyCheck = totalEnergy > vad.energyThreshold;
+                const speechBandCheck = (lowBand > vad.noiseFloor * 2) || 
+                                       (midBand > vad.noiseFloor * 2.5) || 
+                                       (highBand > vad.noiseFloor * 2);
+                const zcrCheck = zcr > 0.05 && zcr < 0.30;
+                const fluxCheck = vad.spectralFlux > 0.02;
+                
+                // Require at least 3 of 4 features for speech detection
+                const featureScore = [energyCheck, speechBandCheck, zcrCheck, fluxCheck].filter(x => x).length;
+                const isSpeech = featureScore >= 3;
+                
+                // Update speech tracking
+                if (isSpeech) {
+                    vad.consecutiveSpeechFrames++;
+                    vad.framesSinceSpeech = 0;
+                } else {
+                    vad.consecutiveSpeechFrames = 0;
+                    vad.framesSinceSpeech++;
+                }
+                
+                // Require 3 consecutive frames of speech to activate (reduce false positives)
+                return vad.consecutiveSpeechFrames >= 3;
             };
             
             const startVoiceDetection = () => {
@@ -3213,23 +3445,20 @@ const handleAvatarUpload = async (e) => {
                 let frameCount = 0;
                 
                 const detectVoice = () => {
-                    analyser.getByteFrequencyData(dataArray);
+                    let isTalking = false;
                     
-                    // Calculate average volume
-                    const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
-                    const normalizedVolume = average / 255;
-                    
-                    // Log every 60 frames (about once per second at 60fps)
-                    if (frameCount % 60 === 0) {
-                        console.log(`Voice level: ${(normalizedVolume * 100).toFixed(1)}% | Sensitivity: ${(micSensitivityRef.current * 100).toFixed(1)}% | Talking: ${isTalkingRef.current}`);
+                    // Use VAD or manual sensitivity based on mode
+                    if (autoSensitivity && vadCalibrated) {
+                        // Advanced VAD algorithm
+                        isTalking = detectSpeechVad(analyser);
+                    } else {
+                        // Simple threshold-based detection (manual mode)
+                        analyser.getByteFrequencyData(dataArray);
+                        const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+                        const normalizedVolume = average / 255;
+                        const sensitivity = micSensitivityRef.current;
+                        isTalking = normalizedVolume > sensitivity;
                     }
-                    frameCount++;
-                    
-                    // Use the sensitivity from the ref (updated by slider)
-                    const sensitivity = micSensitivityRef.current;
-                    
-                    // Check if talking
-                    const isTalking = normalizedVolume > sensitivity;
                     
                     // Only broadcast state changes
                     if (isTalking !== isTalkingRef.current) {
@@ -3242,7 +3471,7 @@ const handleAvatarUpload = async (e) => {
                             }
                             
                             isTalkingRef.current = true;
-                            console.log(`Voice state changed: TALKING (volume: ${(normalizedVolume * 100).toFixed(1)}%)`);
+                            console.log(`🗣️ Voice state changed: TALKING ${autoSensitivity ? '(VAD)' : '(Manual)'}`);
                             
                             // Update local state immediately
                             setTalkingPlayers(prev => new Set([...prev, myPeerIdRef.current]));
@@ -3251,10 +3480,8 @@ const handleAvatarUpload = async (e) => {
                             const messageData = { playerId: myPeerIdRef.current };
                             if (isConnectedRef.current) {
                                 if (isHostRef.current) {
-                                    console.log(`Host broadcasting PLAYER_TALKING_START`);
                                     broadcastState('PLAYER_TALKING_START', messageData);
                                 } else {
-                                    console.log(`Player sending PLAYER_TALKING_START to host`);
                                     connectionsRef.current[0]?.send({
                                         type: 'PLAYER_TALKING_START',
                                         data: messageData
@@ -3265,12 +3492,11 @@ const handleAvatarUpload = async (e) => {
                             }
                             
                         } else {
-                            // Stopped talking - delay deactivation by 500ms to prevent flickering
-                            console.log(`Voice dropped below threshold, waiting 500ms before deactivating...`);
+                            // Stopped talking - delay deactivation by 1 second to prevent flickering
                             
                             talkingStopTimeoutRef.current = setTimeout(() => {
                                 isTalkingRef.current = false;
-                                console.log(`Voice state changed: STOPPED (after delay)`);
+                                console.log(`🤐 Voice state changed: STOPPED (after delay)`);
                                 
                                 // Update local state
                                 setTalkingPlayers(prev => {
@@ -3283,10 +3509,8 @@ const handleAvatarUpload = async (e) => {
                                 const messageData = { playerId: myPeerIdRef.current };
                                 if (isConnectedRef.current) {
                                     if (isHostRef.current) {
-                                        console.log(`Host broadcasting PLAYER_TALKING_STOP`);
                                         broadcastState('PLAYER_TALKING_STOP', messageData);
                                     } else {
-                                        console.log(`Player sending PLAYER_TALKING_STOP to host`);
                                         connectionsRef.current[0]?.send({
                                             type: 'PLAYER_TALKING_STOP',
                                             data: messageData
@@ -3297,7 +3521,7 @@ const handleAvatarUpload = async (e) => {
                                 }
                                 
                                 talkingStopTimeoutRef.current = null;
-                            }, 500); // 0.5 second delay
+                            }, 1000); // 1 second delay
                         }
                     }
                     
@@ -5187,6 +5411,99 @@ const handleHandoutUpload = async (e) => {
                 
             }, [fogShapes, currentFogShape, activeScene.grid?.enabled, gridTransform, isHost]);
             
+            // Weather Effects Rendering
+            useEffect(() => {
+                const canvas = weatherCanvasRef.current;
+                if (!canvas || !activeScene.weatherEffect || activeScene.grid?.enabled) return;
+
+                const ctx = canvas.getContext('2d');
+                const particles = [];
+                const particleCount = activeScene.weatherEffect === 'embers' ? 50 : 150;
+
+                const resizeCanvas = () => {
+                    const rect = canvas.getBoundingClientRect();
+                    const dpr = window.devicePixelRatio || 1;
+                    canvas.width = rect.width * dpr;
+                    canvas.height = rect.height * dpr;
+                    ctx.scale(dpr, dpr);
+                };
+
+                resizeCanvas();
+
+                // Initialize particles
+                for (let i = 0; i < particleCount; i++) {
+                    particles.push({
+                        x: Math.random() * canvas.width,
+                        y: Math.random() * canvas.height,
+                        speed: activeScene.weatherEffect === 'rain' 
+                            ? 3 + Math.random() * 5 
+                            : activeScene.weatherEffect === 'snow'
+                            ? 1 + Math.random() * 2
+                            : -0.5 - Math.random() * 1, // embers rise
+                        size: activeScene.weatherEffect === 'rain'
+                            ? 1 + Math.random() * 2
+                            : activeScene.weatherEffect === 'snow'
+                            ? 3 + Math.random() * 3
+                            : 2 + Math.random() * 3,
+                        opacity: 0.3 + Math.random() * 0.7,
+                        drift: activeScene.weatherEffect === 'snow' ? (Math.random() - 0.5) * 0.5 : 0
+                    });
+                }
+
+                let animationFrameId;
+                const animate = () => {
+                    const rect = canvas.getBoundingClientRect();
+                    ctx.clearRect(0, 0, rect.width, rect.height);
+
+                    particles.forEach(particle => {
+                        if (activeScene.weatherEffect === 'rain') {
+                            ctx.fillStyle = `rgba(174, 194, 224, ${particle.opacity})`;
+                            ctx.fillRect(particle.x, particle.y, particle.size, 10);
+                        } else if (activeScene.weatherEffect === 'snow') {
+                            ctx.fillStyle = `rgba(255, 255, 255, ${particle.opacity})`;
+                            ctx.beginPath();
+                            ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else if (activeScene.weatherEffect === 'embers') {
+                            const gradient = ctx.createRadialGradient(
+                                particle.x, particle.y, 0,
+                                particle.x, particle.y, particle.size
+                            );
+                            gradient.addColorStop(0, `rgba(255, 220, 100, ${particle.opacity})`);
+                            gradient.addColorStop(0.5, `rgba(255, 140, 50, ${particle.opacity * 0.8})`);
+                            gradient.addColorStop(1, `rgba(200, 50, 20, 0)`);
+                            ctx.fillStyle = gradient;
+                            ctx.beginPath();
+                            ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                        // Update position
+                        particle.y += particle.speed;
+                        particle.x += particle.drift;
+
+                        // Wrap around
+                        if (activeScene.weatherEffect === 'embers') {
+                            if (particle.y < 0) particle.y = rect.height;
+                        } else {
+                            if (particle.y > rect.height) particle.y = 0;
+                        }
+                        if (particle.x > rect.width) particle.x = 0;
+                        if (particle.x < 0) particle.x = rect.width;
+                    });
+
+                    animationFrameId = requestAnimationFrame(animate);
+                };
+
+                animate();
+                window.addEventListener('resize', resizeCanvas);
+
+                return () => {
+                    cancelAnimationFrame(animationFrameId);
+                    window.removeEventListener('resize', resizeCanvas);
+                };
+            }, [activeScene.weatherEffect, activeScene.grid?.enabled]);
+            
             // Layer 5: UI Canvas - renders pointer and measurement (60fps when active)
             useEffect(() => {
                 const canvas = uiCanvasRef.current;
@@ -6784,6 +7101,42 @@ const handleHandoutUpload = async (e) => {
                             >
                                 Change Scene Name
                             </button>
+                            <div className="border-t border-amber-700 my-1"></div>
+                            <div className="px-4 py-1 text-amber-600 text-sm font-bold" style={{ fontFamily: 'Georgia, serif' }}>
+                                Weather Effects
+                            </div>
+                            <button
+                                onClick={() => handleSceneWeather(null)}
+                                className="px-4 py-2 text-amber-500 hover:bg-zinc-700 w-full text-left"
+                                style={{ fontFamily: 'Georgia, serif' }}
+                                disabled={!isHost && isConnected}
+                            >
+                                ⭕ None
+                            </button>
+                            <button
+                                onClick={() => handleSceneWeather('rain')}
+                                className="px-4 py-2 text-amber-500 hover:bg-zinc-700 w-full text-left"
+                                style={{ fontFamily: 'Georgia, serif' }}
+                                disabled={!isHost && isConnected}
+                            >
+                                🌧️ Rain
+                            </button>
+                            <button
+                                onClick={() => handleSceneWeather('snow')}
+                                className="px-4 py-2 text-amber-500 hover:bg-zinc-700 w-full text-left"
+                                style={{ fontFamily: 'Georgia, serif' }}
+                                disabled={!isHost && isConnected}
+                            >
+                                ❄️ Snow
+                            </button>
+                            <button
+                                onClick={() => handleSceneWeather('embers')}
+                                className="px-4 py-2 text-amber-500 hover:bg-zinc-700 w-full text-left"
+                                style={{ fontFamily: 'Georgia, serif' }}
+                                disabled={!isHost && isConnected}
+                            >
+                                🔥 Embers
+                            </button>
                         </div>
                     )}
 
@@ -6799,6 +7152,22 @@ const handleHandoutUpload = async (e) => {
                                 filter: activeScene.grid?.enabled ? 'brightness(0.1)' : 'none'
                             }}
                         >
+                            {/* Weather Effects Canvas */}
+                            {activeScene.weatherEffect && !activeScene.grid?.enabled && (
+                                <canvas
+                                    ref={weatherCanvasRef}
+                                    style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        pointerEvents: 'none',
+                                        zIndex: 100
+                                    }}
+                                />
+                            )}
+
                             {(!activeScene.images || activeScene.images.length === 0) && (
                                 <div className="absolute inset-0 flex items-center justify-center">
                                     <button
@@ -10261,7 +10630,84 @@ const handleHandoutUpload = async (e) => {
                                     </select>
                                 </div>
                                 
-                                {/* Mic Sensitivity Slider */}
+                                {/* Auto-Sensitivity Toggle */}
+                                <div style={{
+                                    marginBottom: '12px',
+                                    padding: '8px',
+                                    backgroundColor: '#1a1a1a',
+                                    borderRadius: '4px',
+                                    border: '1px solid #333'
+                                }}>
+                                    <label style={{
+                                        color: '#d4af37',
+                                        fontSize: '11px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        cursor: 'pointer',
+                                        marginBottom: '4px'
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={autoSensitivity}
+                                            onChange={(e) => {
+                                                const newAutoMode = e.target.checked;
+                                                setAutoSensitivity(newAutoMode);
+                                                
+                                                if (newAutoMode && micEnabled) {
+                                                    console.log('🎙️ Switching to Auto-Sensitivity (VAD) mode');
+                                                    stopVoiceDetection();
+                                                    startVadCalibration();
+                                                } else {
+                                                    console.log('📊 Switching to Manual Sensitivity mode');
+                                                    if (micEnabled) {
+                                                        stopVoiceDetection();
+                                                        startVoiceDetection();
+                                                    }
+                                                }
+                                            }}
+                                            style={{ cursor: 'pointer' }}
+                                        />
+                                        <span style={{ fontWeight: 'bold' }}>🤖 Auto-Sensitivity (VAD)</span>
+                                    </label>
+                                    {autoSensitivity && (
+                                        <div style={{
+                                            fontSize: '9px',
+                                            color: vadCalibrated ? '#4ade80' : '#fbbf24',
+                                            marginTop: '4px',
+                                            paddingLeft: '20px'
+                                        }}>
+                                            {vadCalibrated ? '✓ Calibrated & Active' : '⏳ Calibrating...'}
+                                        </div>
+                                    )}
+                                    {autoSensitivity && vadCalibrated && (
+                                        <button
+                                            onClick={() => {
+                                                console.log('🔄 Re-calibrating VAD...');
+                                                stopVoiceDetection();
+                                                setVadCalibrated(false);
+                                                startVadCalibration();
+                                            }}
+                                            style={{
+                                                marginTop: '6px',
+                                                padding: '4px 8px',
+                                                fontSize: '10px',
+                                                backgroundColor: '#333',
+                                                color: '#d4af37',
+                                                border: '1px solid #555',
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                width: '100%'
+                                            }}
+                                        >
+                                            🔄 Re-calibrate
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {/* Mic Sensitivity Slider - Only show in manual mode */}
+                                {!autoSensitivity && (
                                 <div style={{
                                     marginBottom: '12px'
                                 }}>
@@ -10303,6 +10749,7 @@ const handleHandoutUpload = async (e) => {
                                         <span>100% (Muted)</span>
                                     </div>
                                 </div>
+                                )}
                                 
                                 {/* Delete DM Avatar Button */}
                                 <button
@@ -10416,7 +10863,84 @@ const handleHandoutUpload = async (e) => {
                                     </select>
                                 </div>
                                 
-                                {/* Mic Sensitivity Slider */}
+                                {/* Auto-Sensitivity Toggle */}
+                                <div style={{
+                                    marginBottom: '12px',
+                                    padding: '8px',
+                                    backgroundColor: '#1a1a1a',
+                                    borderRadius: '4px',
+                                    border: '1px solid #333'
+                                }}>
+                                    <label style={{
+                                        color: '#d4af37',
+                                        fontSize: '11px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        cursor: 'pointer',
+                                        marginBottom: '4px'
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={autoSensitivity}
+                                            onChange={(e) => {
+                                                const newAutoMode = e.target.checked;
+                                                setAutoSensitivity(newAutoMode);
+                                                
+                                                if (newAutoMode && micEnabled) {
+                                                    console.log('🎙️ Switching to Auto-Sensitivity (VAD) mode');
+                                                    stopVoiceDetection();
+                                                    startVadCalibration();
+                                                } else {
+                                                    console.log('📊 Switching to Manual Sensitivity mode');
+                                                    if (micEnabled) {
+                                                        stopVoiceDetection();
+                                                        startVoiceDetection();
+                                                    }
+                                                }
+                                            }}
+                                            style={{ cursor: 'pointer' }}
+                                        />
+                                        <span style={{ fontWeight: 'bold' }}>🤖 Auto-Sensitivity (VAD)</span>
+                                    </label>
+                                    {autoSensitivity && (
+                                        <div style={{
+                                            fontSize: '9px',
+                                            color: vadCalibrated ? '#4ade80' : '#fbbf24',
+                                            marginTop: '4px',
+                                            paddingLeft: '20px'
+                                        }}>
+                                            {vadCalibrated ? '✓ Calibrated & Active' : '⏳ Calibrating...'}
+                                        </div>
+                                    )}
+                                    {autoSensitivity && vadCalibrated && (
+                                        <button
+                                            onClick={() => {
+                                                console.log('🔄 Re-calibrating VAD...');
+                                                stopVoiceDetection();
+                                                setVadCalibrated(false);
+                                                startVadCalibration();
+                                            }}
+                                            style={{
+                                                marginTop: '6px',
+                                                padding: '4px 8px',
+                                                fontSize: '10px',
+                                                backgroundColor: '#333',
+                                                color: '#d4af37',
+                                                border: '1px solid #555',
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                width: '100%'
+                                            }}
+                                        >
+                                            🔄 Re-calibrate
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {/* Mic Sensitivity Slider - Only show in manual mode */}
+                                {!autoSensitivity && (
                                 <div style={{
                                     marginBottom: '12px'
                                 }}>
@@ -10458,6 +10982,7 @@ const handleHandoutUpload = async (e) => {
                                         <span>100% (Muted)</span>
                                     </div>
                                 </div>
+                                )}
                                 
                                 {/* Delete Avatar Button */}
                                 <button
