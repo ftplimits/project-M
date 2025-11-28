@@ -1,32 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-<!--
-    MONOMYTH VTT - V 0.90 "VOICE ACTIVITY DETECTION"
-    🎙️ MAJOR FEATURE: Advanced Voice Activity Detection (VAD)
-    - Auto-Sensitivity mode uses multi-feature speech detection algorithm
-    - Analyzes energy, spectral bands (300-3400Hz), zero-crossing rate, and spectral flux
-    - 3-second calibration learns background noise floor automatically
-    - Adaptive threshold adjusts to changing environments
-    - Reduces false positives from background noise, keyboard typing, etc.
-    - Toggle between Auto (VAD) and Manual sensitivity modes
-    - Re-calibrate button for changing environments
-    - VAD enabled by default for best user experience
-    
-    Previous updates:
-    - Fixed avatar "jitter" by adding smooth transitions to talking state (200ms ease-out)
-    - Prevented bouncing animation from conflicting with talking state
-    - Added smooth transitions to border glow effects
-    - Reduced verbose console logging for voice detection
-    - Increased avatar animation stop delay from 0.5s to 1.0s for smoother transitions
-    - Added Fog of War system with three tools:
-      * FOG: Draw filled polyline fog shapes (click points, right-click to finish)
-      * STATE: Toggle individual fog shapes between visible/hidden (revealed)
-      * CUT: Delete fog shapes by clicking them
-    - Fog appears as 50% black for host (with red outlines), 100% black for players
-    - Fog renders above tokens (true fog of war)
-    - Fog syncs across multiplayer sessions
-    - Fog persists in save/load/export/import
--->
     
     <link rel="shortcut icon" type="image/png" href="favicon.png">
     
@@ -1400,8 +1373,11 @@ useEffect(() => {
                                 avatars,
                                 tokens,
                                 drawings,
+                                fogShapes,
                                 activeSceneIndex,
                                 gridTransform,
+                                gridColor,
+                                zonesMode,
                                 characterSheets,
                                 diceModifiers,
                                 dmAvatar,
@@ -1559,6 +1535,7 @@ useEffect(() => {
                         setActiveSceneIndex(message.data.activeSceneIndex || 0);
                         setGridTransform(message.data.gridTransform || { zoom: 1, panX: 0, panY: 0 });
                         if (message.data.gridColor) setGridColor(message.data.gridColor);
+                        if (message.data.zonesMode !== undefined) setZonesMode(message.data.zonesMode);
                         setCharacterSheets(message.data.characterSheets || []);
                         setDiceModifiers(message.data.diceModifiers || {});
                         setDmAvatar(message.data.dmAvatar || null);
@@ -1591,6 +1568,7 @@ useEffect(() => {
                                         activeSceneIndex,
                                         gridTransform,
                                         gridColor,
+                                        zonesMode,
                                         characterSheets,
                                         diceModifiers,
                                         dmAvatar,
@@ -1784,6 +1762,10 @@ useEffect(() => {
 
                     case 'GRID_COLOR_UPDATE':
                         setGridColor(message.data);
+                        break;
+
+                    case 'ZONES_MODE_UPDATE':
+                        setZonesMode(message.data);
                         break;
 
                     case 'SPOTLIGHT_UPDATE':
@@ -2041,6 +2023,7 @@ useEffect(() => {
                             activeSceneIndex,
                             gridTransform,
                             gridColor,
+                            zonesMode,
                             characterSheets,
                             diceModifiers,
                             dmAvatar,
@@ -2213,6 +2196,13 @@ useEffect(() => {
                     broadcastState('GRID_COLOR_UPDATE', gridColor);
                 }
             }, [gridColor, isHost, isConnected]);
+
+            // Sync zones mode when it changes (only if host)
+            useEffect(() => {
+                if (isHost && isConnected) {
+                    broadcastState('ZONES_MODE_UPDATE', zonesMode);
+                }
+            }, [zonesMode, isHost, isConnected]);
 
             // Automatic avatar animations - adds life to the table!
             useEffect(() => {
@@ -3639,9 +3629,9 @@ const handleAvatarUpload = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Menu dimensions (measured from actual content)
-    const menuWidth = 220;  // Approximate width of the menu with padding
-    const menuHeight = 750; // Approximate height - this menu is quite tall!
+    // Menu dimensions for two-column layout
+    const menuWidth = 440;  // Wider for two columns
+    const menuHeight = 450; // Much shorter with side-by-side layout
     const padding = 10;     // Padding from screen edges
     const cursorOffset = 5; // Small offset from cursor
     
@@ -3904,7 +3894,8 @@ const handleAvatarUpload = async (e) => {
             sizeMultiplier: 1, 
             name: 'Token',
             showMeasurement: false,
-            hidden: false
+            hidden: false,
+            flipped: false
         };
         setTokens(prev => [...prev, newToken]);
     } catch (err) {
@@ -3951,6 +3942,15 @@ const toggleTokenMeasurement = (tokenId) => {
         )
     );
     setDiceCountMenu(null);
+};
+
+// Flip token horizontally
+const flipToken = (tokenId) => {
+    setTokens(prevTokens => 
+        prevTokens.map(t => 
+            t.id === tokenId ? { ...t, flipped: !t.flipped } : t
+        )
+    );
 };
 
 // Set border color for a specific token
@@ -4078,6 +4078,11 @@ const handleHandoutUpload = async (e) => {
             };
 
             const startDrawing = (e) => {
+                // Ignore right-clicks to allow panning
+                if (e.button === 2) {
+                    return;
+                }
+                
                 // Anyone can draw now
                 if (!drawingTool || !activeScene.grid?.enabled) return;
                 
@@ -4140,8 +4145,18 @@ const handleHandoutUpload = async (e) => {
                             const distToEnd = Math.sqrt(Math.pow(drawing.endX - worldX, 2) + Math.pow(drawing.endY - worldY, 2));
                             return distToStart > 20 && distToEnd > 20;
                         } else if (drawing.tool === 'circle' || drawing.tool === 'filled-circle') {
-                            const dist = Math.sqrt(Math.pow(drawing.startX - worldX, 2) + Math.pow(drawing.startY - worldY, 2));
-                            return dist > 20;
+                            // Calculate the circle's radius
+                            const radius = Math.sqrt(
+                                Math.pow(drawing.endX - drawing.startX, 2) +
+                                Math.pow(drawing.endY - drawing.startY, 2)
+                            );
+                            // Calculate distance from click to circle center
+                            const distToCenter = Math.sqrt(
+                                Math.pow(drawing.startX - worldX, 2) + 
+                                Math.pow(drawing.startY - worldY, 2)
+                            );
+                            // Keep the circle if click is NOT within the circle (with 20px tolerance)
+                            return distToCenter > radius + 20;
                         } else if (drawing.tool === 'rectangle' || drawing.tool === 'filled-rect') {
                             const inX = worldX >= Math.min(drawing.startX, drawing.endX) - 20 && worldX <= Math.max(drawing.startX, drawing.endX) + 20;
                             const inY = worldY >= Math.min(drawing.startY, drawing.endY) - 20 && worldY <= Math.max(drawing.startY, drawing.endY) + 20;
@@ -5127,7 +5142,8 @@ const handleHandoutUpload = async (e) => {
                             }
                         }
                         
-                        if (img.complete) {
+                        // Skip rendering if image failed to load or is in broken state
+                        if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
                             ctx.save();
                             // Dim locked tokens OR hidden tokens (for host)
                             ctx.globalAlpha = (token.locked || (token.hidden && isHost)) ? 0.5 : 1.0;
@@ -5148,6 +5164,13 @@ const handleHandoutUpload = async (e) => {
                                 );
                                 ctx.fill();
                                 ctx.restore();
+                            }
+                            
+                            // Apply horizontal flip if needed (check for undefined to support old tokens)
+                            if (token.flipped === true) {
+                                ctx.translate(transformedX + transformedSize / 2, transformedY + transformedSize / 2);
+                                ctx.scale(-1, 1);
+                                ctx.translate(-(transformedX + transformedSize / 2), -(transformedY + transformedSize / 2));
                             }
                             
                             // Draw token as circle (clip to circle)
@@ -7644,6 +7667,12 @@ const handleHandoutUpload = async (e) => {
                                     cursor: fogTool === 'draw' ? 'crosshair' : (fogTool === 'state' || fogTool === 'cut' ? 'pointer' : 'default'),
                                     pointerEvents: fogTool ? 'auto' : 'none'
                                 }}
+                                onMouseDown={(e) => {
+                                    if (e.button === 2) {
+                                        // Right-click for panning
+                                        handleGridMouseDown(e);
+                                    }
+                                }}
                                 onClick={(e) => {
                                     if (fogTool === 'draw') {
                                         if (!currentFogShape) {
@@ -7661,6 +7690,8 @@ const handleHandoutUpload = async (e) => {
                                     if (fogTool === 'draw' && currentFogShape) {
                                         e.preventDefault();
                                         endFogDrawing();
+                                    } else {
+                                        e.preventDefault();
                                     }
                                 }}
                             />
@@ -7981,11 +8012,22 @@ const handleHandoutUpload = async (e) => {
                                 zIndex: 100,
                                 pointerEvents: drawingTool ? 'auto' : 'none'
                             }}
-                            onMouseDown={startDrawing}
+                            onMouseDown={(e) => {
+                                if (e.button === 2) {
+                                    // Right-click for panning
+                                    handleGridMouseDown(e);
+                                } else {
+                                    // Left-click for drawing
+                                    startDrawing(e);
+                                }
+                            }}
                             onMouseMove={continueDrawing}
                             onMouseUp={endDrawing}
                             onMouseLeave={endDrawing}
                             onWheel={handleGridWheel}
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                            }}
                         />
                     )}
 
@@ -8074,6 +8116,7 @@ const handleHandoutUpload = async (e) => {
             }}
             onMouseDown={(e) => handleTokenMouseDown(e, token.id)}
             onContextMenu={(e) => handleTokenContextMenu(e, token.id)}
+            onDoubleClick={(e) => { e.stopPropagation(); flipToken(token.id); }}
         />
     );
 })}
@@ -9327,411 +9370,414 @@ const handleHandoutUpload = async (e) => {
             fontSize: '12px',
             fontWeight: 'bold',
             fontFamily: 'Georgia, serif',
-            marginBottom: '4px',
+            marginBottom: '8px',
             borderBottom: '1px solid #d4af37',
             paddingBottom: '4px'
         }}>
             Token Options
         </div>
         
-        {/* Rename Button */}
-        <button
-            onClick={() => {
-                renameToken(diceCountMenu.tokenId);
-                setDiceCountMenu(null);
-            }}
-            style={{
-                padding: '6px 12px',
-                backgroundColor: '#2a2a2a',
-                color: '#e0e0e0',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold',
-                transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#3a3a3a';
-                e.currentTarget.style.borderColor = '#d4af37';
-            }}
-            onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#2a2a2a';
-                e.currentTarget.style.borderColor = '#444';
-            }}
-        >
-            ✏️ Rename Token
-        </button>
-        
-        {/* Toggle Measurement Button */}
-        <button
-            onClick={() => toggleTokenMeasurement(diceCountMenu.tokenId)}
-            style={{
-                padding: '6px 12px',
-                backgroundColor: '#2a2a2a',
-                color: '#e0e0e0',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold',
-                transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#3a3a3a';
-                e.currentTarget.style.borderColor = '#d4af37';
-            }}
-            onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#2a2a2a';
-                e.currentTarget.style.borderColor = '#444';
-            }}
-        >
-            {tokens.find(t => t.id === diceCountMenu.tokenId)?.showMeasurement ? '📏 Hide Measurement' : '📏 Show Measurement'}
-        </button>
-        
-        {/* Size Options Divider */}
-        <div style={{
-            color: '#888',
-            fontSize: '10px',
-            fontFamily: 'Arial, sans-serif',
-            marginTop: '4px',
-            marginBottom: '2px',
-            paddingLeft: '4px'
-        }}>
-            Size:
-        </div>
-        
-        {/* Normal Size Button */}
-        <button
-            onClick={() => resizeToken(diceCountMenu.tokenId, 1)}
-            style={{
-                padding: '6px 12px',
-                backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 1 ? '#d4af37' : '#2a2a2a',
-                color: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 1 ? '#000' : '#e0e0e0',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold',
-                transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 1) {
-                    e.currentTarget.style.backgroundColor = '#3a3a3a';
-                    e.currentTarget.style.borderColor = '#d4af37';
-                }
-            }}
-            onMouseLeave={(e) => {
-                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 1) {
-                    e.currentTarget.style.backgroundColor = '#2a2a2a';
-                    e.currentTarget.style.borderColor = '#444';
-                }
-            }}
-        >
-            ⚫ Normal
-        </button>
-        
-        {/* Large Size Button */}
-        <button
-            onClick={() => resizeToken(diceCountMenu.tokenId, 2)}
-            style={{
-                padding: '6px 12px',
-                backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 2 ? '#d4af37' : '#2a2a2a',
-                color: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 2 ? '#000' : '#e0e0e0',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold',
-                transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 2) {
-                    e.currentTarget.style.backgroundColor = '#3a3a3a';
-                    e.currentTarget.style.borderColor = '#d4af37';
-                }
-            }}
-            onMouseLeave={(e) => {
-                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 2) {
-                    e.currentTarget.style.backgroundColor = '#2a2a2a';
-                    e.currentTarget.style.borderColor = '#444';
-                }
-            }}
-        >
-            🔵 Large
-        </button>
-        
-        {/* Huge Size Button */}
-        <button
-            onClick={() => resizeToken(diceCountMenu.tokenId, 3)}
-            style={{
-                padding: '6px 12px',
-                backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 3 ? '#d4af37' : '#2a2a2a',
-                color: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 3 ? '#000' : '#e0e0e0',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold',
-                transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 3) {
-                    e.currentTarget.style.backgroundColor = '#3a3a3a';
-                    e.currentTarget.style.borderColor = '#d4af37';
-                }
-            }}
-            onMouseLeave={(e) => {
-                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 3) {
-                    e.currentTarget.style.backgroundColor = '#2a2a2a';
-                    e.currentTarget.style.borderColor = '#444';
-                }
-            }}
-        >
-            🟣 Huge
-        </button>
-        
-        {/* Border Color Divider */}
-        <div style={{
-            color: '#888',
-            fontSize: '10px',
-            fontFamily: 'Arial, sans-serif',
-            marginTop: '8px',
-            marginBottom: '2px',
-            paddingLeft: '4px'
-        }}>
-            Border Color:
-        </div>
-        
-        {/* Border Color Grid */}
-        <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '4px'
-        }}>
-            {[
-                { color: null, label: 'None', emoji: '⭕' },
-                { color: '#ffffff', label: 'White', emoji: '⚪' },
-                { color: '#000000', label: 'Black', emoji: '⚫' },
-                { color: '#ef4444', label: 'Red', emoji: '🔴' },
-                { color: '#3b82f6', label: 'Blue', emoji: '🔵' },
-                { color: '#eab308', label: 'Yellow', emoji: '🟡' },
-                { color: '#22c55e', label: 'Green', emoji: '🟢' },                
-                { color: '#a855f7', label: 'Purple', emoji: '🟣' },
-                { color: '#f97316', label: 'Orange', emoji: '🟠' }
-            ].map(({ color, label, emoji }) => (
+        {/* Two-column layout */}
+        <div style={{ display: 'flex', gap: '8px' }}>
+            {/* LEFT COLUMN */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {/* Rename Button */}
                 <button
-                    key={label}
-                    onClick={() => setTokenBorderColor(diceCountMenu.tokenId, color)}
-                    style={{
-                        padding: '8px 4px',
-                        backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor === color ? '#d4af37' : '#2a2a2a',
-                        color: tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor === color ? '#000' : '#e0e0e0',
-                        border: '1px solid #444',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '10px',
-                        fontFamily: 'Arial, sans-serif',
-                        fontWeight: 'bold',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '2px'
-                    }}
-                    onMouseEnter={(e) => {
-                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor !== color) {
-                            e.currentTarget.style.backgroundColor = '#3a3a3a';
-                            e.currentTarget.style.borderColor = '#d4af37';
-                        }
-                    }}
-                    onMouseLeave={(e) => {
-                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor !== color) {
-                            e.currentTarget.style.backgroundColor = '#2a2a2a';
-                            e.currentTarget.style.borderColor = '#444';
-                        }
-                    }}
-                >
-                    <span style={{ fontSize: '16px' }}>{emoji}</span>
-                    <span style={{ fontSize: '9px' }}>{label}</span>
-                </button>
-            ))}
-        </div>
-        
-        {/* Condition Emoji Divider */}
-        <div style={{
-            color: '#888',
-            fontSize: '10px',
-            fontFamily: 'Arial, sans-serif',
-            marginTop: '8px',
-            marginBottom: '2px',
-            paddingLeft: '4px'
-        }}>
-            Condition:
-        </div>
-        
-        {/* Condition Emoji Grid */}
-        <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: '4px'
-        }}>
-            {[
-                null, '💀', '🔥', '⚡', '🩸', '🕷️', 
-                '✨', '🛡️', '⚔️', '💪', '🌀', '💫'
-            ].map((emoji, index) => (
-                <button
-                    key={index}
-                    onClick={() => setTokenCondition(diceCountMenu.tokenId, emoji)}
-                    style={{
-                        padding: '10px',
-                        backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.conditionEmoji === emoji ? '#d4af37' : '#2a2a2a',
-                        color: tokens.find(t => t.id === diceCountMenu.tokenId)?.conditionEmoji === emoji ? '#000' : '#e0e0e0',
-                        border: '1px solid #444',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '22px',
-                        fontFamily: 'Arial, sans-serif',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}
-                    onMouseEnter={(e) => {
-                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.conditionEmoji !== emoji) {
-                            e.currentTarget.style.backgroundColor = '#3a3a3a';
-                            e.currentTarget.style.borderColor = '#d4af37';
-                        }
-                    }}
-                    onMouseLeave={(e) => {
-                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.conditionEmoji !== emoji) {
-                            e.currentTarget.style.backgroundColor = '#2a2a2a';
-                            e.currentTarget.style.borderColor = '#444';
-                        }
-                    }}
-                >
-                    {emoji || '⭕'}
-                </button>
-            ))}
-        </div>
-        
-        {/* HP Counter Toggle */}
-        <div style={{
-            color: '#888',
-            fontSize: '10px',
-            fontFamily: 'Arial, sans-serif',
-            marginTop: '8px',
-            marginBottom: '2px',
-            paddingLeft: '4px'
-        }}>
-            HP Counter:
-        </div>
-        <button
-            onClick={() => {
-                const token = tokens.find(t => t.id === diceCountMenu.tokenId);
-                toggleTokenHPCounter(diceCountMenu.tokenId, !token?.hpCounterEnabled);
-                setDiceCountMenu(null);
-            }}
-            style={{
-                padding: '6px 12px',
-                backgroundColor: '#2a2a2a',
-                color: '#e0e0e0',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold',
-                transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#3a3a3a';
-                e.currentTarget.style.borderColor = '#d4af37';
-            }}
-            onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#2a2a2a';
-                e.currentTarget.style.borderColor = '#444';
-            }}
-        >
-            {tokens.find(t => t.id === diceCountMenu.tokenId)?.hpCounterEnabled ? '✅ HP Counter ON' : '⬜ HP Counter OFF'}
-        </button>
-        
-        {/* Assign Player Section (DM Only) */}
-        {isHost && (
-            <div style={{ marginTop: '8px' }}>
-                <label style={{
-                    color: '#888',
-                    fontSize: '11px',
-                    fontFamily: 'Arial, sans-serif',
-                    display: 'block',
-                    marginBottom: '4px'
-                }}>
-                    Assign Player:
-                </label>
-                <select
-                    value={tokens.find(t => t.id === diceCountMenu.tokenId)?.assignedPlayerId || ''}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                        const playerId = e.target.value || null;
-                        assignPlayerToToken(diceCountMenu.tokenId, playerId);
+                    onClick={() => {
+                        renameToken(diceCountMenu.tokenId);
+                        setDiceCountMenu(null);
                     }}
                     style={{
-                        width: '100%',
-                        padding: '8px',
+                        padding: '6px 12px',
                         backgroundColor: '#2a2a2a',
                         color: '#e0e0e0',
                         border: '1px solid #444',
                         borderRadius: '4px',
-                        fontSize: '13px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
                         fontFamily: 'Arial, sans-serif',
-                        cursor: 'pointer'
+                        fontWeight: 'bold',
+                        transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#3a3a3a';
+                        e.currentTarget.style.borderColor = '#d4af37';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#2a2a2a';
+                        e.currentTarget.style.borderColor = '#444';
                     }}
                 >
-                    <option value="">None</option>
-                    {players.map(player => (
-                        <option key={player.id} value={player.id}>
-                            {player.name}
-                        </option>
-                    ))}
-                </select>
-            </div>
-        )}
-        
-        {/* Delete Button (Host Only) */}
-        {isHost && (
-            <button
-                onClick={() => {
-                    deleteToken(diceCountMenu.tokenId);
-                    setDiceCountMenu(null);
-                }}
-                style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#dc3545',
-                    color: '#fff',
-                    border: '1px solid #b02a37',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
+                    ✏️ Rename Token
+                </button>
+                
+                {/* Toggle Measurement Button */}
+                <button
+                    onClick={() => toggleTokenMeasurement(diceCountMenu.tokenId)}
+                    style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#2a2a2a',
+                        color: '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontFamily: 'Arial, sans-serif',
+                        fontWeight: 'bold',
+                        transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#3a3a3a';
+                        e.currentTarget.style.borderColor = '#d4af37';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#2a2a2a';
+                        e.currentTarget.style.borderColor = '#444';
+                    }}
+                >
+                    {tokens.find(t => t.id === diceCountMenu.tokenId)?.showMeasurement ? '📏 Hide Measurement' : '📏 Show Measurement'}
+                </button>
+                
+                {/* Size Options */}
+                <div style={{
+                    color: '#888',
+                    fontSize: '10px',
                     fontFamily: 'Arial, sans-serif',
-                    fontWeight: 'bold',
-                    transition: 'all 0.2s',
-                    marginTop: '4px'
-                }}
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#c82333';
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#dc3545';
-                }}
-            >
-                🗑️ Delete Token
-            </button>
-        )}
+                    marginTop: '4px',
+                    marginBottom: '2px',
+                    paddingLeft: '4px'
+                }}>
+                    Size:
+                </div>
+                
+                <button
+                    onClick={() => resizeToken(diceCountMenu.tokenId, 1)}
+                    style={{
+                        padding: '6px 12px',
+                        backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 1 ? '#d4af37' : '#2a2a2a',
+                        color: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 1 ? '#000' : '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontFamily: 'Arial, sans-serif',
+                        fontWeight: 'bold',
+                        transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 1) {
+                            e.currentTarget.style.backgroundColor = '#3a3a3a';
+                            e.currentTarget.style.borderColor = '#d4af37';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 1) {
+                            e.currentTarget.style.backgroundColor = '#2a2a2a';
+                            e.currentTarget.style.borderColor = '#444';
+                        }
+                    }}
+                >
+                    ⚫ Normal
+                </button>
+                
+                <button
+                    onClick={() => resizeToken(diceCountMenu.tokenId, 2)}
+                    style={{
+                        padding: '6px 12px',
+                        backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 2 ? '#d4af37' : '#2a2a2a',
+                        color: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 2 ? '#000' : '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontFamily: 'Arial, sans-serif',
+                        fontWeight: 'bold',
+                        transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 2) {
+                            e.currentTarget.style.backgroundColor = '#3a3a3a';
+                            e.currentTarget.style.borderColor = '#d4af37';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 2) {
+                            e.currentTarget.style.backgroundColor = '#2a2a2a';
+                            e.currentTarget.style.borderColor = '#444';
+                        }
+                    }}
+                >
+                    🔵 Large
+                </button>
+                
+                <button
+                    onClick={() => resizeToken(diceCountMenu.tokenId, 3)}
+                    style={{
+                        padding: '6px 12px',
+                        backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 3 ? '#d4af37' : '#2a2a2a',
+                        color: tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier === 3 ? '#000' : '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontFamily: 'Arial, sans-serif',
+                        fontWeight: 'bold',
+                        transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 3) {
+                            e.currentTarget.style.backgroundColor = '#3a3a3a';
+                            e.currentTarget.style.borderColor = '#d4af37';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (tokens.find(t => t.id === diceCountMenu.tokenId)?.sizeMultiplier !== 3) {
+                            e.currentTarget.style.backgroundColor = '#2a2a2a';
+                            e.currentTarget.style.borderColor = '#444';
+                        }
+                    }}
+                >
+                    🟣 Huge
+                </button>
+                
+                {/* Border Color */}
+                <div style={{
+                    color: '#888',
+                    fontSize: '10px',
+                    fontFamily: 'Arial, sans-serif',
+                    marginTop: '8px',
+                    marginBottom: '2px',
+                    paddingLeft: '4px'
+                }}>
+                    Border Color:
+                </div>
+                
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '4px'
+                }}>
+                    {[
+                        { color: null, label: 'None', emoji: '⭕' },
+                        { color: '#ffffff', label: 'White', emoji: '⚪' },
+                        { color: '#000000', label: 'Black', emoji: '⚫' },
+                        { color: '#ef4444', label: 'Red', emoji: '🔴' },
+                        { color: '#3b82f6', label: 'Blue', emoji: '🔵' },
+                        { color: '#eab308', label: 'Yellow', emoji: '🟡' },
+                        { color: '#22c55e', label: 'Green', emoji: '🟢' },                
+                        { color: '#a855f7', label: 'Purple', emoji: '🟣' },
+                        { color: '#f97316', label: 'Orange', emoji: '🟠' }
+                    ].map(({ color, label, emoji }) => (
+                        <button
+                            key={label}
+                            onClick={() => setTokenBorderColor(diceCountMenu.tokenId, color)}
+                            style={{
+                                padding: '8px 4px',
+                                backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor === color ? '#d4af37' : '#2a2a2a',
+                                color: tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor === color ? '#000' : '#e0e0e0',
+                                border: '1px solid #444',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontFamily: 'Arial, sans-serif',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '2px'
+                            }}
+                            onMouseEnter={(e) => {
+                                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor !== color) {
+                                    e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                    e.currentTarget.style.borderColor = '#d4af37';
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.borderColor !== color) {
+                                    e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                    e.currentTarget.style.borderColor = '#444';
+                                }
+                            }}
+                        >
+                            <span style={{ fontSize: '16px' }}>{emoji}</span>
+                            <span style={{ fontSize: '9px' }}>{label}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+            
+            {/* RIGHT COLUMN */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {/* Condition Emoji */}
+                <div style={{
+                    color: '#888',
+                    fontSize: '10px',
+                    fontFamily: 'Arial, sans-serif',
+                    marginBottom: '2px',
+                    paddingLeft: '4px'
+                }}>
+                    Condition:
+                </div>
+                
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: '4px'
+                }}>
+                    {[
+                        null, '💀', '🔥', '⚡', '🩸', '🕷️', 
+                        '✨', '🛡️', '⚔️', '💪', '🌀', '💫'
+                    ].map((emoji, index) => (
+                        <button
+                            key={index}
+                            onClick={() => setTokenCondition(diceCountMenu.tokenId, emoji)}
+                            style={{
+                                padding: '10px',
+                                backgroundColor: tokens.find(t => t.id === diceCountMenu.tokenId)?.conditionEmoji === emoji ? '#d4af37' : '#2a2a2a',
+                                color: tokens.find(t => t.id === diceCountMenu.tokenId)?.conditionEmoji === emoji ? '#000' : '#e0e0e0',
+                                border: '1px solid #444',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '22px',
+                                fontFamily: 'Arial, sans-serif',
+                                transition: 'all 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                            onMouseEnter={(e) => {
+                                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.conditionEmoji !== emoji) {
+                                    e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                    e.currentTarget.style.borderColor = '#d4af37';
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (tokens.find(t => t.id === diceCountMenu.tokenId)?.conditionEmoji !== emoji) {
+                                    e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                    e.currentTarget.style.borderColor = '#444';
+                                }
+                            }}
+                        >
+                            {emoji || '⭕'}
+                        </button>
+                    ))}
+                </div>
+                
+                {/* HP Counter Toggle */}
+                <div style={{
+                    color: '#888',
+                    fontSize: '10px',
+                    fontFamily: 'Arial, sans-serif',
+                    marginTop: '8px',
+                    marginBottom: '2px',
+                    paddingLeft: '4px'
+                }}>
+                    HP Counter:
+                </div>
+                <button
+                    onClick={() => {
+                        const token = tokens.find(t => t.id === diceCountMenu.tokenId);
+                        toggleTokenHPCounter(diceCountMenu.tokenId, !token?.hpCounterEnabled);
+                        setDiceCountMenu(null);
+                    }}
+                    style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#2a2a2a',
+                        color: '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontFamily: 'Arial, sans-serif',
+                        fontWeight: 'bold',
+                        transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#3a3a3a';
+                        e.currentTarget.style.borderColor = '#d4af37';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#2a2a2a';
+                        e.currentTarget.style.borderColor = '#444';
+                    }}
+                >
+                    {tokens.find(t => t.id === diceCountMenu.tokenId)?.hpCounterEnabled ? '✅ HP Counter ON' : '⬜ HP Counter OFF'}
+                </button>
+                
+                {/* Assign Player Section (DM Only) */}
+                {isHost && (
+                    <div style={{ marginTop: '8px' }}>
+                        <label style={{
+                            color: '#888',
+                            fontSize: '11px',
+                            fontFamily: 'Arial, sans-serif',
+                            display: 'block',
+                            marginBottom: '4px'
+                        }}>
+                            Assign Player:
+                        </label>
+                        <select
+                            value={tokens.find(t => t.id === diceCountMenu.tokenId)?.assignedPlayerId || ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                                const playerId = e.target.value || null;
+                                assignPlayerToToken(diceCountMenu.tokenId, playerId);
+                            }}
+                            style={{
+                                width: '100%',
+                                padding: '8px',
+                                backgroundColor: '#2a2a2a',
+                                color: '#e0e0e0',
+                                border: '1px solid #444',
+                                borderRadius: '4px',
+                                fontSize: '13px',
+                                fontFamily: 'Arial, sans-serif',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <option value="">None</option>
+                            {players.map(player => (
+                                <option key={player.id} value={player.id}>
+                                    {player.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+                
+                {/* Delete Button (Host Only) */}
+                {isHost && (
+                    <button
+                        onClick={() => {
+                            deleteToken(diceCountMenu.tokenId);
+                            setDiceCountMenu(null);
+                        }}
+                        style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#dc3545',
+                            color: '#fff',
+                            border: '1px solid #b02a37',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            fontFamily: 'Arial, sans-serif',
+                            fontWeight: 'bold',
+                            transition: 'all 0.2s',
+                            marginTop: '4px'
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#c82333';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#dc3545';
+                        }}
+                    >
+                        🗑️ Delete Token
+                    </button>
+                )}
+            </div>
+        </div>
     </>
 ) : (
                 /* Dice Menu - keep existing dice count menu code */
@@ -10135,19 +10181,20 @@ const handleHandoutUpload = async (e) => {
                         </div>
                     </div>
 
-                    <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-30">
-                        <button
-                            onClick={() => avatarInputRef.current?.click()}
-                            className="w-12 h-12 bg-amber-600 hover:bg-amber-500 text-zinc-900 font-bold rounded-full border-4 border-amber-700 shadow-2xl transition-all hover:scale-110 flex items-center justify-center"
-                            style={{
-                                boxShadow: '0 0 30px rgba(212, 175, 55, 0.7)'
-                            }}
-                            title="Add Player Avatar"
-                            disabled={!isHost && isConnected}
-                        >
-                            <Plus size={28} />
-                        </button>
-                    </div>
+                    {(isHost || !isConnected) && (
+                        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-30">
+                            <button
+                                onClick={() => avatarInputRef.current?.click()}
+                                className="w-12 h-12 bg-amber-600 hover:bg-amber-500 text-zinc-900 font-bold rounded-full border-4 border-amber-700 shadow-2xl transition-all hover:scale-110 flex items-center justify-center"
+                                style={{
+                                    boxShadow: '0 0 30px rgba(212, 175, 55, 0.7)'
+                                }}
+                                title="Add Player Avatar"
+                            >
+                                <Plus size={28} />
+                            </button>
+                        </div>
+                    )}
 
                                         <input
                         ref={fileInputRef}
