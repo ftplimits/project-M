@@ -17,8 +17,13 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monomyth VTT - Multiplayer</title>
     
-    <!-- PeerJS CDN for WebRTC P2P -->
-    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- Preconnect to CDNs for faster resource loading -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+    
+    <!-- PeerJS CDN for WebRTC P2P - Deferred for faster initial load -->
+    <script defer src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -31,7 +36,7 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
     
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script defer src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
         body {
@@ -42,6 +47,8 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
+            /* Optimize initial render */
+            content-visibility: auto;
         }
         
         /* Prevent middle mouse button auto-scroll */
@@ -474,8 +481,8 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
                     },
                     weatherEffect: null
                 },
-                // Regular scenes
-                ...Array.from({ length: 12 }, (_, i) => ({
+                // Regular scenes - only load first 3 initially for fast startup (10 total after save/load)
+                ...Array.from({ length: 3 }, (_, i) => ({
                     name: `Scene ${i + 1}`,
                     images: [],
                     grid: {
@@ -483,7 +490,7 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
                         size: 50,
                         color: '#f5f5f5'
                     },
-                    weatherEffect: null // 'rain', 'snow', 'embers', or null
+                    weatherEffect: null
                 }))
             ]);
             const [avatars, setAvatars] = useState([]);
@@ -591,6 +598,16 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
             const [diceVisible, setDiceVisible] = useState(false);
             const [diceRollLog, setDiceRollLog] = useState([]);
             const [spinningDie, setSpinningDie] = useState(null);
+
+            // Music Player state
+            const [musicTracks, setMusicTracks] = useState([]);
+            const [currentTrackId, setCurrentTrackId] = useState(null);
+            const [defaultTrackId, setDefaultTrackId] = useState(null);
+            const [musicVolume, setMusicVolume] = useState(0.25); // 25% default
+            const [musicPanelVisible, setMusicPanelVisible] = useState(false);
+            const [musicContextMenu, setMusicContextMenu] = useState(null); // { x, y, trackId }
+            const audioRef = useRef(null); // Single audio element for playback
+            const currentTrackIdRef = useRef(null); // Track currently playing track ID
             const [spinningPreset, setSpinningPreset] = useState(null);
             const [dicePresets, setDicePresets] = useState([]);
             const [presetsVisible, setPresetsVisible] = useState(false);
@@ -717,6 +734,8 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
                         characterSheets,
                         diceModifiers,
                         dmAvatar,
+                        musicTracks,
+                        defaultTrackId,
                         autoSavedAt: new Date().toISOString()
                     };
                     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
@@ -739,7 +758,7 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
             // Auto-save whenever game state changes
             useEffect(() => {
                 scheduleAutoSave();
-            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, characterSheets, diceModifiers, dmAvatar]);
+            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, characterSheets, diceModifiers, dmAvatar, musicTracks, defaultTrackId]);
 
             // Auto-load on startup
             useEffect(() => {
@@ -761,7 +780,7 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
                                 });
                                 setAvatars(constrainedAvatars);
                             }
-                            // Migrate old saves: add Home page if not present
+                            // Migrate old saves: add Home page if not present, ensure max 10 regular scenes
                             if (!parsed.scenes[0]?.isHome) {
                                 const homeScene = {
                                     name: 'Home',
@@ -771,9 +790,28 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
                                     grid: { enabled: false, size: 50, color: '#f5f5f5' },
                                     weatherEffect: null
                                 };
-                                setScenes([homeScene, ...parsed.scenes]);
+                                // Limit to 10 regular scenes max (11 total with Home)
+                                const regularScenes = parsed.scenes.slice(0, 10);
+                                setScenes([homeScene, ...regularScenes]);
                             } else {
-                                setScenes(parsed.scenes);
+                                // Has home page - ensure we have at least Home + 10 regular scenes
+                                const currentScenes = parsed.scenes;
+                                const regularSceneCount = currentScenes.length - 1; // Subtract home page
+                                
+                                if (regularSceneCount < 10) {
+                                    // Add missing scenes to reach 10 regular scenes
+                                    const scenesToAdd = 10 - regularSceneCount;
+                                    const newScenes = Array.from({ length: scenesToAdd }, (_, i) => ({
+                                        name: `Scene ${regularSceneCount + i + 1}`,
+                                        images: [],
+                                        grid: { enabled: false, size: 50, color: '#f5f5f5' },
+                                        weatherEffect: null
+                                    }));
+                                    setScenes([...currentScenes, ...newScenes]);
+                                } else {
+                                    // Cap at 10 regular scenes (11 total with Home)
+                                    setScenes([currentScenes[0], ...currentScenes.slice(1, 11)]);
+                                }
                             }
                             setTokens(parsed.tokens || []);
                             setDrawings(parsed.drawings || []);
@@ -782,6 +820,8 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
                             setCharacterSheets(parsed.characterSheets || []);
                             setDiceModifiers(parsed.diceModifiers || {});
                             setDmAvatar(parsed.dmAvatar || null);
+                            setMusicTracks(parsed.musicTracks || []);
+                            setDefaultTrackId(parsed.defaultTrackId || null);
                         }
                     } catch (err) {
                         console.error('Auto-load failed', err);
@@ -811,7 +851,7 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
                 return () => {
                     window.removeEventListener('beforeunload', handleBeforeUnload);
                 };
-            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, characterSheets, diceModifiers, dmAvatar, isHost, isConnected, players]);            
+            }, [scenes, avatars, tokens, drawings, activeSceneIndex, gridTransform, characterSheets, diceModifiers, dmAvatar, musicTracks, defaultTrackId, isHost, isConnected, players]);            
 
             // Player-specific dice presets save/load
             useEffect(() => {
@@ -838,6 +878,44 @@ Unauthorized copying, distribution, or modification is strictly prohibited.
                     console.error('Failed to save player presets', err);
                 }
             }, [dicePresets, playerUniqueId]);
+
+            // Music Player: Load volume preference on mount
+            useEffect(() => {
+                const savedVolume = localStorage.getItem('monomyth_music_volume');
+                if (savedVolume) {
+                    const volume = parseFloat(savedVolume);
+                    if (!isNaN(volume) && volume >= 0 && volume <= 1) {
+                        setMusicVolume(volume);
+                    }
+                }
+            }, []);
+
+            // Music Player: Update audio volume when volume state changes
+            useEffect(() => {
+                if (audioRef.current) {
+                    audioRef.current.volume = musicVolume;
+                }
+            }, [musicVolume]);
+
+            // Music Player: Play default track after splash screen closes
+            useEffect(() => {
+                if (!showSplash && defaultTrackId && !currentTrackId) {
+                    // Small delay to ensure audio context is ready
+                    setTimeout(() => {
+                        playMusicTrack(defaultTrackId);
+                    }, 500);
+                }
+            }, [showSplash, defaultTrackId]);
+
+            // Music Player: Cleanup on unmount
+            useEffect(() => {
+                return () => {
+                    if (audioRef.current) {
+                        audioRef.current.pause();
+                        audioRef.current.src = '';
+                    }
+                };
+            }, []);
 
 const dice = [
   { type: 'd4',  sides: 4,  image: 'https://res.cloudinary.com/dmbibsole/image/upload/v1761679707/4_ze8lej.png' },
@@ -1419,6 +1497,8 @@ useEffect(() => {
                                 characterSheets,
                                 diceModifiers,
                                 dmAvatar,
+                                musicTracks,
+                                defaultTrackId,
                                 players: playersRef.current
                             }
                         });
@@ -1577,6 +1657,8 @@ useEffect(() => {
                         setCharacterSheets(message.data.characterSheets || []);
                         setDiceModifiers(message.data.diceModifiers || {});
                         setDmAvatar(message.data.dmAvatar || null);
+                        setMusicTracks(message.data.musicTracks || []);
+                        setDefaultTrackId(message.data.defaultTrackId || null);
                         setPlayers(message.data.players || []);
                         break;
 
@@ -1610,6 +1692,8 @@ useEffect(() => {
                                         characterSheets,
                                         diceModifiers,
                                         dmAvatar,
+                                        musicTracks,
+                                        defaultTrackId,
                                         players: updated
                                     }
                                 });
@@ -1851,6 +1935,21 @@ useEffect(() => {
                         setDmAvatar(null);
                         break;
                     
+                    case 'MUSIC_PLAY':
+                        // Host is playing a track - all players play it too
+                        const trackIdToPlay = message.data;
+                        if (trackIdToPlay && !isHostRef.current) {
+                            playMusicTrack(trackIdToPlay);
+                        }
+                        break;
+                    
+                    case 'MUSIC_STOP':
+                        // Host stopped music - all players stop too
+                        if (!isHostRef.current) {
+                            stopMusic();
+                        }
+                        break;
+                    
                     case 'AVATAR_BOUNCE':
                         // Trigger bounce animation for all players
                         const { avatarId } = message.data;
@@ -2065,6 +2164,8 @@ useEffect(() => {
                             characterSheets,
                             diceModifiers,
                             dmAvatar,
+                            musicTracks,
+                            defaultTrackId,
                             players: playersRef.current
                         }
                     });
@@ -4086,6 +4187,147 @@ const updateTokenHP = (tokenId, newHP) => {
     // Broadcasting happens automatically via useEffect
 };
 
+// ===== MUSIC PLAYER FUNCTIONS =====
+
+// Add a music track
+const addMusicTrack = () => {
+    const url = prompt('Enter music track URL (Dropbox, Google Drive, or direct link):');
+    if (!url || url.trim() === '') return;
+    
+    const name = prompt('Enter track name:', 'Track ' + (musicTracks.length + 1));
+    if (!name || name.trim() === '') return;
+    
+    if (musicTracks.length >= 10) {
+        alert('Maximum of 10 tracks allowed.');
+        return;
+    }
+    
+    const newTrack = {
+        id: Date.now(),
+        name: name.trim(),
+        url: url.trim()
+    };
+    
+    setMusicTracks(prev => [...prev, newTrack]);
+};
+
+// Delete a music track
+const deleteMusicTrack = (trackId) => {
+    if (!confirm('Delete this track?')) return;
+    
+    // Stop playback if this track is playing
+    if (currentTrackId === trackId) {
+        stopMusic();
+    }
+    
+    // Remove from default if it was default
+    if (defaultTrackId === trackId) {
+        setDefaultTrackId(null);
+    }
+    
+    setMusicTracks(prev => prev.filter(t => t.id !== trackId));
+};
+
+// Rename a music track
+const renameMusicTrack = (trackId) => {
+    const track = musicTracks.find(t => t.id === trackId);
+    if (!track) return;
+    
+    const newName = prompt('Enter new track name:', track.name);
+    if (!newName || newName.trim() === '') return;
+    
+    setMusicTracks(prev => prev.map(t => 
+        t.id === trackId ? { ...t, name: newName.trim() } : t
+    ));
+};
+
+// Toggle music playback (start/stop)
+const toggleMusicTrack = (trackId) => {
+    const track = musicTracks.find(t => t.id === trackId);
+    if (!track) return;
+    
+    // If this track is already playing, stop it
+    if (currentTrackId === trackId) {
+        stopMusic();
+        return;
+    }
+    
+    // Otherwise, play this track
+    playMusicTrack(trackId);
+};
+
+// Play a specific track
+const playMusicTrack = (trackId) => {
+    const track = musicTracks.find(t => t.id === trackId);
+    if (!track) return;
+    
+    // Stop any currently playing track
+    if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+    }
+    
+    // Create/update audio element
+    if (!audioRef.current) {
+        audioRef.current = new Audio();
+        audioRef.current.loop = true;
+    }
+    
+    audioRef.current.src = track.url;
+    audioRef.current.volume = musicVolume;
+    audioRef.current.loop = true;
+    
+    // Play the track
+    audioRef.current.play().catch(err => {
+        console.error('Failed to play track:', err);
+        alert('Failed to play track. Check the URL or your browser settings.');
+    });
+    
+    setCurrentTrackId(trackId);
+    currentTrackIdRef.current = trackId;
+    
+    // Broadcast to other players if host
+    if (isConnectedRef.current && isHostRef.current) {
+        broadcastState('MUSIC_PLAY', trackId);
+    }
+};
+
+// Stop music playback
+const stopMusic = () => {
+    if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+    }
+    
+    setCurrentTrackId(null);
+    currentTrackIdRef.current = null;
+    
+    // Broadcast to other players if host
+    if (isConnectedRef.current && isHostRef.current) {
+        broadcastState('MUSIC_STOP', null);
+    }
+};
+
+// Set track as default
+const setTrackAsDefault = (trackId) => {
+    setDefaultTrackId(trackId);
+};
+
+// Update music volume
+const handleVolumeChange = (newVolume) => {
+    setMusicVolume(newVolume);
+    if (audioRef.current) {
+        audioRef.current.volume = newVolume;
+    }
+    
+    // Save to localStorage
+    try {
+        localStorage.setItem('monomyth_music_volume', newVolume.toString());
+    } catch (err) {
+        console.error('Failed to save volume preference:', err);
+    }
+};
+
 // Handout upload handler
 const handleHandoutUpload = async (e) => {
     const file = e.target.files[0];
@@ -5532,7 +5774,8 @@ const handleHandoutUpload = async (e) => {
             // Weather Effects Rendering
             useEffect(() => {
                 const canvas = weatherCanvasRef.current;
-                if (!canvas || !activeScene.weatherEffect || activeScene.grid?.enabled) return;
+                // Only skip weather if grid is enabled AND we're not on home page
+                if (!canvas || !activeScene.weatherEffect || (activeScene.grid?.enabled && !activeScene.isHome)) return;
 
                 const ctx = canvas.getContext('2d');
                 const particles = [];
@@ -5810,7 +6053,9 @@ const handleHandoutUpload = async (e) => {
                         activeSceneIndex,
                         gridTransform,
                         characterSheets,
-                        diceModifiers
+                        diceModifiers,
+                        musicTracks,
+                        defaultTrackId
                     };
                     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
                     alert('Saved to localStorage.');
@@ -5845,7 +6090,7 @@ const handleHandoutUpload = async (e) => {
                                 setAvatars([]);
                             }
                         }
-                        // Migrate old saves: add Home page if not present
+                        // Migrate old saves: add Home page if not present, ensure max 10 regular scenes
                         if (!parsed.scenes[0]?.isHome) {
                             const homeScene = {
                                 name: 'Home',
@@ -5855,9 +6100,28 @@ const handleHandoutUpload = async (e) => {
                                 grid: { enabled: false, size: 50, color: '#f5f5f5' },
                                 weatherEffect: null
                             };
-                            setScenes([homeScene, ...parsed.scenes]);
+                            // Limit to 10 regular scenes max (11 total with Home)
+                            const regularScenes = parsed.scenes.slice(0, 10);
+                            setScenes([homeScene, ...regularScenes]);
                         } else {
-                            setScenes(parsed.scenes);
+                            // Has home page - ensure we have at least Home + 10 regular scenes
+                            const currentScenes = parsed.scenes;
+                            const regularSceneCount = currentScenes.length - 1; // Subtract home page
+                            
+                            if (regularSceneCount < 10) {
+                                // Add missing scenes to reach 10 regular scenes
+                                const scenesToAdd = 10 - regularSceneCount;
+                                const newScenes = Array.from({ length: scenesToAdd }, (_, i) => ({
+                                    name: `Scene ${regularSceneCount + i + 1}`,
+                                    images: [],
+                                    grid: { enabled: false, size: 50, color: '#f5f5f5' },
+                                    weatherEffect: null
+                                }));
+                                setScenes([...currentScenes, ...newScenes]);
+                            } else {
+                                // Cap at 10 regular scenes (11 total with Home)
+                                setScenes([currentScenes[0], ...currentScenes.slice(1, 11)]);
+                            }
                         }
                         setTokens(parsed.tokens || []);
                         setDrawings(parsed.drawings || []);
@@ -5866,6 +6130,8 @@ const handleHandoutUpload = async (e) => {
                         setGridTransform(parsed.gridTransform || { zoom: 1, panX: 0, panY: 0 });
                         setCharacterSheets(parsed.characterSheets || []);
                         setDiceModifiers(parsed.diceModifiers || {});
+                        setMusicTracks(parsed.musicTracks || []);
+                        setDefaultTrackId(parsed.defaultTrackId || null);
                         alert('Loaded from localStorage.');
                     } else {
                         alert('Invalid data in localStorage.');
@@ -5888,6 +6154,8 @@ const handleHandoutUpload = async (e) => {
                         gridTransform,
                         characterSheets,
                         diceModifiers,
+                        musicTracks,
+                        defaultTrackId,
                         exportedAt: new Date().toISOString()
                     };
                     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -5942,7 +6210,7 @@ const handleHandoutUpload = async (e) => {
                                 });
                                 setAvatars(constrainedAvatars);
                             }
-                            // Migrate old saves: add Home page if not present
+                            // Migrate old saves: add Home page if not present, ensure max 10 regular scenes
                             if (!parsed.scenes[0]?.isHome) {
                                 const homeScene = {
                                     name: 'Home',
@@ -5952,9 +6220,28 @@ const handleHandoutUpload = async (e) => {
                                     grid: { enabled: false, size: 50, color: '#f5f5f5' },
                                     weatherEffect: null
                                 };
-                                setScenes([homeScene, ...parsed.scenes]);
+                                // Limit to 10 regular scenes max (11 total with Home)
+                                const regularScenes = parsed.scenes.slice(0, 10);
+                                setScenes([homeScene, ...regularScenes]);
                             } else {
-                                setScenes(parsed.scenes);
+                                // Has home page - ensure we have at least Home + 10 regular scenes
+                                const currentScenes = parsed.scenes;
+                                const regularSceneCount = currentScenes.length - 1; // Subtract home page
+                                
+                                if (regularSceneCount < 10) {
+                                    // Add missing scenes to reach 10 regular scenes
+                                    const scenesToAdd = 10 - regularSceneCount;
+                                    const newScenes = Array.from({ length: scenesToAdd }, (_, i) => ({
+                                        name: `Scene ${regularSceneCount + i + 1}`,
+                                        images: [],
+                                        grid: { enabled: false, size: 50, color: '#f5f5f5' },
+                                        weatherEffect: null
+                                    }));
+                                    setScenes([...currentScenes, ...newScenes]);
+                                } else {
+                                    // Cap at 10 regular scenes (11 total with Home)
+                                    setScenes([currentScenes[0], ...currentScenes.slice(1, 11)]);
+                                }
                             }
                             setTokens(parsed.tokens || []);
                             setDrawings(parsed.drawings || []);
@@ -5964,6 +6251,8 @@ const handleHandoutUpload = async (e) => {
                             setCharacterSheets(parsed.characterSheets || []);
                             setDiceModifiers(parsed.diceModifiers || {});
                             setDmAvatar(parsed.dmAvatar || null);
+                            setMusicTracks(parsed.musicTracks || []);
+                            setDefaultTrackId(parsed.defaultTrackId || null);
                             alert('Import successful.');
                         } else if (Array.isArray(parsed)) {
                             if (!confirm('Importing a file will replace your current scenes. Proceed?')) {
@@ -6617,7 +6906,7 @@ const handleHandoutUpload = async (e) => {
                             
                             {/* Center - Scene buttons for Host, Scene Banner for Players */}
                             {(isHost || !isConnected) ? (
-                                <div className="absolute left-1/2 transform -translate-x-1/2 flex gap-1.5">
+                                <div className="absolute left-1/2 flex gap-1.5 items-center" style={{ transform: 'translateX(-60%)' }}>
                                     {scenes.map((scene, index) => (
                                         <button
                                             key={index}
@@ -6728,7 +7017,7 @@ const handleHandoutUpload = async (e) => {
                                     >
                                         ?
                                     </button>
-                                    
+                                
                                 {/* Help Tooltip */}
                                 {showHelpTooltip && (
                                     <div
@@ -6934,6 +7223,24 @@ const handleHandoutUpload = async (e) => {
                                     </div>
                                 )}
                             </div>
+                            
+                            {/* Music Player Button - All Players */}
+                            <button
+                                onClick={() => setMusicPanelVisible(!musicPanelVisible)}
+                                className={`w-10 h-10 font-bold rounded-full border-2 shadow-lg transition-all hover:scale-110 flex items-center justify-center ${
+                                    currentTrackId
+                                        ? 'bg-amber-600 text-zinc-900 border-amber-700'
+                                        : 'bg-zinc-700 text-amber-500 border-amber-600 hover:bg-amber-600 hover:text-zinc-900 hover:border-amber-700'
+                                }`}
+                                style={{ 
+                                    fontFamily: 'Georgia, serif',
+                                    fontSize: '20px',
+                                    boxShadow: currentTrackId ? '0 0 20px rgba(212, 175, 55, 0.6)' : '0 0 15px rgba(212, 175, 55, 0.4)'
+                                }}
+                                title="Music Player"
+                            >
+                                🎵
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -7462,6 +7769,22 @@ const handleHandoutUpload = async (e) => {
                                         boxShadow: '0 0 40px rgba(212, 175, 55, 0.3), inset 0 0 20px rgba(0, 0, 0, 0.8)'
                                     }}
                                 >
+                                    {/* Weather Effects Canvas for Home Page */}
+                                    {activeScene.weatherEffect && (
+                                        <canvas
+                                            ref={weatherCanvasRef}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                width: '100%',
+                                                height: '100%',
+                                                pointerEvents: 'none',
+                                                zIndex: 10
+                                            }}
+                                        />
+                                    )}
+
                                     {(!activeScene.images || activeScene.images.length === 0) && (
                                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                                             <div className="text-amber-500 text-2xl font-bold mb-4" style={{ fontFamily: 'Georgia, serif' }}>
@@ -7511,6 +7834,11 @@ const handleHandoutUpload = async (e) => {
                                                         loop
                                                         muted
                                                         playsInline
+                                                        preload="auto"
+                                                        style={{
+                                                            willChange: 'auto',
+                                                            transform: 'translateZ(0)'
+                                                        }}
                                                     />
                                                 ) : (
                                                     <img
@@ -7518,6 +7846,8 @@ const handleHandoutUpload = async (e) => {
                                                         alt="Home media"
                                                         className="w-full h-full object-fill pointer-events-none select-none"
                                                         draggable={false}
+                                                        loading="eager"
+                                                        decoding="async"
                                                     />
                                                 )}
 
@@ -7563,7 +7893,7 @@ const handleHandoutUpload = async (e) => {
                                 </div>
 
                                 {/* Avatars - Right Side */}
-                                <div className="w-32 flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+                                <div className="w-32 bg-zinc-700 border-4 border-amber-700 shadow-2xl rounded-lg overflow-y-auto flex flex-col items-center p-2 gap-2" style={{ maxHeight: 'calc(100vh - 140px)' }}>
                                     {avatars.map((avatar) => {
                                         const isBouncing = bouncingAvatarIds.includes(avatar.id);
                                         const isTalking = avatar.assignedPlayerId && talkingPlayers.has(avatar.assignedPlayerId);
@@ -7701,6 +8031,11 @@ const handleHandoutUpload = async (e) => {
                     loop
                     muted
                     playsInline
+                    preload="auto"
+                    style={{
+                        willChange: 'auto',
+                        transform: 'translateZ(0)'
+                    }}
                 />
             ) : (
                 <img
@@ -10570,6 +10905,296 @@ const handleHandoutUpload = async (e) => {
                             {presetsVisible ? '▶' : '🎲 PRESETS'}
                         </div>
                     </div>
+
+                    {/* Music Player Panel */}
+                    {musicPanelVisible && (
+                        <div style={{
+                            position: 'fixed',
+                            right: '10px',
+                            top: '80px',
+                            width: '280px',
+                            maxHeight: '500px',
+                            zIndex: 2500,
+                            backgroundColor: '#1a1a1a',
+                            border: '2px solid #d4af37',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.8)',
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}>
+                            <div style={{
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                color: '#d4af37',
+                                marginBottom: '12px',
+                                fontFamily: 'Georgia, serif',
+                                borderBottom: '1px solid #d4af37',
+                                paddingBottom: '8px',
+                                textAlign: 'center'
+                            }}>
+                                🎵 Music Player
+                            </div>
+
+                            {/* Add Track Button - Host Only */}
+                            {(isHost || !isConnected) && (
+                                <button
+                                    onClick={addMusicTrack}
+                                    style={{
+                                        marginBottom: '12px',
+                                        padding: '8px',
+                                        backgroundColor: '#28a745',
+                                        color: '#fff',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        fontSize: '12px',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        fontFamily: 'Arial, sans-serif',
+                                        transition: 'background-color 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#218838'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#28a745'}
+                                    disabled={musicTracks.length >= 10}
+                                >
+                                    + Add Track ({musicTracks.length}/10)
+                                </button>
+                            )}
+
+                            {/* Track List */}
+                            <div style={{
+                                overflowY: 'auto',
+                                flex: 1,
+                                marginBottom: '12px'
+                            }}>
+                                {musicTracks.length === 0 ? (
+                                    <div style={{
+                                        color: '#888',
+                                        fontSize: '13px',
+                                        fontFamily: 'Arial, sans-serif',
+                                        padding: '20px',
+                                        textAlign: 'center'
+                                    }}>
+                                        No tracks added yet
+                                    </div>
+                                ) : (
+                                    musicTracks.map((track) => (
+                                        <div
+                                            key={track.id}
+                                            onClick={() => toggleMusicTrack(track.id)}
+                                            onContextMenu={(e) => {
+                                                if (isHost || !isConnected) {
+                                                    e.preventDefault();
+                                                    setMusicContextMenu({
+                                                        x: e.clientX,
+                                                        y: e.clientY,
+                                                        trackId: track.id
+                                                    });
+                                                }
+                                            }}
+                                            style={{
+                                                padding: '10px',
+                                                marginBottom: '8px',
+                                                backgroundColor: currentTrackId === track.id ? '#2a4a2a' : '#2a2a2a',
+                                                borderRadius: '6px',
+                                                border: currentTrackId === track.id ? '2px solid #28a745' : '1px solid #444',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (currentTrackId !== track.id) {
+                                                    e.currentTarget.style.backgroundColor = '#3a3a3a';
+                                                    e.currentTarget.style.borderColor = '#d4af37';
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (currentTrackId !== track.id) {
+                                                    e.currentTarget.style.backgroundColor = '#2a2a2a';
+                                                    e.currentTarget.style.borderColor = '#444';
+                                                }
+                                            }}
+                                        >
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '8px'
+                                            }}>
+                                                <span style={{ fontSize: '16px' }}>
+                                                    {currentTrackId === track.id ? '▶' : '⏸'}
+                                                </span>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{
+                                                        color: currentTrackId === track.id ? '#28a745' : '#e0e0e0',
+                                                        fontSize: '13px',
+                                                        fontWeight: 'bold',
+                                                        fontFamily: 'Arial, sans-serif',
+                                                        marginBottom: '2px'
+                                                    }}>
+                                                        {track.name}
+                                                        {defaultTrackId === track.id && (
+                                                            <span style={{ 
+                                                                marginLeft: '6px',
+                                                                color: '#d4af37',
+                                                                fontSize: '12px'
+                                                            }}>
+                                                                ★
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* Volume Control */}
+                            <div style={{
+                                padding: '12px',
+                                backgroundColor: '#2a2a2a',
+                                borderRadius: '6px',
+                                border: '1px solid #444'
+                            }}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: '8px'
+                                }}>
+                                    <span style={{
+                                        color: '#d4af37',
+                                        fontSize: '12px',
+                                        fontWeight: 'bold',
+                                        fontFamily: 'Arial, sans-serif'
+                                    }}>
+                                        Volume
+                                    </span>
+                                    <span style={{
+                                        color: '#e0e0e0',
+                                        fontSize: '12px',
+                                        fontFamily: 'Arial, sans-serif'
+                                    }}>
+                                        {Math.round(musicVolume * 100)}%
+                                    </span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={musicVolume * 100}
+                                    onChange={(e) => handleVolumeChange(parseInt(e.target.value) / 100)}
+                                    style={{
+                                        width: '100%',
+                                        accentColor: '#d4af37'
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Music Track Context Menu */}
+                    {musicContextMenu && (
+                        <>
+                            <div
+                                style={{
+                                    position: 'fixed',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    zIndex: 2999
+                                }}
+                                onClick={() => setMusicContextMenu(null)}
+                            />
+                            <div style={{
+                                position: 'fixed',
+                                left: musicContextMenu.x,
+                                top: musicContextMenu.y,
+                                backgroundColor: '#1a1a1a',
+                                border: '2px solid #d4af37',
+                                borderRadius: '8px',
+                                padding: '8px',
+                                zIndex: 3000,
+                                minWidth: '180px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
+                            }}>
+                                <button
+                                    onClick={() => {
+                                        setTrackAsDefault(musicContextMenu.trackId);
+                                        setMusicContextMenu(null);
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        marginBottom: '4px',
+                                        backgroundColor: 'transparent',
+                                        color: '#d4af37',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '13px',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        fontFamily: 'Arial, sans-serif',
+                                        textAlign: 'left',
+                                        transition: 'background-color 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                    ★ Set as Default
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        renameMusicTrack(musicContextMenu.trackId);
+                                        setMusicContextMenu(null);
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        marginBottom: '4px',
+                                        backgroundColor: 'transparent',
+                                        color: '#e0e0e0',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '13px',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        fontFamily: 'Arial, sans-serif',
+                                        textAlign: 'left',
+                                        transition: 'background-color 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                    ✏️ Rename
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        deleteMusicTrack(musicContextMenu.trackId);
+                                        setMusicContextMenu(null);
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        backgroundColor: 'transparent',
+                                        color: '#dc3545',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '13px',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        fontFamily: 'Arial, sans-serif',
+                                        textAlign: 'left',
+                                        transition: 'background-color 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                    🗑️ Delete
+                                </button>
+                            </div>
+                        </>
+                    )}
 
                     {(isHost || !isConnected) && (
                         <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-30">
