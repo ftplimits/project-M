@@ -1480,6 +1480,8 @@
     <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
         let backdrops = [];
         let avatars = [];
+        let nextAvatarId = 0; // Unique ID counter for avatars
+        let nextBackdropId = 0; // Unique ID counter for backdrops
         let draggedElement = null;
         let resizingElement = null;
         let offsetX = 0;
@@ -2005,7 +2007,7 @@
         function getGameState() {
             return {
                 avatars: avatars.map(a => ({
-                    id: avatars.indexOf(a),
+                    id: a.id, // Use unique ID instead of array index
                     imageSrc: a.imageSrc,
                     x: parseInt(a.element.style.left) || 0,
                     y: parseInt(a.element.style.top) || 0,
@@ -2058,6 +2060,11 @@
                 // Restore backdrops
                 if (state.backdrops && state.backdrops.length > 0) {
                     state.backdrops.forEach(backdropData => {
+                        // Set nextBackdropId to the incoming ID before creating
+                        if (backdropData.id !== undefined) {
+                            nextBackdropId = backdropData.id;
+                        }
+                        
                         createBackdrop(
                             backdropData.imageSrc,
                             backdropData.x,
@@ -2074,12 +2081,22 @@
                         bd.grid = backdropData.grid || { enabled: false, size: 50, color: '#ffffff', bgOpacity: 0.3 };
                         bd.gridTransform = backdropData.gridTransform || { zoom: 1, panX: 0, panY: 0 };
                         bd.avatarStates = backdropData.avatarStates || [];
+                        
+                        // Update nextBackdropId to be after this one
+                        if (backdropData.id !== undefined) {
+                            nextBackdropId = Math.max(nextBackdropId, backdropData.id + 1);
+                        }
                     });
                 }
                 
                 // Restore avatars
                 if (state.avatars && state.avatars.length > 0) {
                     state.avatars.forEach(avatarData => {
+                        // Set nextAvatarId to the incoming ID before creating
+                        if (avatarData.id !== undefined) {
+                            nextAvatarId = avatarData.id;
+                        }
+                        
                         createAvatar(
                             avatarData.imageSrc,
                             avatarData.x,
@@ -2096,6 +2113,11 @@
                         if (avatarData.locked) {
                             av.locked = true;
                             av.element.classList.add('locked');
+                        }
+                        
+                        // Update nextAvatarId to be after this one
+                        if (avatarData.id !== undefined) {
+                            nextAvatarId = Math.max(nextAvatarId, avatarData.id + 1);
                         }
                     });
                 }
@@ -2369,14 +2391,16 @@
          * Receive and create avatar from network data
          */
         function receiveAvatarAdd(data) {
-            if (!data) return;
+            if (!data || data.id === undefined) return;
             
-            // Check if avatar already exists
-            const existingIndex = avatars.findIndex(a => a.imageSrc === data.src && 
-                parseInt(a.element.style.left) === data.x && 
-                parseInt(a.element.style.top) === data.y);
+            // Check if avatar with this ID already exists
+            const existing = avatars.find(a => a.id === data.id);
             
-            if (existingIndex === -1) {
+            if (!existing) {
+                // Temporarily save the nextAvatarId, set it to the incoming ID, then restore it
+                const savedNextId = nextAvatarId;
+                nextAvatarId = data.id;
+                
                 createAvatar(
                     data.src,
                     data.x,
@@ -2387,6 +2411,9 @@
                     null,
                     false
                 );
+                
+                // Restore the nextAvatarId and increment for next local creation
+                nextAvatarId = Math.max(savedNextId, data.id + 1);
                 
                 // Apply locked state if needed
                 if (data.locked) {
@@ -2403,8 +2430,8 @@
         function receiveAvatarMove(data) {
             if (!data || data.id === undefined) return;
             
-            if (data.id >= 0 && data.id < avatars.length) {
-                const avatar = avatars[data.id];
+            const avatar = avatars.find(a => a.id === data.id);
+            if (avatar) {
                 avatar.element.style.left = data.x + 'px';
                 avatar.element.style.top = data.y + 'px';
             }
@@ -2416,10 +2443,10 @@
         function receiveAvatarRemove(data) {
             if (!data || data.id === undefined) return;
             
-            if (data.id >= 0 && data.id < avatars.length) {
-                const avatar = avatars[data.id];
+            const avatar = avatars.find(a => a.id === data.id);
+            if (avatar) {
                 avatar.element.remove();
-                avatars.splice(data.id, 1);
+                avatars = avatars.filter(a => a.id !== data.id);
             }
         }
         
@@ -2429,9 +2456,8 @@
         function receiveAvatarUpdate(data) {
             if (!data || data.id === undefined) return;
             
-            if (data.id >= 0 && data.id < avatars.length) {
-                const avatar = avatars[data.id];
-                
+            const avatar = avatars.find(a => a.id === data.id);
+            if (avatar) {
                 switch (data.property) {
                     case 'flip':
                         avatar.flipped = !avatar.flipped;
@@ -2525,14 +2551,16 @@
          * Receive and create backdrop from network data
          */
         function receiveBackdropAdd(data) {
-            if (!data) return;
+            if (!data || data.id === undefined) return;
             
-            // Check if backdrop already exists
-            const existingIndex = backdrops.findIndex(b => b.imageSrc === data.src && 
-                parseInt(b.element.style.left) === data.x && 
-                parseInt(b.element.style.top) === data.y);
+            // Check if backdrop with this ID already exists
+            const existing = backdrops.find(b => b.id === data.id);
             
-            if (existingIndex === -1) {
+            if (!existing) {
+                // Temporarily save the nextBackdropId, set it to the incoming ID, then restore it
+                const savedNextId = nextBackdropId;
+                nextBackdropId = data.id;
+                
                 createBackdrop(
                     data.src,
                     data.x,
@@ -2543,6 +2571,9 @@
                     true,
                     false
                 );
+                
+                // Restore the nextBackdropId and increment for next local creation
+                nextBackdropId = Math.max(savedNextId, data.id + 1);
             }
         }
         
@@ -2552,8 +2583,8 @@
         function receiveBackdropMove(data) {
             if (!data || data.id === undefined) return;
             
-            if (data.id >= 0 && data.id < backdrops.length) {
-                const backdrop = backdrops[data.id];
+            const backdrop = backdrops.find(b => b.id === data.id);
+            if (backdrop) {
                 backdrop.element.style.left = data.x + 'px';
                 backdrop.element.style.top = data.y + 'px';
             }
@@ -2565,10 +2596,10 @@
         function receiveBackdropRemove(data) {
             if (!data || data.id === undefined) return;
             
-            if (data.id >= 0 && data.id < backdrops.length) {
-                const backdrop = backdrops[data.id];
+            const backdrop = backdrops.find(b => b.id === data.id);
+            if (backdrop) {
                 backdrop.element.remove();
-                backdrops.splice(data.id, 1);
+                backdrops = backdrops.filter(b => b.id !== data.id);
             }
         }
         
@@ -5618,9 +5649,9 @@
                         avatarData.element.classList.remove('flipped');
                     }
                     
-                    // Broadcast flip to other players
+                    // Broadcast flip to other players using unique ID
                     if (isConnected) {
-                        broadcastAvatarUpdate(avatarIndex, 'flip');
+                        broadcastAvatarUpdate(avatarData.id, 'flip');
                     }
                     
                     saveToLocalStorage();
@@ -6291,12 +6322,12 @@
             deleteBtn.textContent = 'Delete';
             deleteBtn.onclick = (e) => {
                 e.stopPropagation();
-                const backdropIndex = backdrops.findIndex(b => b.element === backdrop);
+                const backdropData = backdrops.find(b => b.element === backdrop);
                 const wasVisible = backdrop.style.display !== 'none';
                 
-                // Broadcast backdrop removal
-                if (isConnected && backdropIndex !== -1) {
-                    broadcastBackdropRemove(backdropIndex);
+                // Broadcast backdrop removal using unique ID
+                if (isConnected && backdropData) {
+                    broadcastBackdropRemove(backdropData.id);
                 }
                 
                 backdrop.remove();
@@ -6344,7 +6375,9 @@
 
             stage.appendChild(backdrop);
             
+            const backdropId = nextBackdropId++; // Assign unique ID
             const backdropData = {
+                id: backdropId, // Add unique ID to backdrop data
                 element: backdrop,
                 imageSrc: imageSrc,
                 x: x,
@@ -6369,9 +6402,8 @@
             };
             backdrops.push(backdropData);
             
-            // Broadcast backdrop creation to other players
+            // Broadcast backdrop creation to other players using unique ID
             if (isConnected) {
-                const backdropId = backdrops.length - 1;
                 broadcastBackdropAdd(backdropId, imageSrc, x, y, width, height);
             }
             
@@ -6415,8 +6447,7 @@
                     
                     // Broadcast lock state change
                     if (isConnected) {
-                        const avatarId = avatars.indexOf(avatarData);
-                        broadcastAvatarUpdate(avatarId, 'lock');
+                        broadcastAvatarUpdate(avatarData.id, 'lock');
                     }
                 }
                 lockBtn.textContent = avatar.classList.contains('locked') ? 'Unlock' : 'Lock';
@@ -6428,17 +6459,20 @@
             deleteBtn.textContent = 'Delete';
             deleteBtn.onclick = (e) => {
                 e.stopPropagation();
-                const avatarIndex = avatars.findIndex(a => a.element === avatar);
+                const avatarData = avatars.find(a => a.element === avatar);
                 
-                // Clear spotlight if this avatar is spotlighted
-                if (spotlightedAvatarId === avatarIndex) {
-                    spotlightedAvatarId = null;
-                    updateSpotlightOverlay();
-                }
-                
-                // Broadcast avatar removal
-                if (isConnected && avatarIndex !== -1) {
-                    broadcastAvatarRemove(avatarIndex);
+                if (avatarData) {
+                    // Clear spotlight if this avatar is spotlighted  
+                    const avatarIndex = avatars.indexOf(avatarData);
+                    if (spotlightedAvatarId === avatarIndex) {
+                        spotlightedAvatarId = null;
+                        updateSpotlightOverlay();
+                    }
+                    
+                    // Broadcast avatar removal using unique ID
+                    if (isConnected) {
+                        broadcastAvatarRemove(avatarData.id);
+                    }
                 }
                 
                 avatar.remove();
@@ -6476,10 +6510,9 @@
                 if (avatarData) {
                     avatarData.name = nameInput.value;
                     
-                    // Broadcast name change
+                    // Broadcast name change using unique ID
                     if (isConnected) {
-                        const avatarId = avatars.indexOf(avatarData);
-                        broadcastAvatarUpdate(avatarId, 'name', nameInput.value);
+                        broadcastAvatarUpdate(avatarData.id, 'name', nameInput.value);
                     }
                 }
                 saveToLocalStorage();
@@ -6538,7 +6571,9 @@
 
             stage.appendChild(avatar);
             
+            const avatarId = nextAvatarId++; // Assign unique ID
             const avatarData = {
+                id: avatarId, // Add unique ID to avatar data
                 element: avatar,
                 imageSrc: imageSrc,
                 x: x,
@@ -6557,7 +6592,6 @@
             
             // Broadcast avatar creation to other players
             if (isConnected) {
-                const avatarId = avatars.length - 1;
                 broadcastAvatarAdd(avatarId, imageSrc, x, y, 300, 300, name, flipped, false);
             }
             
@@ -6623,31 +6657,31 @@
             if (draggedElement || resizingElement) {
                 // Broadcast avatar movement if it's an avatar
                 if (draggedElement && draggedElement.classList.contains('avatar') && isConnected) {
-                    const avatarIndex = avatars.findIndex(a => a.element === draggedElement);
-                    if (avatarIndex !== -1) {
+                    const avatarData = avatars.find(a => a.element === draggedElement);
+                    if (avatarData) {
                         const x = parseInt(draggedElement.style.left) || 0;
                         const y = parseInt(draggedElement.style.top) || 0;
-                        broadcastAvatarMove(avatarIndex, x, y);
+                        broadcastAvatarMove(avatarData.id, x, y);
                     }
                 }
                 
                 // Broadcast backdrop movement if it's a backdrop
                 if (draggedElement && draggedElement.classList.contains('backdrop') && isConnected) {
-                    const backdropIndex = backdrops.findIndex(b => b.element === draggedElement);
-                    if (backdropIndex !== -1) {
+                    const backdropData = backdrops.find(b => b.element === draggedElement);
+                    if (backdropData) {
                         const x = parseInt(draggedElement.style.left) || 0;
                         const y = parseInt(draggedElement.style.top) || 0;
-                        broadcastBackdropMove(backdropIndex, x, y);
+                        broadcastBackdropMove(backdropData.id, x, y);
                     }
                 }
                 
                 // Broadcast avatar size update if resizing
                 if (resizingElement && resizingElement.classList.contains('avatar') && isConnected) {
-                    const avatarIndex = avatars.findIndex(a => a.element === resizingElement);
-                    if (avatarIndex !== -1) {
+                    const avatarData = avatars.find(a => a.element === resizingElement);
+                    if (avatarData) {
                         const width = parseInt(resizingElement.style.width) || 300;
                         const height = parseInt(resizingElement.style.height) || 300;
-                        broadcastAvatarUpdate(avatarIndex, 'size', { width, height });
+                        broadcastAvatarUpdate(avatarData.id, 'size', { width, height });
                     }
                 }
                 
