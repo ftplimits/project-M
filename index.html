@@ -1528,6 +1528,8 @@
         let isHost = false;
         let isConnected = false;
         let connections = [];
+        let hostConnection = null; // Added for player-to-host communication
+        let playerName = 'Player'; // Added for player identification
         let players = [];
         let multiplayerMenuVisible = false;
         let pendingJoinRequests = [];
@@ -1635,20 +1637,12 @@
             
             peer.on('connection', (conn) => {
                 connections.push(conn);
+                setupConnectionHandlers(conn);
                 
                 conn.on('open', () => {
                     console.log('Player connected');
-                });
-                
-                conn.on('data', (message) => {
-                    handleIncomingMessage(message, conn);
-                });
-                
-                conn.on('close', () => {
-                    connections = connections.filter(c => c.peer !== conn.peer);
-                    players = players.filter(p => p.id !== conn.peer);
-                    broadcastPlayerList();
-                    updateMultiplayerMenu();
+                    sendInitialState(conn); // Send current state to new player
+                    updatePlayerList();
                 });
             });
             
@@ -1699,7 +1693,8 @@
                 
                 conn.on('open', () => {
                     console.log('Connection opened to host');
-                    connections.push(conn);
+                    hostConnection = conn;
+                    setupConnectionHandlers(conn);
                     isHost = false;
                     isConnected = true;
                     roomCode = code;
@@ -1712,21 +1707,6 @@
                     
                     updateCreateSessionButton();
                     document.getElementById('multiplayerMenu').style.display = 'none';
-                });
-                
-                conn.on('data', (message) => {
-                    handleIncomingMessage(message, conn);
-                });
-                
-                conn.on('close', () => {
-                    isConnected = false;
-                    updateCreateSessionButton();
-                    alert('Disconnected from host');
-                });
-                
-                conn.on('error', (err) => {
-                    console.error('Connection error:', err);
-                    alert('Failed to connect. Room may not exist.');
                 });
             });
         }
@@ -1958,6 +1938,10 @@
             }
         }
         
+        function updatePlayerList() {
+            updateMultiplayerMenu();
+        }
+        
         function copyShareLink() {
             const shareLink = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
             navigator.clipboard.writeText(shareLink).then(() => {
@@ -1977,6 +1961,735 @@
             myPeerId = null;
             updateCreateSessionButton();
             document.getElementById('multiplayerMenu').style.display = 'none';
+        }
+        
+        // ========================================
+        // CORE STATE SYNCHRONIZATION FUNCTIONS
+        // ========================================
+        
+        /**
+         * Host broadcasts data to all connected players
+         */
+        function broadcastToAll(data) {
+            if (!isHost || connections.length === 0) return;
+            
+            connections.forEach(conn => {
+                if (conn.open) {
+                    try {
+                        conn.send(data);
+                    } catch (err) {
+                        console.error('Error sending to player:', err);
+                    }
+                }
+            });
+        }
+        
+        /**
+         * Player sends data to host
+         */
+        function sendToHost(data) {
+            if (isHost || !hostConnection) return;
+            
+            if (hostConnection.open) {
+                try {
+                    hostConnection.send(data);
+                } catch (err) {
+                    console.error('Error sending to host:', err);
+                }
+            }
+        }
+        
+        /**
+         * Collect complete current game state
+         */
+        function getGameState() {
+            return {
+                avatars: avatars.map(a => ({
+                    id: avatars.indexOf(a),
+                    imageSrc: a.imageSrc,
+                    x: parseInt(a.element.style.left) || 0,
+                    y: parseInt(a.element.style.top) || 0,
+                    width: parseInt(a.element.style.width) || 300,
+                    height: parseInt(a.element.style.height) || 300,
+                    zIndex: a.element.style.zIndex || 'auto',
+                    name: a.name || 'Character',
+                    flipped: a.flipped || false,
+                    locked: a.locked || false,
+                    hotkey: a.hotkey || null
+                })),
+                backdrops: backdrops.map(b => ({
+                    imageSrc: b.imageSrc,
+                    x: parseInt(b.element.style.left) || 0,
+                    y: parseInt(b.element.style.top) || 0,
+                    width: parseInt(b.element.style.width) || 800,
+                    height: parseInt(b.element.style.height) || 600,
+                    zIndex: b.element.style.zIndex || 'auto',
+                    visible: b.visible !== false,
+                    name: b.name || 'Scene',
+                    grid: b.grid || { enabled: false, size: 50, color: '#ffffff', bgOpacity: 0.3 },
+                    gridTransform: b.gridTransform || { zoom: 1, panX: 0, panY: 0 },
+                    avatarStates: b.avatarStates || []
+                })),
+                drawings: drawings || [],
+                weatherEffect: currentWeatherEffect || 'none',
+                gridVisible: document.getElementById('gridCanvas') ? 
+                    document.getElementById('gridCanvas').style.display !== 'none' : false,
+                theme: {
+                    accentColor: document.documentElement.style.getPropertyValue('--accent-color') || '#d4a574',
+                    backgroundColor: document.documentElement.style.getPropertyValue('--background-color') || '#2a2a2a',
+                    buttonBgColor: document.documentElement.style.getPropertyValue('--button-bg-color') || '#1a1a1a'
+                }
+            };
+        }
+        
+        /**
+         * Apply received game state to local instance
+         */
+        function applyGameState(state) {
+            console.log('Applying game state:', state);
+            
+            try {
+                // Clear existing elements
+                backdrops.forEach(b => b.element.remove());
+                backdrops = [];
+                avatars.forEach(a => a.element.remove());
+                avatars = [];
+                
+                // Restore backdrops
+                if (state.backdrops && state.backdrops.length > 0) {
+                    state.backdrops.forEach(backdropData => {
+                        createBackdrop(
+                            backdropData.imageSrc,
+                            backdropData.x,
+                            backdropData.y,
+                            backdropData.width,
+                            backdropData.height,
+                            backdropData.zIndex,
+                            backdropData.visible,
+                            false
+                        );
+                        
+                        const bd = backdrops[backdrops.length - 1];
+                        bd.name = backdropData.name || 'Scene';
+                        bd.grid = backdropData.grid || { enabled: false, size: 50, color: '#ffffff', bgOpacity: 0.3 };
+                        bd.gridTransform = backdropData.gridTransform || { zoom: 1, panX: 0, panY: 0 };
+                        bd.avatarStates = backdropData.avatarStates || [];
+                    });
+                }
+                
+                // Restore avatars
+                if (state.avatars && state.avatars.length > 0) {
+                    state.avatars.forEach(avatarData => {
+                        createAvatar(
+                            avatarData.imageSrc,
+                            avatarData.x,
+                            avatarData.y,
+                            avatarData.zIndex,
+                            avatarData.name,
+                            avatarData.flipped,
+                            avatarData.hotkey,
+                            false
+                        );
+                        
+                        // Apply locked state
+                        const av = avatars[avatars.length - 1];
+                        if (avatarData.locked) {
+                            av.locked = true;
+                            av.element.classList.add('locked');
+                        }
+                    });
+                }
+                
+                // Restore drawings
+                if (state.drawings) {
+                    drawings = state.drawings;
+                    if (typeof renderDrawings === 'function') {
+                        renderDrawings();
+                    }
+                }
+                
+                // Restore weather
+                if (state.weatherEffect && typeof setWeatherEffect === 'function') {
+                    setWeatherEffect(state.weatherEffect);
+                }
+                
+                // Restore grid visibility
+                if (state.gridVisible !== undefined) {
+                    const gridCanvas = document.getElementById('gridCanvas');
+                    if (gridCanvas) {
+                        gridCanvas.style.display = state.gridVisible ? 'block' : 'none';
+                    }
+                }
+                
+                // Restore theme
+                if (state.theme) {
+                    if (state.theme.accentColor) {
+                        document.documentElement.style.setProperty('--accent-color', state.theme.accentColor);
+                    }
+                    if (state.theme.backgroundColor) {
+                        document.documentElement.style.setProperty('--background-color', state.theme.backgroundColor);
+                    }
+                    if (state.theme.buttonBgColor) {
+                        document.documentElement.style.setProperty('--button-bg-color', state.theme.buttonBgColor);
+                    }
+                }
+                
+                console.log('Game state applied successfully');
+            } catch (err) {
+                console.error('Error applying game state:', err);
+            }
+        }
+        
+        /**
+         * Route incoming multiplayer messages to appropriate handlers
+         */
+        function handleMultiplayerMessage(data, conn) {
+            if (!data || !data.type) return;
+            
+            console.log('Handling multiplayer message:', data.type);
+            
+            try {
+                switch (data.type) {
+                    // Avatar synchronization
+                    case 'AVATAR_ADD':
+                        receiveAvatarAdd(data.data);
+                        break;
+                    case 'AVATAR_MOVE':
+                        receiveAvatarMove(data.data);
+                        break;
+                    case 'AVATAR_REMOVE':
+                        receiveAvatarRemove(data.data);
+                        break;
+                    case 'AVATAR_UPDATE':
+                        receiveAvatarUpdate(data.data);
+                        break;
+                    
+                    // Backdrop synchronization
+                    case 'BACKDROP_ADD':
+                        receiveBackdropAdd(data.data);
+                        break;
+                    case 'BACKDROP_MOVE':
+                        receiveBackdropMove(data.data);
+                        break;
+                    case 'BACKDROP_REMOVE':
+                        receiveBackdropRemove(data.data);
+                        break;
+                    
+                    // Other synchronization
+                    case 'DICE_ROLL':
+                        receiveDiceRoll(data.data);
+                        break;
+                    case 'DRAWING':
+                        receiveDrawing(data.data);
+                        break;
+                    case 'WEATHER_CHANGE':
+                        if (typeof setWeatherEffect === 'function') {
+                            setWeatherEffect(data.data.weather);
+                        }
+                        break;
+                    case 'GRID_TOGGLE':
+                        const gridCanvas = document.getElementById('gridCanvas');
+                        if (gridCanvas) {
+                            gridCanvas.style.display = data.data.visible ? 'block' : 'none';
+                        }
+                        break;
+                    case 'THEME_CHANGE':
+                        if (data.data.accentColor) {
+                            document.documentElement.style.setProperty('--accent-color', data.data.accentColor);
+                        }
+                        if (data.data.backgroundColor) {
+                            document.documentElement.style.setProperty('--background-color', data.data.backgroundColor);
+                        }
+                        if (data.data.buttonBgColor) {
+                            document.documentElement.style.setProperty('--button-bg-color', data.data.buttonBgColor);
+                        }
+                        break;
+                    
+                    // Existing message types
+                    case 'FULL_STATE':
+                        applyGameState(data.data);
+                        break;
+                    case 'PLAYER_LIST':
+                        players = data.data;
+                        updateMultiplayerMenu();
+                        break;
+                    case 'JOIN_REQUEST':
+                        if (isHost) {
+                            const newPlayer = { id: data.data.peerId, name: data.data.name, isHost: false };
+                            players.push(newPlayer);
+                            
+                            sendInitialState(conn);
+                            
+                            conn.send({
+                                type: 'ADMIT_PLAYER',
+                                data: { success: true }
+                            });
+                            
+                            broadcastPlayerList();
+                            updateMultiplayerMenu();
+                        }
+                        break;
+                    
+                    default:
+                        console.log('Unknown message type:', data.type);
+                }
+                
+                // Host relays messages to other players (except sender)
+                if (isHost && conn && data.type !== 'JOIN_REQUEST' && data.type !== 'FULL_STATE') {
+                    connections.forEach(c => {
+                        if (c.peer !== conn.peer && c.open) {
+                            try {
+                                c.send(data);
+                            } catch (err) {
+                                console.error('Error relaying message:', err);
+                            }
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error('Error handling multiplayer message:', err);
+            }
+        }
+        
+        /**
+         * Set up data, close, and error handlers for peer connections
+         */
+        function setupConnectionHandlers(connection) {
+            connection.on('data', (message) => {
+                handleMultiplayerMessage(message, connection);
+            });
+            
+            connection.on('close', () => {
+                console.log('Connection closed');
+                if (isHost) {
+                    connections = connections.filter(c => c.peer !== connection.peer);
+                    players = players.filter(p => p.id !== connection.peer);
+                    broadcastPlayerList();
+                    updateMultiplayerMenu();
+                } else {
+                    isConnected = false;
+                    hostConnection = null;
+                    updateCreateSessionButton();
+                    alert('Disconnected from host');
+                }
+            });
+            
+            connection.on('error', (err) => {
+                console.error('Connection error:', err);
+            });
+        }
+        
+        /**
+         * Host sends complete game state to newly connected player
+         */
+        function sendInitialState(connection) {
+            if (!isHost || !connection || !connection.open) return;
+            
+            try {
+                const state = getGameState();
+                connection.send({
+                    type: 'FULL_STATE',
+                    data: state
+                });
+                console.log('Sent initial state to new player');
+            } catch (err) {
+                console.error('Error sending initial state:', err);
+            }
+        }
+        
+        // ========================================
+        // AVATAR SYNCHRONIZATION FUNCTIONS
+        // ========================================
+        
+        /**
+         * Broadcast avatar add to all players
+         */
+        function broadcastAvatarAdd(id, src, x, y, width, height, name, flipped, locked) {
+            const data = {
+                type: 'AVATAR_ADD',
+                data: { id, src, x, y, width, height, name, flipped, locked }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Broadcast avatar move to all players
+         */
+        function broadcastAvatarMove(id, x, y) {
+            const data = {
+                type: 'AVATAR_MOVE',
+                data: { id, x, y }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Broadcast avatar remove to all players
+         */
+        function broadcastAvatarRemove(id) {
+            const data = {
+                type: 'AVATAR_REMOVE',
+                data: { id }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Broadcast avatar update (flip, lock, name, size) to all players
+         */
+        function broadcastAvatarUpdate(id, property, value) {
+            const data = {
+                type: 'AVATAR_UPDATE',
+                data: { id, property, value }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Receive and create avatar from network data
+         */
+        function receiveAvatarAdd(data) {
+            if (!data) return;
+            
+            // Check if avatar already exists
+            const existingIndex = avatars.findIndex(a => a.imageSrc === data.src && 
+                parseInt(a.element.style.left) === data.x && 
+                parseInt(a.element.style.top) === data.y);
+            
+            if (existingIndex === -1) {
+                createAvatar(
+                    data.src,
+                    data.x,
+                    data.y,
+                    'auto',
+                    data.name,
+                    data.flipped,
+                    null,
+                    false
+                );
+                
+                // Apply locked state if needed
+                if (data.locked) {
+                    const av = avatars[avatars.length - 1];
+                    av.locked = true;
+                    av.element.classList.add('locked');
+                }
+            }
+        }
+        
+        /**
+         * Receive and update avatar position
+         */
+        function receiveAvatarMove(data) {
+            if (!data || data.id === undefined) return;
+            
+            if (data.id >= 0 && data.id < avatars.length) {
+                const avatar = avatars[data.id];
+                avatar.element.style.left = data.x + 'px';
+                avatar.element.style.top = data.y + 'px';
+            }
+        }
+        
+        /**
+         * Receive and remove avatar
+         */
+        function receiveAvatarRemove(data) {
+            if (!data || data.id === undefined) return;
+            
+            if (data.id >= 0 && data.id < avatars.length) {
+                const avatar = avatars[data.id];
+                avatar.element.remove();
+                avatars.splice(data.id, 1);
+            }
+        }
+        
+        /**
+         * Receive and update avatar properties
+         */
+        function receiveAvatarUpdate(data) {
+            if (!data || data.id === undefined) return;
+            
+            if (data.id >= 0 && data.id < avatars.length) {
+                const avatar = avatars[data.id];
+                
+                switch (data.property) {
+                    case 'flip':
+                        avatar.flipped = !avatar.flipped;
+                        if (avatar.flipped) {
+                            avatar.element.classList.add('flipped');
+                        } else {
+                            avatar.element.classList.remove('flipped');
+                        }
+                        break;
+                    
+                    case 'lock':
+                        avatar.locked = !avatar.locked;
+                        if (avatar.locked) {
+                            avatar.element.classList.add('locked');
+                        } else {
+                            avatar.element.classList.remove('locked');
+                        }
+                        break;
+                    
+                    case 'name':
+                        avatar.name = data.value;
+                        const nameElement = avatar.element.querySelector('.avatar-name input');
+                        if (nameElement) {
+                            nameElement.value = data.value;
+                        }
+                        break;
+                    
+                    case 'size':
+                        if (data.value && data.value.width && data.value.height) {
+                            avatar.element.style.width = data.value.width + 'px';
+                            avatar.element.style.height = data.value.height + 'px';
+                        }
+                        break;
+                }
+            }
+        }
+        
+        // ========================================
+        // BACKDROP SYNCHRONIZATION FUNCTIONS
+        // ========================================
+        
+        /**
+         * Broadcast backdrop add to all players
+         */
+        function broadcastBackdropAdd(id, src, x, y, width, height) {
+            const data = {
+                type: 'BACKDROP_ADD',
+                data: { id, src, x, y, width, height }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Broadcast backdrop move to all players
+         */
+        function broadcastBackdropMove(id, x, y) {
+            const data = {
+                type: 'BACKDROP_MOVE',
+                data: { id, x, y }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Broadcast backdrop remove to all players
+         */
+        function broadcastBackdropRemove(id) {
+            const data = {
+                type: 'BACKDROP_REMOVE',
+                data: { id }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Receive and create backdrop from network data
+         */
+        function receiveBackdropAdd(data) {
+            if (!data) return;
+            
+            // Check if backdrop already exists
+            const existingIndex = backdrops.findIndex(b => b.imageSrc === data.src && 
+                parseInt(b.element.style.left) === data.x && 
+                parseInt(b.element.style.top) === data.y);
+            
+            if (existingIndex === -1) {
+                createBackdrop(
+                    data.src,
+                    data.x,
+                    data.y,
+                    data.width,
+                    data.height,
+                    'auto',
+                    true,
+                    false
+                );
+            }
+        }
+        
+        /**
+         * Receive and update backdrop position
+         */
+        function receiveBackdropMove(data) {
+            if (!data || data.id === undefined) return;
+            
+            if (data.id >= 0 && data.id < backdrops.length) {
+                const backdrop = backdrops[data.id];
+                backdrop.element.style.left = data.x + 'px';
+                backdrop.element.style.top = data.y + 'px';
+            }
+        }
+        
+        /**
+         * Receive and remove backdrop
+         */
+        function receiveBackdropRemove(data) {
+            if (!data || data.id === undefined) return;
+            
+            if (data.id >= 0 && data.id < backdrops.length) {
+                const backdrop = backdrops[data.id];
+                backdrop.element.remove();
+                backdrops.splice(data.id, 1);
+            }
+        }
+        
+        // ========================================
+        // OTHER SYNCHRONIZATION FUNCTIONS
+        // ========================================
+        
+        /**
+         * Broadcast dice roll to all players
+         */
+        function broadcastDiceRoll(formula, result, playerName) {
+            const data = {
+                type: 'DICE_ROLL',
+                data: { formula, result, playerName }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Receive and display dice roll
+         */
+        function receiveDiceRoll(data) {
+            if (!data) return;
+            
+            // Show dice notification
+            showDiceNotification(data.formula, data.result, data.playerName);
+            
+            // Add to roll log if function exists
+            if (typeof addToRollLog === 'function') {
+                addToRollLog(data.formula, data.result, data.playerName);
+            }
+        }
+        
+        /**
+         * Broadcast drawing to all players
+         */
+        function broadcastDrawing(drawData) {
+            const data = {
+                type: 'DRAWING',
+                data: drawData
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Receive and render drawing
+         */
+        function receiveDrawing(data) {
+            if (!data) return;
+            
+            // Add drawing to drawings array
+            if (Array.isArray(drawings)) {
+                drawings.push(data);
+                
+                // Re-render drawings if function exists
+                if (typeof renderDrawings === 'function') {
+                    renderDrawings();
+                }
+            }
+        }
+        
+        /**
+         * Broadcast weather change to all players
+         */
+        function broadcastWeatherChange(weather) {
+            const data = {
+                type: 'WEATHER_CHANGE',
+                data: { weather }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Broadcast grid toggle to all players
+         */
+        function broadcastGridToggle(visible) {
+            const data = {
+                type: 'GRID_TOGGLE',
+                data: { visible }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
+        }
+        
+        /**
+         * Broadcast theme change to all players
+         */
+        function broadcastThemeChange() {
+            const data = {
+                type: 'THEME_CHANGE',
+                data: {
+                    accentColor: document.documentElement.style.getPropertyValue('--accent-color') || '#d4a574',
+                    backgroundColor: document.documentElement.style.getPropertyValue('--background-color') || '#2a2a2a',
+                    buttonBgColor: document.documentElement.style.getPropertyValue('--button-bg-color') || '#1a1a1a'
+                }
+            };
+            
+            if (isHost) {
+                broadcastToAll(data);
+            } else {
+                sendToHost(data);
+            }
         }
         
         // End of multiplayer functions
