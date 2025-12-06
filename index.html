@@ -1881,7 +1881,8 @@
                 // Restore backdrops
                 if (state.backdrops && state.backdrops.length > 0) {
                     state.backdrops.forEach(backdropData => {
-                        // Set nextBackdropId to the incoming ID before creating
+                        // Temporarily save and set nextBackdropId to match incoming ID
+                        const savedNextId = nextBackdropId;
                         if (backdropData.id !== undefined) {
                             nextBackdropId = backdropData.id;
                         }
@@ -1903,9 +1904,11 @@
                         bd.gridTransform = backdropData.gridTransform || { zoom: 1, panX: 0, panY: 0 };
                         bd.avatarStates = backdropData.avatarStates || [];
                         
-                        // Update nextBackdropId to be after this one
+                        // Update nextBackdropId to be after the max of current counter and this element
                         if (backdropData.id !== undefined) {
-                            nextBackdropId = Math.max(nextBackdropId, backdropData.id + 1);
+                            nextBackdropId = Math.max(savedNextId, backdropData.id + 1);
+                        } else {
+                            nextBackdropId = savedNextId;
                         }
                     });
                 }
@@ -1913,7 +1916,8 @@
                 // Restore avatars
                 if (state.avatars && state.avatars.length > 0) {
                     state.avatars.forEach(avatarData => {
-                        // Set nextAvatarId to the incoming ID before creating
+                        // Temporarily save and set nextAvatarId to match incoming ID
+                        const savedNextId = nextAvatarId;
                         if (avatarData.id !== undefined) {
                             nextAvatarId = avatarData.id;
                         }
@@ -1936,9 +1940,11 @@
                             av.element.classList.add('locked');
                         }
                         
-                        // Update nextAvatarId to be after this one
+                        // Update nextAvatarId to be after the max of current counter and this element
                         if (avatarData.id !== undefined) {
-                            nextAvatarId = Math.max(nextAvatarId, avatarData.id + 1);
+                            nextAvatarId = Math.max(savedNextId, avatarData.id + 1);
+                        } else {
+                            nextAvatarId = savedNextId;
                         }
                     });
                 }
