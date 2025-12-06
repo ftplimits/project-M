@@ -3011,16 +3011,31 @@
         function changeAccentColor(color) {
             document.documentElement.style.setProperty('--accent-color', color);
             saveColors();
+            
+            // Broadcast theme change to other players
+            if (isConnected) {
+                broadcastThemeChange();
+            }
         }
 
         function changeBackgroundColor(color) {
             document.documentElement.style.setProperty('--background-color', color);
             saveColors();
+            
+            // Broadcast theme change to other players
+            if (isConnected) {
+                broadcastThemeChange();
+            }
         }
 
         function changeButtonBgColor(color) {
             document.documentElement.style.setProperty('--button-bg-color', color);
             saveColors();
+            
+            // Broadcast theme change to other players
+            if (isConnected) {
+                broadcastThemeChange();
+            }
         }
 
         function saveColors() {
@@ -3237,6 +3252,11 @@
             overlayCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             tokenCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             if (gridToolbar) gridToolbar.style.display = activeBackdrop.grid.enabled ? 'flex' : 'none';
+            
+            // Broadcast grid toggle to other players
+            if (isConnected) {
+                broadcastGridToggle(activeBackdrop.grid.enabled);
+            }
             
             updateGridButton();
             renderGrid();
@@ -5176,6 +5196,11 @@
             const displayFormula = presetName || formula;
             showDiceNotification(playerName, displayFormula, grandTotal);
             
+            // Broadcast dice roll to other players
+            if (isConnected) {
+                broadcastDiceRoll(displayFormula, grandTotal, playerName);
+            }
+            
             if (presetId) {
                 spinningPreset = presetId;
                 updatePresetsPanel(); // Update immediately to show spin
@@ -5356,6 +5381,12 @@
             } else {
                 stopWeatherEffect();
             }
+            
+            // Broadcast weather change to other players
+            if (isConnected) {
+                broadcastWeatherChange(effect);
+            }
+            
             saveToLocalStorage();
         }
 
@@ -5585,6 +5616,11 @@
                         avatarData.element.classList.add('flipped');
                     } else {
                         avatarData.element.classList.remove('flipped');
+                    }
+                    
+                    // Broadcast flip to other players
+                    if (isConnected) {
+                        broadcastAvatarUpdate(avatarIndex, 'flip');
                     }
                     
                     saveToLocalStorage();
@@ -6255,7 +6291,14 @@
             deleteBtn.textContent = 'Delete';
             deleteBtn.onclick = (e) => {
                 e.stopPropagation();
+                const backdropIndex = backdrops.findIndex(b => b.element === backdrop);
                 const wasVisible = backdrop.style.display !== 'none';
+                
+                // Broadcast backdrop removal
+                if (isConnected && backdropIndex !== -1) {
+                    broadcastBackdropRemove(backdropIndex);
+                }
+                
                 backdrop.remove();
                 backdrops = backdrops.filter(b => b.element !== backdrop);
                 
@@ -6326,6 +6369,12 @@
             };
             backdrops.push(backdropData);
             
+            // Broadcast backdrop creation to other players
+            if (isConnected) {
+                const backdropId = backdrops.length - 1;
+                broadcastBackdropAdd(backdropId, imageSrc, x, y, width, height);
+            }
+            
             return backdrop;
         }
 
@@ -6363,6 +6412,12 @@
                 const avatarData = avatars.find(a => a.element === avatar);
                 if (avatarData) {
                     avatarData.locked = avatar.classList.contains('locked');
+                    
+                    // Broadcast lock state change
+                    if (isConnected) {
+                        const avatarId = avatars.indexOf(avatarData);
+                        broadcastAvatarUpdate(avatarId, 'lock');
+                    }
                 }
                 lockBtn.textContent = avatar.classList.contains('locked') ? 'Unlock' : 'Lock';
                 saveToLocalStorage();
@@ -6379,6 +6434,11 @@
                 if (spotlightedAvatarId === avatarIndex) {
                     spotlightedAvatarId = null;
                     updateSpotlightOverlay();
+                }
+                
+                // Broadcast avatar removal
+                if (isConnected && avatarIndex !== -1) {
+                    broadcastAvatarRemove(avatarIndex);
                 }
                 
                 avatar.remove();
@@ -6415,6 +6475,12 @@
                 const avatarData = avatars.find(a => a.element === avatar);
                 if (avatarData) {
                     avatarData.name = nameInput.value;
+                    
+                    // Broadcast name change
+                    if (isConnected) {
+                        const avatarId = avatars.indexOf(avatarData);
+                        broadcastAvatarUpdate(avatarId, 'name', nameInput.value);
+                    }
                 }
                 saveToLocalStorage();
             };
@@ -6489,6 +6555,12 @@
             };
             avatars.push(avatarData);
             
+            // Broadcast avatar creation to other players
+            if (isConnected) {
+                const avatarId = avatars.length - 1;
+                broadcastAvatarAdd(avatarId, imageSrc, x, y, 300, 300, name, flipped, false);
+            }
+            
             return avatar;
         }
 
@@ -6549,6 +6621,36 @@
         // Mouse Up Handler
         document.addEventListener('mouseup', () => {
             if (draggedElement || resizingElement) {
+                // Broadcast avatar movement if it's an avatar
+                if (draggedElement && draggedElement.classList.contains('avatar') && isConnected) {
+                    const avatarIndex = avatars.findIndex(a => a.element === draggedElement);
+                    if (avatarIndex !== -1) {
+                        const x = parseInt(draggedElement.style.left) || 0;
+                        const y = parseInt(draggedElement.style.top) || 0;
+                        broadcastAvatarMove(avatarIndex, x, y);
+                    }
+                }
+                
+                // Broadcast backdrop movement if it's a backdrop
+                if (draggedElement && draggedElement.classList.contains('backdrop') && isConnected) {
+                    const backdropIndex = backdrops.findIndex(b => b.element === draggedElement);
+                    if (backdropIndex !== -1) {
+                        const x = parseInt(draggedElement.style.left) || 0;
+                        const y = parseInt(draggedElement.style.top) || 0;
+                        broadcastBackdropMove(backdropIndex, x, y);
+                    }
+                }
+                
+                // Broadcast avatar size update if resizing
+                if (resizingElement && resizingElement.classList.contains('avatar') && isConnected) {
+                    const avatarIndex = avatars.findIndex(a => a.element === resizingElement);
+                    if (avatarIndex !== -1) {
+                        const width = parseInt(resizingElement.style.width) || 300;
+                        const height = parseInt(resizingElement.style.height) || 300;
+                        broadcastAvatarUpdate(avatarIndex, 'size', { width, height });
+                    }
+                }
+                
                 saveToLocalStorage();
             }
             draggedElement = null;
