@@ -2056,6 +2056,7 @@
                     break;
                     
                 case 'POINTER_UPDATE':
+                    console.log('Received POINTER_UPDATE:', message.data);
                     if (message.data) {
                         updateRemotePointer(message.data.playerId, message.data.playerName, message.data.x, message.data.y, message.data.active);
                         
@@ -2074,6 +2075,7 @@
                     break;
                 
                 case 'POINTER_HIDE':
+                    console.log('Received POINTER_HIDE:', message.data);
                     if (message.data) {
                         updateRemotePointer(message.data.playerId, message.data.playerName, 0, 0, false);
                         
@@ -10369,6 +10371,12 @@
                         pointer.style.display = 'block';
                         pointer.style.left = e.clientX + 'px';
                         pointer.style.top = e.clientY + 'px';
+                        
+                        // Update pointer label with current player name
+                        const labelElement = pointer.querySelector('div:last-child');
+                        if (labelElement) {
+                            labelElement.textContent = playerName || 'Player';
+                        }
                     }
                     
                     // Broadcast pointer activation to all players
@@ -11388,13 +11396,8 @@
                 console.log('Found room parameter, setting join code input');
                 document.getElementById('joinCodeInput').value = roomParam;
                 setTimeout(() => {
-                    console.log('Showing join confirmation dialog');
-                    if (confirm('Join room from link?')) {
-                        console.log('User confirmed, calling joinRoom()');
-                        joinRoom();
-                    } else {
-                                        console.log('User cancelled auto-join');
-                    }
+                    console.log('Auto-joining room from URL parameter');
+                    joinRoom();
                 }, 500);
             }
         });
