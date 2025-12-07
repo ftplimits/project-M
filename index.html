@@ -1953,10 +1953,23 @@
                     break;
                     
                 case 'TOKEN_SYNC':
-                    // Player receives token data from host
+                    // Receive token data and update
                     if (message.data && Array.isArray(message.data)) {
                         tokens = message.data;
                         renderTokens();
+                        saveToLocalStorage();
+                        
+                        // If host received from player, relay to other players
+                        if (isHost && conn) {
+                            connections.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'TOKEN_SYNC',
+                                        data: tokens
+                                    });
+                                }
+                            });
+                        }
                     }
                     break;
                     
@@ -3119,10 +3132,20 @@
             const overlayCanvas = document.getElementById('gridOverlayCanvas');
             const tokenCanvas = document.getElementById('tokenCanvas');
             const gridToolbar = document.getElementById('gridToolbar');
+            const drawingCanvas = document.getElementById('drawingCanvas');
+            const textCanvas = document.getElementById('textCanvas');
+            const fogCanvas = document.getElementById('fogCanvas');
+            const gridImageBelowCanvas = document.getElementById('gridImageBelowCanvas');
+            const gridImageAboveCanvas = document.getElementById('gridImageAboveCanvas');
             
             gridCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             overlayCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             tokenCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+            drawingCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+            textCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+            fogCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+            gridImageBelowCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+            gridImageAboveCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             
             // Only show toolbar for host or if not connected (solo play)
             if (gridToolbar) {
@@ -3141,9 +3164,6 @@
                 renderDrawings();
                 renderTextObjects();
                 renderFogAreas();
-            } else {
-                // Explicitly hide fog canvas when grid is disabled
-                document.getElementById('fogCanvas').style.display = 'none';
             }
             saveToLocalStorage();
             
@@ -4175,11 +4195,24 @@
                 tokenDragOffset = { x: 0, y: 0 };
                 tokenDragStart = null;
                 renderTokens(); // Re-render to clear measurement line
-                saveToLocalStorage();
                 
-                // Broadcast token update to players
-                if (isHost && isConnected) {
-                    broadcastState('TOKEN_SYNC', tokens);
+                // Broadcast token update to players or host
+                if (isConnected) {
+                    if (isHost) {
+                        // Host broadcasts to all players
+                        broadcastState('TOKEN_SYNC', tokens);
+                    } else {
+                        // Player sends update to host (who will relay)
+                        connections.forEach(conn => {
+                            if (conn.open) {
+                                conn.send({
+                                    type: 'TOKEN_SYNC',
+                                    data: tokens
+                                });
+                            }
+                        });
+                    }
+                    saveToLocalStorage();
                 }
             }
         }
