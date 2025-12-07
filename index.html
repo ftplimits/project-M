@@ -1578,9 +1578,13 @@
         
         function toggleMultiplayerMenu() {
             if (isConnected) {
-                // Show multiplayer menu when connected
-                multiplayerMenuVisible = !multiplayerMenuVisible;
-                document.getElementById('multiplayerMenu').style.display = multiplayerMenuVisible ? 'flex' : 'none';
+                // When connected, re-copy the room link to clipboard
+                const shareLink = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+                navigator.clipboard.writeText(shareLink).then(() => {
+                    showSuccessNotification('Room link copied to clipboard!', 1500);
+                }).catch(() => {
+                    showSuccessNotification('Failed to copy link', 1500);
+                });
             } else {
                 // Create session when not connected
                 createSession();
@@ -2518,6 +2522,7 @@
         let recentTokens = [];
         const MAX_RECENT_TOKENS = 5;
         const GRID_OFFSET_Y = 62; // Height of top UI bar
+        let lastTokenSyncBroadcast = 0; // Throttle token sync broadcasts
 
         // Grid Images system variables
         let gridImages = [];
@@ -4073,6 +4078,15 @@
             token.y = finalY;
             
             renderTokens();
+            
+            // Broadcast token update for real-time sync during drag (throttled to ~20 FPS)
+            if (isHost && isConnected) {
+                const now = Date.now();
+                if (now - lastTokenSyncBroadcast > 50) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                    lastTokenSyncBroadcast = now;
+                }
+            }
         }
 
         function handleTokenMouseUp(e) {
@@ -4082,6 +4096,11 @@
                 tokenDragStart = null;
                 renderTokens(); // Re-render to clear measurement line
                 saveToLocalStorage();
+                
+                // Broadcast token update to players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
