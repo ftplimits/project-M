@@ -1587,16 +1587,16 @@
             }
         }
         
-        function createSession() {
+        async function createSession() {
             console.log('createSession called');
             
             // Check if PeerJS is loaded
             if (typeof Peer === 'undefined') {
-                alert('PeerJS library not loaded. Please refresh the page.');
+                await customAlert('PeerJS library not loaded. Please refresh the page.');
                 return;
             }
             
-            const hostName = prompt('Enter your name:', 'Game Master');
+            const hostName = await customPrompt('Enter your name:', 'Game Master');
             if (!hostName || hostName.trim() === '') {
                 console.log('Session creation cancelled');
                 return;
@@ -1636,7 +1636,9 @@
                 if (!peer.open) {
                     console.error('Peer connection timeout after 45 seconds');
                     peer.destroy();
-                    alert('Connection timed out. Please try again.');
+                    customAlert('Connection timed out. Please try again.').catch(err => {
+                        console.error('Error showing timeout alert:', err);
+                    });
                 }
             }, 45000);
             
@@ -1659,13 +1661,13 @@
                 document.getElementById('multiplayerMenu').style.display = 'flex';
                 multiplayerMenuVisible = true;
                 
-                // Copy link to clipboard
+                // Copy link to clipboard and show success notification
                 const shareLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
                 navigator.clipboard.writeText(shareLink).then(() => {
                     console.log('Link copied:', shareLink);
-                    alert('Session created! Invite link copied to clipboard.');
+                    showSuccessNotification('✓ Session Created!<br><span style="font-size: 14px; color: #e0e0e0;">Room link copied to clipboard</span>', 2000);
                 }).catch(() => {
-                    alert(`Session created! Share this link:\n${shareLink}`);
+                    showSuccessNotification('✓ Session Created!<br><span style="font-size: 14px; color: #e0e0e0;">Share link from the multiplayer menu</span>', 3000);
                 });
             });
             
@@ -1699,7 +1701,9 @@
             peer.on('error', (err) => {
                 clearTimeout(connectionTimeout);
                 console.error('Peer error:', err);
-                alert('Connection error. Please try again.');
+                customAlert('Connection error. Please try again.').catch(alertErr => {
+                    console.error('Error showing error alert:', alertErr);
+                });
             });
         }
         
@@ -6009,6 +6013,34 @@
                 notification.style.display = 'none';
                 diceNotificationTimeout = null;
             }, 3000);
+        }
+
+        function showSuccessNotification(message, duration = 2000) {
+            const notification = document.getElementById('diceNotification');
+            if (!notification) return;
+            
+            // Clear any existing timeout
+            if (diceNotificationTimeout) {
+                clearTimeout(diceNotificationTimeout);
+            }
+            
+            // Build notification HTML with success styling
+            // NOTE: message must be a trusted string (not user input) since it's inserted via innerHTML
+            notification.className = 'dice-notification';
+            notification.style.borderColor = '#22c55e'; // Green border
+            notification.innerHTML = `
+                <div style="color: #22c55e; font-size: 18px; font-weight: bold; font-family: Georgia, serif; text-align: center;">
+                    ${message}
+                </div>
+            `;
+            notification.style.display = 'block';
+            
+            // Auto-hide after duration
+            diceNotificationTimeout = setTimeout(() => {
+                notification.style.display = 'none';
+                notification.style.borderColor = ''; // Reset border color
+                diceNotificationTimeout = null;
+            }, duration);
         }
 
 
