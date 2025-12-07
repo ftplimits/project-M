@@ -1712,13 +1712,13 @@
             document.getElementById('multiplayerMenu').style.display = 'none';
         }
         
-        function joinRoom() {
+        async function joinRoom() {
             console.log('=== joinRoom() called ===');
             
             // Check if PeerJS is loaded
             if (typeof Peer === 'undefined') {
                 console.error('PeerJS not loaded!');
-                alert('PeerJS library not loaded. Please refresh the page.');
+                await customAlert('PeerJS library not loaded. Please refresh the page.');
                 return;
             }
             console.log('PeerJS is loaded');
@@ -1728,11 +1728,11 @@
             
             if (!code) {
                 console.log('No code entered, aborting');
-                alert('Please enter a room code');
+                await customAlert('Please enter a room code');
                 return;
             }
             
-            const name = prompt('Enter your name:', 'Player');
+            const name = await customPrompt('Enter your name:', 'Player');
             console.log('Player name entered:', name);
             
             if (!name || name.trim() === '') {
@@ -1765,12 +1765,29 @@
                 const conn = peer.connect(code);
                 console.log('Connection object created:', conn);
                 
+                // Show loading notification
+                showLoadingNotification('Waiting for host to admit...');
+                
+                // Connection timeout
+                const connectionTimeout = setTimeout(() => {
+                    console.error('Connection timeout');
+                    conn.close();
+                    peer.destroy();
+                    hideLoadingNotification();
+                    customAlert('Connection timed out. Please try again.');
+                }, 30000);
+                
                 conn.on('open', () => {
+                    clearTimeout(connectionTimeout);
                     console.log('Connection opened to host');
                     connections.push(conn);
                     isHost = false;
                     isConnected = true;
                     roomCode = code;
+                    
+                    // Hide loading notification and show success
+                    hideLoadingNotification();
+                    showSuccessNotification('✓ Connected to Game!', 2000);
                     
                     console.log('Sending JOIN_REQUEST...');
                     conn.send({
@@ -1794,18 +1811,21 @@
                     players = [];
                     updateMultiplayerMenu();
                     updateCreateSessionButton();
-                    alert('Disconnected from host');
+                    customAlert('Disconnected from host');
                 });
                 
-                conn.on('error', (err) => {
+                conn.on('error', async (err) => {
+                    clearTimeout(connectionTimeout);
                     console.error('Connection error:', err);
-                    alert('Failed to connect. Room may not exist.');
+                    hideLoadingNotification();
+                    await customAlert('Connection failed. Please check the room code and try again.');
                 });
             });
             
-            peer.on('error', (err) => {
+            peer.on('error', async (err) => {
                 console.error('Player peer error:', err);
-                alert('Peer connection error: ' + err.type);
+                hideLoadingNotification();
+                await customAlert('Peer connection error: ' + err.type);
             });
         }
         
@@ -2036,9 +2056,38 @@
                     break;
                     
                 case 'POINTER_UPDATE':
-                    // Display remote player's pointer position
                     if (message.data) {
                         updateRemotePointer(message.data.playerId, message.data.playerName, message.data.x, message.data.y, message.data.active);
+                        
+                        // If host, relay to other players
+                        if (isHost && conn) {
+                            connections.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'POINTER_UPDATE',
+                                        data: message.data
+                                    });
+                                }
+                            });
+                        }
+                    }
+                    break;
+                
+                case 'POINTER_HIDE':
+                    if (message.data) {
+                        updateRemotePointer(message.data.playerId, message.data.playerName, 0, 0, false);
+                        
+                        // If host, relay to other players
+                        if (isHost && conn) {
+                            connections.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'POINTER_HIDE',
+                                        data: message.data
+                                    });
+                                }
+                            });
+                        }
                     }
                     break;
             }
@@ -6283,6 +6332,35 @@
                 notification.style.borderColor = ''; // Reset border color
                 diceNotificationTimeout = null;
             }, duration);
+        }
+
+        function showLoadingNotification(message) {
+            const notification = document.getElementById('diceNotification');
+            if (!notification) return;
+            
+            // Clear any existing timeout
+            if (diceNotificationTimeout) {
+                clearTimeout(diceNotificationTimeout);
+            }
+            
+            // Build notification HTML with loading styling
+            notification.className = 'dice-notification';
+            notification.style.borderColor = '#d4a574'; // Gold border
+            notification.innerHTML = `
+                <div style="color: #d4a574; font-size: 18px; font-weight: bold; font-family: Georgia, serif; text-align: center;">
+                    <div style="margin-bottom: 8px;">⏳</div>
+                    ${message}
+                </div>
+            `;
+            notification.style.display = 'block';
+        }
+
+        function hideLoadingNotification() {
+            const notification = document.getElementById('diceNotification');
+            if (!notification) return;
+            
+            notification.style.display = 'none';
+            notification.style.borderColor = ''; // Reset border color
         }
 
 
