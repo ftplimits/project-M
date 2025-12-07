@@ -6915,8 +6915,9 @@
                 });
             }
 
-            // Dragging
+            // Dragging - only allow if user can edit backdrops
             backdrop.addEventListener('mousedown', (e) => {
+                if (!canEditBackdrops()) return;
                 if (backdrop.dataset.locked === 'true') return;
                 if (e.target.closest('.backdrop-controls') || e.target.closest('.resize-handle')) return;
                 
