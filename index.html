@@ -2030,7 +2030,8 @@
             console.log('Current backdrops array:', backdrops);
             console.log('Current avatars array:', avatars);
             
-            // Save current backdrop's avatar states before sending
+            // Save current backdrop's avatar states before sending to ensure
+            // the current backdrop's avatar positions are preserved before state serialization
             const currentBackdropIndex = backdrops.findIndex(b => b.visible);
             if (currentBackdropIndex !== -1) {
                 saveAvatarStates(currentBackdropIndex);
@@ -2067,7 +2068,7 @@
                 weatherEffect: currentWeatherEffect,
                 players: players,
                 
-                // ADD MISSING ITEMS:
+                // Add missing game elements:
                 tokens: tokens,
                 gridImages: gridImages,
                 drawings: drawings,
@@ -2195,16 +2196,18 @@
             }
             
             // Restore initiative tracker
-            if (state.initiativeOrder) {
-                initiativeOrder = state.initiativeOrder;
+            if (state.initiativeOrder || state.initiativeValues || state.currentTurnIndex !== undefined) {
+                if (state.initiativeOrder) {
+                    initiativeOrder = state.initiativeOrder;
+                }
+                if (state.initiativeValues) {
+                    initiativeValues = state.initiativeValues;
+                }
+                if (state.currentTurnIndex !== undefined) {
+                    currentTurnIndex = state.currentTurnIndex;
+                }
+                renderInitiativeTracker();
             }
-            if (state.initiativeValues) {
-                initiativeValues = state.initiativeValues;
-            }
-            if (state.currentTurnIndex !== undefined) {
-                currentTurnIndex = state.currentTurnIndex;
-            }
-            renderInitiativeTracker();
             
             console.log('Full state applied. Backdrops:', backdrops.length, 'Avatars:', avatars.length);
         }
