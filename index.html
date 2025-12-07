@@ -1518,6 +1518,33 @@
     <input type="file" id="handoutInput" accept="image/*" style="display: none;" onchange="handleHandoutUpload(event)">
 
     <script>
+        // ========================================
+        // AVATAR HOTKEY SYSTEM - IMPLEMENTATION NOTES
+        // ========================================
+        // This application uses a LOCAL-ONLY hotkey system (Option B):
+        //
+        // 1. Any user can assign a hotkey to any avatar locally
+        // 2. Assignments are NOT broadcast to peers (local to each client)
+        // 3. When a hotkey is pressed:
+        //    - Trigger glow animation locally
+        //    - Broadcast AVATAR_GLOW message to all peers
+        // 4. Peers receive AVATAR_GLOW and animate their copy of the avatar
+        //
+        // Key Functions:
+        //   - localAvatarHotkeys (line ~1587): Global storage for local mappings
+        //   - showAssignHotkeyPromptLocal(): Shows key capture modal
+        //   - addAssignHotkeyMenuItemLocal(): Adds menu item to context menu
+        //   - sendToAllPeers(): Broadcasts messages to all connected peers
+        //   - handleIncomingPeerMessageForHotkeys(): Handles incoming AVATAR_GLOW
+        //
+        // Integration:
+        //   - Context Menu: addAssignHotkeyMenuItemLocal() called in showAvatarContextMenu()
+        //   - Message Router: handleIncomingPeerMessageForHotkeys() called on AVATAR_GLOW
+        //   - Keydown Listener: Checks localAvatarHotkeys and broadcasts on match
+        //
+        // For detailed documentation, see /tmp/HOTKEY_SYSTEM_DOCUMENTATION.md
+        // ========================================
+        
         let backdrops = [];
         let avatars = [];
         let draggedElement = null;
@@ -1577,9 +1604,14 @@
         let draggedSheet = null;
         let resizingSheet = null;
         
-        // Avatar hotkey assignment system
-        let avatarAssignments = {}; // { avatarId: playerId } - host maintains this
-        let myHotkeyAssignments = {}; // { avatarId: keyCode } - each player maintains their own
+        // ========================================
+        // AVATAR HOTKEY SYSTEM - OPTION B (LOCAL-ONLY)
+        // ========================================
+        // Local-only hotkey assignments: any user can assign any avatar locally
+        // Assignments are NOT broadcast to peers - only the glow animation is broadcast
+        // When a hotkey is pressed, the client triggers local glow and broadcasts AVATAR_GLOW
+        // Format: { avatarId: keyString } where keyString is event.key (e.g., ' ' for Space)
+        let localAvatarHotkeys = {};
 
         // ========================================
         // MULTIPLAYER FUNCTIONS (GLOBAL)
@@ -2292,64 +2324,24 @@
                     break;
                     
 
-                case 'AVATAR_ASSIGNMENTS':
-                    // Receive avatar assignments from host
-                    if (message.data) {
-                        avatarAssignments = message.data;
-                        saveToLocalStorage();
-                    }
-                    break;
-                    
-                case 'AVATAR_ASSIGNED':
-                    // Player receives notification that they've been assigned to an avatar
-                    if (message.data && message.data.avatarId !== undefined) {
-                        const avatarId = message.data.avatarId;
-                        const defaultHotkey = message.data.defaultHotkey || 32; // Space bar
-                        
-                        // Set default hotkey if not already set
-                        if (!myHotkeyAssignments[avatarId]) {
-                            myHotkeyAssignments[avatarId] = defaultHotkey;
-                            saveToLocalStorage();
-                        }
-                        
-                        // Show notification
-                        const avatarData = avatars[avatarId];
-                        if (avatarData) {
-                            customAlert(`You've been assigned to control ${avatarData.name}! Default hotkey: Space bar. Right-click to change.`);
-                        }
-                    }
-                    break;
-                    
                 case 'AVATAR_GLOW':
-                    // Receive avatar glow trigger from player
-                    if (message.data && message.data.avatarId !== undefined) {
-                        const avatarId = message.data.avatarId;
-                        const active = message.data.active;
-                        const avatarData = avatars[avatarId];
-                        
-                        if (avatarData && avatarData.element) {
-                            if (active) {
-                                avatarData.element.classList.add('glowing');
-                            } else {
-                                avatarData.element.classList.remove('glowing');
-                                avatarData.element.style.filter = '';
-                                avatarData.element.style.transform = '';
+                    // AVATAR_GLOW message handler - receives glow animation from peers
+                    // Message format: { type, data: { avatarId, action: 'start'|'stop', duration } }
+                    // This is called by handleIncomingMessage when peers send AVATAR_GLOW
+                    handleIncomingPeerMessageForHotkeys(message);
+                    
+                    // If host received from player, relay to other players
+                    if (isHost && conn && message.data) {
+                        connections.forEach(c => {
+                            if (c.peer !== conn.peer && c.open) {
+                                c.send({
+                                    type: 'AVATAR_GLOW',
+                                    data: message.data
+                                });
                             }
-                        }
-                        
-                        // If host received from player, relay to other players
-                        if (isHost && conn) {
-                            connections.forEach(c => {
-                                if (c.peer !== conn.peer && c.open) {
-                                    c.send({
-                                        type: 'AVATAR_GLOW',
-                                        data: message.data
-                                    });
-                                }
-                            });
-                        }
+                        });
                     }
-                    break;
+                    return; // Avoid double relay by generic relay at end of function
                     
                 case 'CHARACTER_SHEET_ADDED':
                     // Receive character sheet from host or player
@@ -2441,8 +2433,7 @@
                     image: handoutImage,
                     visible: handoutVisible
                 },
-                characterSheets: characterSheets,
-                avatarAssignments: avatarAssignments
+                characterSheets: characterSheets
             };
             
             console.log('Prepared state:', state);
@@ -2624,10 +2615,7 @@
                 updateSheetSelectorDisplay();
             }
             
-            // Restore avatar assignments
-            if (state.avatarAssignments) {
-                avatarAssignments = state.avatarAssignments;
-            }
+            // Note: Local avatar hotkeys are NOT synced from host (Option B - local-only)
             
             // Update UI elements
             updateSceneBanner();
@@ -6158,39 +6146,12 @@
 
         // Avatar Hotkey System
         // Helper function to get a display name for a key code
-        function getKeyDisplayName(keyCode) {
-            const specialKeys = {
-                32: 'Space',
-                13: 'Enter',
-                27: 'Escape',
-                8: 'Backspace',
-                9: 'Tab',
-                16: 'Shift',
-                17: 'Ctrl',
-                18: 'Alt',
-                20: 'CapsLock',
-                112: 'F1', 113: 'F2', 114: 'F3', 115: 'F4', 116: 'F5', 117: 'F6',
-                118: 'F7', 119: 'F8', 120: 'F9', 121: 'F10', 122: 'F11', 123: 'F12',
-                37: '←', 38: '↑', 39: '→', 40: '↓'
-            };
-            
-            if (specialKeys[keyCode]) {
-                return specialKeys[keyCode];
-            }
-            
-            // For regular keys, convert keyCode to character
-            return String.fromCharCode(keyCode).toUpperCase();
-        }
-
         function showAvatarContextMenu(x, y, avatarElement) {
             const menu = document.getElementById('avatarContextMenu');
             const avatarData = avatars.find(a => a.element === avatarElement);
             if (!avatarData) return;
             
             const avatarId = avatars.indexOf(avatarData);
-            const assignedPlayerId = avatarAssignments[avatarId];
-            const myPlayerId = peer ? peer.id : null;
-            const isAssignedToMe = assignedPlayerId === myPlayerId;
             
             menu.innerHTML = '';
             menu.style.display = 'block';
@@ -6203,45 +6164,9 @@
             header.textContent = 'Avatar Options';
             menu.appendChild(header);
             
-            // Assigned player display (if any)
-            if (assignedPlayerId) {
-                const assignedPlayer = players.find(p => p.id === assignedPlayerId);
-                const assignedPlayerName = assignedPlayer ? assignedPlayer.name : 'Unknown Player';
-                const assignedLabel = document.createElement('div');
-                assignedLabel.style.cssText = 'color: #4ecdc4; font-size: 11px; margin-bottom: 8px; font-family: Arial, sans-serif; padding: 4px; background-color: rgba(78, 205, 196, 0.1); border-radius: 4px; text-align: center;';
-                assignedLabel.textContent = `👤 Assigned to: ${assignedPlayerName}`;
-                menu.appendChild(assignedLabel);
-            }
-            
-            // Assign Player button (host only in multiplayer)
-            if (isHost && isConnected) {
-                const assignPlayerBtn = document.createElement('button');
-                assignPlayerBtn.textContent = '👤 Assign Player';
-                assignPlayerBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
-                assignPlayerBtn.onmouseenter = () => { assignPlayerBtn.style.backgroundColor = '#3a3a3a'; };
-                assignPlayerBtn.onmouseleave = () => { assignPlayerBtn.style.backgroundColor = '#2a2a2a'; };
-                assignPlayerBtn.onclick = () => {
-                    menu.style.display = 'none';
-                    showPlayerSelectionMenu(x, y, avatarId);
-                };
-                menu.appendChild(assignPlayerBtn);
-            }
-            
-            // Assign Hotkey button (in single-player mode OR if assigned to current player in multiplayer)
-            const canAssignHotkey = !isConnected || isAssignedToMe;
-            if (canAssignHotkey) {
-                const assignHotkeyBtn = document.createElement('button');
-                const currentHotkey = myHotkeyAssignments[avatarId];
-                assignHotkeyBtn.textContent = currentHotkey ? `⌨️ Change Hotkey (${getKeyDisplayName(currentHotkey)})` : '⌨️ Assign Hotkey';
-                assignHotkeyBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
-                assignHotkeyBtn.onmouseenter = () => { assignHotkeyBtn.style.backgroundColor = '#3a3a3a'; };
-                assignHotkeyBtn.onmouseleave = () => { assignHotkeyBtn.style.backgroundColor = '#2a2a2a'; };
-                assignHotkeyBtn.onclick = () => {
-                    menu.style.display = 'none';
-                    promptForHotkey(avatarId);
-                };
-                menu.appendChild(assignHotkeyBtn);
-            }
+            // Add Assign Hotkey menu item using the helper function
+            // NOTE: This is where the local hotkey assignment is integrated
+            addAssignHotkeyMenuItemLocal(menu, avatarElement);
             
             // Grid Layer Toggle
             const layerBtn = document.createElement('button');
@@ -6283,97 +6208,29 @@
             menu.appendChild(shapeBtn);
         }
         
-        // Show player selection submenu for assigning players to avatars
-        function showPlayerSelectionMenu(x, y, avatarId) {
-            const menu = document.getElementById('avatarContextMenu');
-            menu.innerHTML = '';
-            menu.style.display = 'block';
-            menu.style.left = x + 'px';
-            menu.style.top = y + 'px';
-            
-            // Header
-            const header = document.createElement('div');
-            header.style.cssText = 'color: var(--accent-color); font-size: 12px; font-weight: bold; font-family: Georgia, serif; margin-bottom: 8px; border-bottom: 1px solid var(--accent-color); padding-bottom: 4px;';
-            header.textContent = 'Select Player';
-            menu.appendChild(header);
-            
-            // Back button
-            const backBtn = document.createElement('button');
-            backBtn.textContent = '← Back';
-            backBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 11px; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
-            backBtn.onmouseenter = () => { backBtn.style.backgroundColor = '#3a3a3a'; };
-            backBtn.onmouseleave = () => { backBtn.style.backgroundColor = '#2a2a2a'; };
-            backBtn.onclick = () => {
-                menu.style.display = 'none';
-                const avatarData = avatars[avatarId];
-                if (avatarData) {
-                    showAvatarContextMenu(x, y, avatarData.element);
-                }
-            };
-            menu.appendChild(backBtn);
-            
-            // Unassign button (if currently assigned)
-            if (avatarAssignments[avatarId]) {
-                const unassignBtn = document.createElement('button');
-                unassignBtn.textContent = '✖ Unassign';
-                unassignBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #dc3545; color: #fff; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
-                unassignBtn.onmouseenter = () => { unassignBtn.style.backgroundColor = '#c82333'; };
-                unassignBtn.onmouseleave = () => { unassignBtn.style.backgroundColor = '#dc3545'; };
-                unassignBtn.onclick = () => {
-                    delete avatarAssignments[avatarId];
-                    menu.style.display = 'none';
-                    saveToLocalStorage();
-                    
-                    // Broadcast assignment to all players
-                    if (isHost && isConnected) {
-                        broadcastState('AVATAR_ASSIGNMENTS', avatarAssignments);
-                    }
-                };
-                menu.appendChild(unassignBtn);
-            }
-            
-            // Player list
-            players.forEach(player => {
-                const playerBtn = document.createElement('button');
-                playerBtn.textContent = `${player.name}${player.isHost ? ' 👑' : ''}`;
-                playerBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 4px;';
-                playerBtn.onmouseenter = () => { playerBtn.style.backgroundColor = '#3a3a3a'; };
-                playerBtn.onmouseleave = () => { playerBtn.style.backgroundColor = '#2a2a2a'; };
-                playerBtn.onclick = () => {
-                    // Assign player to avatar
-                    avatarAssignments[avatarId] = player.id;
-                    menu.style.display = 'none';
-                    saveToLocalStorage();
-                    
-                    // Broadcast assignment to all players
-                    if (isHost && isConnected) {
-                        broadcastState('AVATAR_ASSIGNMENTS', avatarAssignments);
-                        
-                        // Send message to assigned player with default hotkey (Space = 32)
-                        const conn = connections.find(c => c.peer === player.id);
-                        if (conn && conn.open) {
-                            conn.send({
-                                type: 'AVATAR_ASSIGNED',
-                                data: {
-                                    avatarId: avatarId,
-                                    defaultHotkey: 32 // Space bar
-                                }
-                            });
-                        } else if (player.id === peer.id) {
-                            // If assigning to self (host), set the default hotkey directly
-                            if (!myHotkeyAssignments[avatarId]) {
-                                myHotkeyAssignments[avatarId] = 32; // Space bar
-                                saveToLocalStorage();
-                            }
-                        }
-                    }
-                };
-                menu.appendChild(playerBtn);
-            });
+        // ========================================
+        // LOCAL HOTKEY SYSTEM HELPER FUNCTIONS
+        // ========================================
+        
+        /**
+         * Convert event.key to display name for UI
+         * Examples: ' ' -> 'Space', 'a' -> 'A', 'Enter' -> 'Enter'
+         */
+        function getKeyDisplayName(keyString) {
+            if (keyString === ' ') return 'Space';
+            if (keyString === 'Enter') return 'Enter';
+            if (keyString === 'Escape') return 'Escape';
+            if (keyString === 'Tab') return 'Tab';
+            if (keyString.length === 1) return keyString.toUpperCase();
+            return keyString;
         }
         
-        // Prompt player to press a key for hotkey assignment
-        function promptForHotkey(avatarId) {
+        /**
+         * Show local hotkey assignment prompt for an avatar
+         * This captures a key press and stores it locally (not broadcast)
+         * @param {number} avatarId - The avatar ID to assign a hotkey to
+         */
+        function showAssignHotkeyPromptLocal(avatarId) {
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
             
@@ -6382,12 +6239,13 @@
             
             const titleEl = document.createElement('div');
             titleEl.className = 'modal-title';
-            titleEl.textContent = 'Assign Hotkey';
+            titleEl.textContent = 'Assign Hotkey (Local)';
             dialog.appendChild(titleEl);
             
             const messageEl = document.createElement('div');
             messageEl.className = 'modal-message';
-            messageEl.textContent = 'Press any key to assign as hotkey for this avatar...';
+            messageEl.textContent = 'Press any key to assign as hotkey for this avatar...\n(Assignment is local to this client only)';
+            messageEl.style.whiteSpace = 'pre-line';
             dialog.appendChild(messageEl);
             
             const input = document.createElement('input');
@@ -6420,13 +6278,10 @@
                 e.preventDefault();
                 e.stopPropagation();
                 
-                // Get the key code
-                const keyCode = e.keyCode;
-                const keyName = e.key;
-                
-                // Store in player's hotkey assignments
-                myHotkeyAssignments[avatarId] = keyCode;
-                input.value = keyName.toUpperCase();
+                // Store using event.key (e.g., ' ' for Space, 'a' for A)
+                const keyString = e.key;
+                localAvatarHotkeys[avatarId] = keyString;
+                input.value = getKeyDisplayName(keyString);
                 
                 // Save to local storage
                 saveToLocalStorage();
@@ -6437,28 +6292,154 @@
                 }, 300);
             });
         }
-
-        // Helper function to find avatar matching a hotkey
-        function findAvatarByHotkey(keyCode) {
-            const myPlayerId = peer ? peer.id : null;
+        
+        /**
+         * Add "Assign Hotkey" menu item to an avatar context menu
+         * This helper is called by showAvatarContextMenu to integrate the hotkey assignment
+         * @param {HTMLElement} contextMenuElement - The context menu element to add the item to
+         * @param {HTMLElement} avatarElement - The avatar element being right-clicked
+         */
+        function addAssignHotkeyMenuItemLocal(contextMenuElement, avatarElement) {
+            const avatarData = avatars.find(a => a.element === avatarElement);
+            if (!avatarData) return;
             
-            if (isConnected) {
-                // In multiplayer mode: only trigger avatars assigned to me
-                for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
-                    if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
-                        return parseInt(avatarId);
-                    }
+            const avatarId = avatars.indexOf(avatarData);
+            const currentHotkey = localAvatarHotkeys[avatarId];
+            
+            const assignHotkeyBtn = document.createElement('button');
+            assignHotkeyBtn.textContent = currentHotkey 
+                ? `⌨️ Assign Hotkey (${getKeyDisplayName(currentHotkey)})` 
+                : '⌨️ Assign Hotkey';
+            assignHotkeyBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
+            assignHotkeyBtn.onmouseenter = () => { assignHotkeyBtn.style.backgroundColor = '#3a3a3a'; };
+            assignHotkeyBtn.onmouseleave = () => { assignHotkeyBtn.style.backgroundColor = '#2a2a2a'; };
+            assignHotkeyBtn.onclick = () => {
+                contextMenuElement.style.display = 'none';
+                showAssignHotkeyPromptLocal(avatarId);
+            };
+            contextMenuElement.appendChild(assignHotkeyBtn);
+        }
+        
+        /**
+         * Find avatar ID matching a hotkey (using local mappings only)
+         * @param {string} keyString - The event.key string (e.g., ' ', 'a', 'Enter')
+         * @returns {number|null} - The avatar ID or null if no match
+         */
+        function findAvatarByHotkeyLocal(keyString) {
+            for (const [avatarId, assignedKey] of Object.entries(localAvatarHotkeys)) {
+                if (assignedKey === keyString) {
+                    return parseInt(avatarId);
                 }
-            } else {
-                // In single-player mode: trigger any avatar with this hotkey
-                for (const [avatarId, assignedKeyCode] of Object.entries(myHotkeyAssignments)) {
-                    if (assignedKeyCode === keyCode) {
-                        return parseInt(avatarId);
+            }
+            return null;
+        }
+        
+        /**
+         * Trigger avatar glow animation locally
+         * This is called when receiving AVATAR_GLOW messages from peers
+         * @param {number} avatarId - The avatar ID to animate
+         * @param {string} action - 'start' or 'stop'
+         * @param {number} duration - Duration in milliseconds (for 'start' action)
+         */
+        function triggerAvatarGlowLocal(avatarId, action, duration) {
+            const avatarData = avatars[avatarId];
+            if (!avatarData || !avatarData.element) return;
+            
+            if (action === 'start') {
+                avatarData.element.classList.add('glowing');
+                // Optionally auto-remove after duration
+                if (duration > 0) {
+                    setTimeout(() => {
+                        avatarData.element.classList.remove('glowing');
+                        avatarData.element.style.filter = '';
+                        avatarData.element.style.transform = '';
+                    }, duration);
+                }
+            } else if (action === 'stop') {
+                avatarData.element.classList.remove('glowing');
+                avatarData.element.style.filter = '';
+                avatarData.element.style.transform = '';
+            }
+        }
+        
+        /**
+         * Handle incoming AVATAR_GLOW messages from peers
+         * WIRING INSTRUCTIONS:
+         * This function should be called from the main message handler (handleIncomingMessage)
+         * when a message with type === 'AVATAR_GLOW' is received.
+         * The handleIncomingMessage function is located around line 1790-2700.
+         * Add a case in the switch statement that calls this function:
+         *   case 'AVATAR_GLOW':
+         *     handleIncomingPeerMessageForHotkeys(message);
+         *     break;
+         * 
+         * @param {object} message - The message object { type, data: { avatarId, action, duration } }
+         */
+        function handleIncomingPeerMessageForHotkeys(message) {
+            if (message.type !== 'AVATAR_GLOW' || !message.data) return;
+            
+            const { avatarId, action, duration } = message.data;
+            
+            // Trigger the glow animation locally
+            triggerAvatarGlowLocal(avatarId, action, duration || 600);
+            
+            // If host received this from a player, relay to all other players
+            // The message router in handleIncomingMessage will handle relay via conn parameter
+        }
+        
+        /**
+         * Send a message to all connected peers
+         * WIRING INSTRUCTIONS:
+         * This is a wrapper function that should be connected to the project's existing
+         * broadcast mechanism. The project has a broadcastState() function at line ~2768
+         * that handles host broadcasting, and players send to connections[0].
+         * 
+         * TO WIRE THIS FUNCTION:
+         * Option 1: If you're the host, this function should call broadcastState()
+         * Option 2: If you're a player, this function should send to connections[0]
+         * 
+         * Example implementation (uncomment and adjust as needed):
+         * 
+         * function sendToAllPeers(message) {
+         *     if (isConnected) {
+         *         if (isHost) {
+         *             // Host: broadcast to all players
+         *             broadcastState(message.type, message);
+         *         } else {
+         *             // Player: send to host (who will relay to others)
+         *             if (connections.length > 0 && connections[0].open) {
+         *                 connections[0].send(message);
+         *             }
+         *         }
+         *     }
+         * }
+         * 
+         * @param {object} message - The message to broadcast (must include 'type' property)
+         */
+        function sendToAllPeers(message) {
+            if (!isConnected) {
+                // Not connected, no need to send
+                return;
+            }
+            
+            // Send message to all connected peers
+            // Host: broadcasts to all players
+            // Player: sends to host (who will relay to other players)
+            if (isHost) {
+                connections.forEach(conn => {
+                    if (conn.open) {
+                        conn.send(message);
                     }
+                });
+            } else {
+                // Player: send to host (who will relay)
+                if (connections.length > 0 && connections[0].open) {
+                    connections[0].send(message);
                 }
             }
             
-            return null;
+            // Debug output for message tracking
+            console.debug('[sendToAllPeers] Sent message:', message);
         }
 
         // Global keydown/keyup handlers for hotkeys
@@ -6516,68 +6497,64 @@
                 }
             }
             
-            // Check if this key matches any of my assigned avatar hotkeys
-            const triggeredAvatarId = findAvatarByHotkey(keyCode);
+            // Check if this key matches any local avatar hotkey
+            const triggeredAvatarId = findAvatarByHotkeyLocal(e.key);
             
-            // If we found a matching avatar, trigger the glow
+            // If we found a matching avatar, trigger the glow locally and broadcast
             if (triggeredAvatarId !== null) {
-                e.preventDefault();
+                // Prevent default for Space to avoid page scrolling
+                if (e.key === ' ') {
+                    e.preventDefault();
+                }
+                
                 const avatarData = avatars[triggeredAvatarId];
                 if (avatarData && avatarData.element) {
+                    // Trigger local glow animation
                     avatarData.element.classList.add('glowing');
                     
-                    // Broadcast animation trigger to all players
-                    if (isConnected) {
-                        const message = {
-                            type: 'AVATAR_GLOW',
-                            data: { 
-                                avatarId: triggeredAvatarId, 
-                                active: true 
-                            }
-                        };
-                        
-                        if (isHost) {
-                            broadcastState('AVATAR_GLOW', message.data);
-                        } else if (connections.length > 0 && connections[0].open) {
-                            connections[0].send(message);
+                    // Broadcast AVATAR_GLOW message to all peers
+                    // Format: { type: 'AVATAR_GLOW', data: { avatarId, action, duration } }
+                    const glowDuration = 600; // Duration in ms (matches CSS animation)
+                    const message = {
+                        type: 'AVATAR_GLOW',
+                        data: {
+                            avatarId: triggeredAvatarId,
+                            action: 'start',
+                            duration: glowDuration
                         }
-                    }
+                    };
+                    
+                    // Send to all peers using the wired broadcast function
+                    sendToAllPeers(message);
                 }
             }
         });
 
         document.addEventListener('keyup', (e) => {
-            const key = e.key.toLowerCase();
-            const keyCode = e.keyCode;
+            // Check if this key matches any local avatar hotkey
+            const triggeredAvatarId = findAvatarByHotkeyLocal(e.key);
             
-            // Check if this key matches any of my assigned avatar hotkeys
-            const triggeredAvatarId = findAvatarByHotkey(keyCode);
-            
-            // If we found a matching avatar, deactivate the glow
+            // If we found a matching avatar, stop the glow locally and broadcast
             if (triggeredAvatarId !== null) {
                 const avatarData = avatars[triggeredAvatarId];
                 if (avatarData && avatarData.element) {
+                    // Remove local glow animation
                     avatarData.element.classList.remove('glowing');
-                    // Reset transform and filter
                     avatarData.element.style.filter = '';
                     avatarData.element.style.transform = '';
                     
-                    // Broadcast animation stop to all players
-                    if (isConnected) {
-                        const message = {
-                            type: 'AVATAR_GLOW',
-                            data: { 
-                                avatarId: triggeredAvatarId, 
-                                active: false 
-                            }
-                        };
-                        
-                        if (isHost) {
-                            broadcastState('AVATAR_GLOW', message.data);
-                        } else if (connections.length > 0 && connections[0].open) {
-                            connections[0].send(message);
+                    // Broadcast AVATAR_GLOW stop message to all peers
+                    const message = {
+                        type: 'AVATAR_GLOW',
+                        data: {
+                            avatarId: triggeredAvatarId,
+                            action: 'stop',
+                            duration: 0
                         }
-                    }
+                    };
+                    
+                    // Send to all peers using the wired broadcast function
+                    sendToAllPeers(message);
                 }
             }
         });
@@ -10414,8 +10391,7 @@
                 initiativeOrder: initiativeOrder,
                 initiativeValues: initiativeValues,
                 currentTurnIndex: currentTurnIndex,
-                avatarAssignments: avatarAssignments,
-                myHotkeyAssignments: myHotkeyAssignments
+                localAvatarHotkeys: localAvatarHotkeys
             };
             
             try {
@@ -10594,14 +10570,9 @@
                     currentTurnIndex = state.currentTurnIndex;
                 }
                 
-                // Restore avatar assignments (host only)
-                if (state.avatarAssignments) {
-                    avatarAssignments = state.avatarAssignments;
-                }
-                
-                // Restore my hotkey assignments
-                if (state.myHotkeyAssignments) {
-                    myHotkeyAssignments = state.myHotkeyAssignments;
+                // Restore local avatar hotkeys
+                if (state.localAvatarHotkeys) {
+                    localAvatarHotkeys = state.localAvatarHotkeys;
                 }
                 
                 // Restore grid for active scene
@@ -10679,7 +10650,8 @@
                 fogAreas: fogAreas,
                 initiativeOrder: initiativeOrder,
                 initiativeValues: initiativeValues,
-                currentTurnIndex: currentTurnIndex
+                currentTurnIndex: currentTurnIndex,
+                localAvatarHotkeys: localAvatarHotkeys
             };
             
             const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -10868,6 +10840,11 @@
                         }
                         if (state.currentTurnIndex !== undefined) {
                             currentTurnIndex = state.currentTurnIndex;
+                        }
+                        
+                        // Restore local avatar hotkeys
+                        if (state.localAvatarHotkeys) {
+                            localAvatarHotkeys = state.localAvatarHotkeys;
                         }
                         
                         // Restore grid for active scene
