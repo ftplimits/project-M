@@ -6221,8 +6221,6 @@
                 assignPlayerBtn.onmouseenter = () => { assignPlayerBtn.style.backgroundColor = '#3a3a3a'; };
                 assignPlayerBtn.onmouseleave = () => { assignPlayerBtn.style.backgroundColor = '#2a2a2a'; };
                 assignPlayerBtn.onclick = () => {
-                    console.log('Assign Player clicked for avatar ID:', avatarId);
-                    console.log('Current players array:', players);
                     menu.style.display = 'none';
                     showPlayerSelectionMenu(x, y, avatarId);
                 };
@@ -6287,8 +6285,6 @@
         
         // Show player selection submenu for assigning players to avatars
         function showPlayerSelectionMenu(x, y, avatarId) {
-            console.log('showPlayerSelectionMenu called with avatarId:', avatarId);
-            console.log('Players array:', players);
             const menu = document.getElementById('avatarContextMenu');
             menu.innerHTML = '';
             menu.style.display = 'block';
@@ -6337,16 +6333,13 @@
             }
             
             // Player list
-            console.log('Creating player buttons, players count:', players.length);
             players.forEach(player => {
-                console.log('Adding player button for:', player.name);
                 const playerBtn = document.createElement('button');
                 playerBtn.textContent = `${player.name}${player.isHost ? ' 👑' : ''}`;
                 playerBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 4px;';
                 playerBtn.onmouseenter = () => { playerBtn.style.backgroundColor = '#3a3a3a'; };
                 playerBtn.onmouseleave = () => { playerBtn.style.backgroundColor = '#2a2a2a'; };
                 playerBtn.onclick = () => {
-                    console.log('Player selected:', player.name, 'for avatar:', avatarId);
                     // Assign player to avatar
                     avatarAssignments[avatarId] = player.id;
                     menu.style.display = 'none';
@@ -6381,7 +6374,6 @@
         
         // Prompt player to press a key for hotkey assignment
         function promptForHotkey(avatarId) {
-            console.log('promptForHotkey called for avatar:', avatarId);
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
             
@@ -6432,11 +6424,8 @@
                 const keyCode = e.keyCode;
                 const keyName = e.key;
                 
-                console.log('Hotkey pressed:', keyName, 'keyCode:', keyCode);
-                
                 // Store in player's hotkey assignments
                 myHotkeyAssignments[avatarId] = keyCode;
-                console.log('Hotkey assigned. myHotkeyAssignments:', myHotkeyAssignments);
                 input.value = keyName.toUpperCase();
                 
                 // Save to local storage
@@ -6513,7 +6502,6 @@
                 for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
                     if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
                         triggeredAvatarId = parseInt(avatarId);
-                        console.log('Hotkey match found! Avatar ID:', avatarId, 'KeyCode:', keyCode);
                         break;
                     }
                 }
@@ -6522,7 +6510,6 @@
                 for (const [avatarId, assignedKeyCode] of Object.entries(myHotkeyAssignments)) {
                     if (assignedKeyCode === keyCode) {
                         triggeredAvatarId = parseInt(avatarId);
-                        console.log('Hotkey match found (single-player)! Avatar ID:', avatarId, 'KeyCode:', keyCode);
                         break;
                     }
                 }
@@ -6530,7 +6517,6 @@
             
             // If we found a matching avatar, trigger the glow
             if (triggeredAvatarId !== null) {
-                console.log('Triggering glow for avatar:', triggeredAvatarId);
                 e.preventDefault();
                 const avatarData = avatars[triggeredAvatarId];
                 if (avatarData && avatarData.element) {
