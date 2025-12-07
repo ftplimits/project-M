@@ -2341,7 +2341,7 @@
                             }
                         });
                     }
-                    break;
+                    return; // Avoid double relay by generic relay at end of function
                     
                 case 'CHARACTER_SHEET_ADDED':
                     // Receive character sheet from host or player
@@ -6417,17 +6417,15 @@
          * @param {object} message - The message to broadcast (must include 'type' property)
          */
         function sendToAllPeers(message) {
-            // TODO: Wire this to the project's broadcast function
-            // See wiring instructions above
-            
             if (!isConnected) {
                 // Not connected, no need to send
                 return;
             }
             
-            // IMPLEMENTATION: Connect to existing broadcast mechanism
+            // Send message to all connected peers
+            // Host: broadcasts to all players
+            // Player: sends to host (who will relay to other players)
             if (isHost) {
-                // Host: broadcast to all players using existing function
                 connections.forEach(conn => {
                     if (conn.open) {
                         conn.send(message);
@@ -6440,7 +6438,7 @@
                 }
             }
             
-            // Debug output to help with wiring
+            // Debug output for message tracking
             console.debug('[sendToAllPeers] Sent message:', message);
         }
 
