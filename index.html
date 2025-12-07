@@ -2064,8 +2064,7 @@
                                 avatarData.zIndex,
                                 avatarData.name,
                                 avatarData.flipped,
-                                avatarData.hotkey,
-                                false
+                                avatarData.aboveGrid || false
                             );
                         });
                     }
@@ -2292,55 +2291,7 @@
                     }
                     break;
                     
-                case 'HOTKEY_PRESS':
-                    // Receive hotkey press/release from host or player
-                    if (message.data && message.data.key) {
-                        const key = message.data.key;
-                        const pressed = message.data.pressed;
-                        
-                        console.log('HOTKEY_PRESS received:', key, pressed ? 'DOWN' : 'UP');
-                        console.log('Total avatars:', avatars.length);
-                        
-                        if (pressed) {
-                            // Add to active keys and activate glow
-                            activeHotkeys.add(key);
-                            let matchCount = 0;
-                            avatars.forEach(avatarData => {
-                                console.log('Checking avatar hotkey:', avatarData.hotkey, 'vs', key);
-                                if (avatarData.hotkey === key) {
-                                    matchCount++;
-                                    avatarData.element.classList.add('glowing');
-                                    console.log('Added glow to avatar with hotkey:', key);
-                                }
-                            });
-                            console.log('Matched avatars:', matchCount);
-                        } else {
-                            // Remove from active keys and deactivate glow
-                            activeHotkeys.delete(key);
-                            avatars.forEach(avatarData => {
-                                if (avatarData.hotkey === key) {
-                                    avatarData.element.classList.remove('glowing');
-                                    avatarData.element.style.filter = '';
-                                    avatarData.element.style.transform = '';
-                                    console.log('Removed glow from avatar with hotkey:', key);
-                                }
-                            });
-                        }
-                        
-                        // If host, relay to other players
-                        if (isHost && conn) {
-                            connections.forEach(c => {
-                                if (c.peer !== conn.peer && c.open) {
-                                    c.send({
-                                        type: 'HOTKEY_PRESS',
-                                        data: message.data
-                                    });
-                                }
-                            });
-                        }
-                    }
-                    break;
-                    
+
                 case 'AVATAR_ASSIGNMENTS':
                     // Receive avatar assignments from host
                     if (message.data) {
@@ -2468,7 +2419,6 @@
                     zIndex: a.element.style.zIndex,
                     name: a.name,
                     flipped: a.flipped,
-                    hotkey: a.hotkey,
                     locked: a.locked,
                     aboveGrid: a.aboveGrid,
                     rounded: a.rounded
@@ -2543,7 +2493,6 @@
                         avatarData.zIndex,
                         avatarData.name,
                         avatarData.flipped,
-                        avatarData.hotkey,
                         avatarData.aboveGrid || false
                     );
                     
@@ -2793,7 +2742,6 @@
                     localAvatar.name = netAvatar.name;
                     localAvatar.flipped = netAvatar.flipped;
                     localAvatar.locked = netAvatar.locked;
-                    localAvatar.hotkey = netAvatar.hotkey;
                     
                     // Apply locked class if needed
                     if (netAvatar.locked) {
@@ -5390,7 +5338,6 @@
                 zIndex: avatarData.element.style.zIndex,
                 name: avatarData.name,
                 flipped: avatarData.flipped,
-                hotkey: avatarData.hotkey,
                 locked: avatarData.locked,
                 rounded: avatarData.rounded
             }));
@@ -6210,7 +6157,30 @@
         }
 
         // Avatar Hotkey System
-        let activeHotkeys = new Set();
+        // Helper function to get a display name for a key code
+        function getKeyDisplayName(keyCode) {
+            const specialKeys = {
+                32: 'Space',
+                13: 'Enter',
+                27: 'Escape',
+                8: 'Backspace',
+                9: 'Tab',
+                16: 'Shift',
+                17: 'Ctrl',
+                18: 'Alt',
+                20: 'CapsLock',
+                112: 'F1', 113: 'F2', 114: 'F3', 115: 'F4', 116: 'F5', 117: 'F6',
+                118: 'F7', 119: 'F8', 120: 'F9', 121: 'F10', 122: 'F11', 123: 'F12',
+                37: '←', 38: '↑', 39: '→', 40: '↓'
+            };
+            
+            if (specialKeys[keyCode]) {
+                return specialKeys[keyCode];
+            }
+            
+            // For regular keys, convert keyCode to character
+            return String.fromCharCode(keyCode).toUpperCase();
+        }
 
         function showAvatarContextMenu(x, y, avatarElement) {
             const menu = document.getElementById('avatarContextMenu');
@@ -6261,7 +6231,7 @@
             if (isAssignedToMe) {
                 const assignHotkeyBtn = document.createElement('button');
                 const currentHotkey = myHotkeyAssignments[avatarId];
-                assignHotkeyBtn.textContent = currentHotkey ? `⌨️ Change Hotkey (${String.fromCharCode(currentHotkey).toUpperCase()})` : '⌨️ Assign Hotkey';
+                assignHotkeyBtn.textContent = currentHotkey ? `⌨️ Change Hotkey (${getKeyDisplayName(currentHotkey)})` : '⌨️ Assign Hotkey';
                 assignHotkeyBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
                 assignHotkeyBtn.onmouseenter = () => { assignHotkeyBtn.style.backgroundColor = '#3a3a3a'; };
                 assignHotkeyBtn.onmouseleave = () => { assignHotkeyBtn.style.backgroundColor = '#2a2a2a'; };
@@ -7225,7 +7195,7 @@
         }
 
         // Create Avatar
-        function createAvatar(imageSrc, x = 100, y = 100, zIndex = null, name = 'Character', flipped = false, hotkey = null, aboveGrid = false) {
+        function createAvatar(imageSrc, x = 100, y = 100, zIndex = null, name = 'Character', flipped = false, aboveGrid = false) {
             const stage = document.getElementById('stage');
             const avatar = document.createElement('div');
             avatar.className = 'avatar';
@@ -7279,7 +7249,6 @@
                         zIndex: a.element.style.zIndex,
                         name: a.name,
                         flipped: a.flipped,
-                        hotkey: a.hotkey,
                         locked: a.locked
                     }));
                     broadcastState('AVATAR_UPDATE', avatarState);
@@ -7418,7 +7387,6 @@
                 width: 300,
                 height: 300,
                 flipped: flipped,
-                hotkey: null,
                 aboveGrid: aboveGrid,
                 rounded: false
             };
@@ -7499,7 +7467,6 @@
                             zIndex: a.element.style.zIndex,
                             name: a.name,
                             flipped: a.flipped,
-                            hotkey: a.hotkey,
                             locked: a.locked
                         }));
                         broadcastState('AVATAR_UPDATE', avatarState);
@@ -10376,7 +10343,7 @@
                     avatarDiv.appendChild(label);
                     
                     avatarDiv.onclick = () => {
-                        createAvatar(src, 100, 100, avatarZIndex++, 'Character', false, null);
+                        createAvatar(src, 100, 100, avatarZIndex++, 'Character', false);
                         menu.style.display = 'none';
                         saveToLocalStorage();
                     };
@@ -10419,7 +10386,6 @@
                     zIndex: a.element.style.zIndex,
                     name: a.name || 'Character',
                     flipped: a.flipped || false,
-                    hotkey: a.hotkey || null
                 })),
                 weatherEffect: currentWeatherEffect,
                 diceRollLog: diceRollLog,
@@ -10493,7 +10459,7 @@
                         if (zIndex < 500 || zIndex >= 1000) zIndex = 500;
                     }
                     
-                    const avatar = createAvatar(a.imageSrc, a.x, a.y, zIndex, a.name || 'Character', a.flipped || false, a.hotkey || null, a.aboveGrid || false);
+                    const avatar = createAvatar(a.imageSrc, a.x, a.y, zIndex, a.name || 'Character', a.flipped || false, a.aboveGrid || false);
                     if (a.width) avatar.style.width = a.width + 'px';
                     if (a.height) avatar.style.height = a.height + 'px';
                     if (a.locked) {
@@ -10686,7 +10652,6 @@
                     zIndex: a.element.style.zIndex,
                     name: a.name || 'Character',
                     flipped: a.flipped || false,
-                    hotkey: a.hotkey || null
                 })),
                 weatherEffect: currentWeatherEffect,
                 diceRollLog: diceRollLog,
