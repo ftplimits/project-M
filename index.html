@@ -1932,10 +1932,20 @@
                             const gridCanvas = document.getElementById('gridCanvas');
                             const overlayCanvas = document.getElementById('gridOverlayCanvas');
                             const tokenCanvas = document.getElementById('tokenCanvas');
+                            const drawingCanvas = document.getElementById('drawingCanvas');
+                            const textCanvas = document.getElementById('textCanvas');
+                            const fogCanvas = document.getElementById('fogCanvas');
+                            const gridImageBelowCanvas = document.getElementById('gridImageBelowCanvas');
+                            const gridImageAboveCanvas = document.getElementById('gridImageAboveCanvas');
                             
                             gridCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
                             overlayCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
                             tokenCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+                            drawingCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+                            textCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+                            fogCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+                            gridImageBelowCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+                            gridImageAboveCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
                             
                             updateGridButton();
                             renderGrid();
@@ -1945,8 +1955,6 @@
                                 renderDrawings();
                                 renderTextObjects();
                                 renderFogAreas();
-                            } else {
-                                document.getElementById('fogCanvas').style.display = 'none';
                             }
                         }
                     }
