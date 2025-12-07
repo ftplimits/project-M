@@ -8961,6 +8961,11 @@
                     theatreDrawings = [];
                     renderTheatreDrawings();
                     saveToLocalStorage();
+                    
+                    // Broadcast clear to players
+                    if (isHost && isConnected) {
+                        broadcastState('THEATRE_DRAWING_SYNC', theatreDrawings);
+                    }
                 }
                 currentTheatreDrawTool = null;
                 return;
