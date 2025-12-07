@@ -6229,8 +6229,9 @@
                 menu.appendChild(assignPlayerBtn);
             }
             
-            // Assign Hotkey button (only if assigned to current player)
-            if (isAssignedToMe) {
+            // Assign Hotkey button (in single-player mode OR if assigned to current player in multiplayer)
+            const canAssignHotkey = !isConnected || isAssignedToMe;
+            if (canAssignHotkey) {
                 const assignHotkeyBtn = document.createElement('button');
                 const currentHotkey = myHotkeyAssignments[avatarId];
                 assignHotkeyBtn.textContent = currentHotkey ? `⌨️ Change Hotkey (${getKeyDisplayName(currentHotkey)})` : '⌨️ Assign Hotkey';
@@ -6365,6 +6366,12 @@
                                     defaultHotkey: 32 // Space bar
                                 }
                             });
+                        } else if (player.id === peer.id) {
+                            // If assigning to self (host), set the default hotkey directly
+                            if (!myHotkeyAssignments[avatarId]) {
+                                myHotkeyAssignments[avatarId] = 32; // Space bar
+                                saveToLocalStorage();
+                            }
                         }
                     }
                 };
@@ -6501,12 +6508,23 @@
             const myPlayerId = peer ? peer.id : null;
             let triggeredAvatarId = null;
             
-            // Find avatar assigned to me with this hotkey
-            for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
-                if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
-                    triggeredAvatarId = parseInt(avatarId);
-                    console.log('Hotkey match found! Avatar ID:', avatarId, 'KeyCode:', keyCode);
-                    break;
+            if (isConnected) {
+                // In multiplayer mode: only trigger avatars assigned to me
+                for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
+                    if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
+                        triggeredAvatarId = parseInt(avatarId);
+                        console.log('Hotkey match found! Avatar ID:', avatarId, 'KeyCode:', keyCode);
+                        break;
+                    }
+                }
+            } else {
+                // In single-player mode: trigger any avatar with this hotkey
+                for (const [avatarId, assignedKeyCode] of Object.entries(myHotkeyAssignments)) {
+                    if (assignedKeyCode === keyCode) {
+                        triggeredAvatarId = parseInt(avatarId);
+                        console.log('Hotkey match found (single-player)! Avatar ID:', avatarId, 'KeyCode:', keyCode);
+                        break;
+                    }
                 }
             }
             
@@ -6546,11 +6564,21 @@
             const myPlayerId = peer ? peer.id : null;
             let triggeredAvatarId = null;
             
-            // Find avatar assigned to me with this hotkey
-            for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
-                if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
-                    triggeredAvatarId = parseInt(avatarId);
-                    break;
+            if (isConnected) {
+                // In multiplayer mode: only trigger avatars assigned to me
+                for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
+                    if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
+                        triggeredAvatarId = parseInt(avatarId);
+                        break;
+                    }
+                }
+            } else {
+                // In single-player mode: trigger any avatar with this hotkey
+                for (const [avatarId, assignedKeyCode] of Object.entries(myHotkeyAssignments)) {
+                    if (assignedKeyCode === keyCode) {
+                        triggeredAvatarId = parseInt(avatarId);
+                        break;
+                    }
                 }
             }
             
