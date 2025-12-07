@@ -1661,10 +1661,6 @@
                 // Update menu
                 updateMultiplayerMenu();
                 
-                // Auto-open the multiplayer menu to show player list
-                document.getElementById('multiplayerMenu').style.display = 'flex';
-                multiplayerMenuVisible = true;
-                
                 // Copy link to clipboard and show success notification
                 const shareLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
                 navigator.clipboard.writeText(shareLink).then(() => {
@@ -2034,6 +2030,12 @@
             console.log('Current backdrops array:', backdrops);
             console.log('Current avatars array:', avatars);
             
+            // Save current backdrop's avatar states before sending
+            const currentBackdropIndex = backdrops.findIndex(b => b.visible);
+            if (currentBackdropIndex !== -1) {
+                saveAvatarStates(currentBackdropIndex);
+            }
+            
             const state = {
                 backdrops: backdrops.map(b => ({
                     imageSrc: b.imageSrc,
@@ -2058,10 +2060,24 @@
                     name: a.name,
                     flipped: a.flipped,
                     hotkey: a.hotkey,
-                    locked: a.locked
+                    locked: a.locked,
+                    aboveGrid: a.aboveGrid,
+                    rounded: a.rounded
                 })),
                 weatherEffect: currentWeatherEffect,
-                players: players
+                players: players,
+                
+                // ADD MISSING ITEMS:
+                tokens: tokens,
+                gridImages: gridImages,
+                drawings: drawings,
+                textObjects: textObjects,
+                theatreDrawings: theatreDrawings,
+                theatreTextObjects: theatreTextObjects,
+                fogAreas: fogAreas,
+                initiativeOrder: initiativeOrder,
+                initiativeValues: initiativeValues,
+                currentTurnIndex: currentTurnIndex
             };
             
             console.log('Prepared state:', state);
@@ -2113,8 +2129,15 @@
                         avatarData.name,
                         avatarData.flipped,
                         avatarData.hotkey,
-                        false
+                        avatarData.aboveGrid || false
                     );
+                    
+                    // Restore rounded property if present
+                    if (avatarData.rounded) {
+                        const avatar = avatars[avatars.length - 1];
+                        avatar.rounded = true;
+                        avatar.element.classList.add('rounded');
+                    }
                 });
             }
             
@@ -2128,6 +2151,60 @@
                 players = state.players;
                 updateMultiplayerMenu();
             }
+            
+            // Restore tokens
+            if (state.tokens) {
+                tokens = state.tokens;
+                renderTokens();
+            }
+            
+            // Restore grid images
+            if (state.gridImages) {
+                gridImages = state.gridImages;
+                renderGridImages();
+            }
+            
+            // Restore drawings
+            if (state.drawings) {
+                drawings = state.drawings;
+                renderDrawings();
+            }
+            
+            // Restore text objects
+            if (state.textObjects) {
+                textObjects = state.textObjects;
+                renderTextObjects();
+            }
+            
+            // Restore theatre drawings
+            if (state.theatreDrawings) {
+                theatreDrawings = state.theatreDrawings;
+                renderTheatreDrawings();
+            }
+            
+            // Restore theatre text objects
+            if (state.theatreTextObjects) {
+                theatreTextObjects = state.theatreTextObjects;
+                renderTheatreTextObjects();
+            }
+            
+            // Restore fog areas
+            if (state.fogAreas) {
+                fogAreas = state.fogAreas;
+                renderFogAreas();
+            }
+            
+            // Restore initiative tracker
+            if (state.initiativeOrder) {
+                initiativeOrder = state.initiativeOrder;
+            }
+            if (state.initiativeValues) {
+                initiativeValues = state.initiativeValues;
+            }
+            if (state.currentTurnIndex !== undefined) {
+                currentTurnIndex = state.currentTurnIndex;
+            }
+            renderInitiativeTracker();
             
             console.log('Full state applied. Backdrops:', backdrops.length, 'Avatars:', avatars.length);
         }
