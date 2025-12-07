@@ -6025,6 +6025,7 @@
             }
             
             // Build notification HTML with success styling
+            // NOTE: message must be a trusted string (not user input) since it's inserted via innerHTML
             notification.className = 'dice-notification';
             notification.style.borderColor = '#22c55e'; // Green border
             notification.innerHTML = `
