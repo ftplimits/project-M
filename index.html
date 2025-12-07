@@ -6438,6 +6438,29 @@
             });
         }
 
+        // Helper function to find avatar matching a hotkey
+        function findAvatarByHotkey(keyCode) {
+            const myPlayerId = peer ? peer.id : null;
+            
+            if (isConnected) {
+                // In multiplayer mode: only trigger avatars assigned to me
+                for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
+                    if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
+                        return parseInt(avatarId);
+                    }
+                }
+            } else {
+                // In single-player mode: trigger any avatar with this hotkey
+                for (const [avatarId, assignedKeyCode] of Object.entries(myHotkeyAssignments)) {
+                    if (assignedKeyCode === keyCode) {
+                        return parseInt(avatarId);
+                    }
+                }
+            }
+            
+            return null;
+        }
+
         // Global keydown/keyup handlers for hotkeys
         document.addEventListener('keydown', (e) => {
             // Ignore if typing in an input field
@@ -6494,26 +6517,7 @@
             }
             
             // Check if this key matches any of my assigned avatar hotkeys
-            const myPlayerId = peer ? peer.id : null;
-            let triggeredAvatarId = null;
-            
-            if (isConnected) {
-                // In multiplayer mode: only trigger avatars assigned to me
-                for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
-                    if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
-                        triggeredAvatarId = parseInt(avatarId);
-                        break;
-                    }
-                }
-            } else {
-                // In single-player mode: trigger any avatar with this hotkey
-                for (const [avatarId, assignedKeyCode] of Object.entries(myHotkeyAssignments)) {
-                    if (assignedKeyCode === keyCode) {
-                        triggeredAvatarId = parseInt(avatarId);
-                        break;
-                    }
-                }
-            }
+            const triggeredAvatarId = findAvatarByHotkey(keyCode);
             
             // If we found a matching avatar, trigger the glow
             if (triggeredAvatarId !== null) {
@@ -6547,26 +6551,7 @@
             const keyCode = e.keyCode;
             
             // Check if this key matches any of my assigned avatar hotkeys
-            const myPlayerId = peer ? peer.id : null;
-            let triggeredAvatarId = null;
-            
-            if (isConnected) {
-                // In multiplayer mode: only trigger avatars assigned to me
-                for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
-                    if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
-                        triggeredAvatarId = parseInt(avatarId);
-                        break;
-                    }
-                }
-            } else {
-                // In single-player mode: trigger any avatar with this hotkey
-                for (const [avatarId, assignedKeyCode] of Object.entries(myHotkeyAssignments)) {
-                    if (assignedKeyCode === keyCode) {
-                        triggeredAvatarId = parseInt(avatarId);
-                        break;
-                    }
-                }
-            }
+            const triggeredAvatarId = findAvatarByHotkey(keyCode);
             
             // If we found a matching avatar, deactivate the glow
             if (triggeredAvatarId !== null) {
