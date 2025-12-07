@@ -1578,9 +1578,13 @@
         
         function toggleMultiplayerMenu() {
             if (isConnected) {
-                // Show multiplayer menu when connected
-                multiplayerMenuVisible = !multiplayerMenuVisible;
-                document.getElementById('multiplayerMenu').style.display = multiplayerMenuVisible ? 'flex' : 'none';
+                // When connected, re-copy the room link to clipboard
+                const shareLink = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+                navigator.clipboard.writeText(shareLink).then(() => {
+                    showSuccessNotification('Room link copied to clipboard!', 1500);
+                }).catch(() => {
+                    showSuccessNotification('Failed to copy link', 1500);
+                });
             } else {
                 // Create session when not connected
                 createSession();
@@ -4073,6 +4077,11 @@
             token.y = finalY;
             
             renderTokens();
+            
+            // Broadcast token update for real-time sync during drag
+            if (isHost && isConnected) {
+                broadcastState('TOKEN_SYNC', tokens);
+            }
         }
 
         function handleTokenMouseUp(e) {
@@ -4082,6 +4091,11 @@
                 tokenDragStart = null;
                 renderTokens(); // Re-render to clear measurement line
                 saveToLocalStorage();
+                
+                // Broadcast token update to players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
