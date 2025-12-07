@@ -2336,6 +2336,28 @@
                         }
                     }
                     break;
+                    
+                case 'CHARACTER_SHEET_ADDED':
+                    // Receive character sheet from host or player
+                    if (message.data && Array.isArray(message.data)) {
+                        console.log('Received CHARACTER_SHEET_ADDED, syncing character sheets');
+                        characterSheets = message.data;
+                        updateSheetSelectorDisplay();
+                        saveToLocalStorage();
+                        
+                        // If host received from player, relay to other players
+                        if (isHost && conn) {
+                            connections.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'CHARACTER_SHEET_ADDED',
+                                        data: characterSheets
+                                    });
+                                }
+                            });
+                        }
+                    }
+                    break;
             }
             
             // Host relays to other players
@@ -2405,7 +2427,8 @@
                 handout: {
                     image: handoutImage,
                     visible: handoutVisible
-                }
+                },
+                characterSheets: characterSheets
             };
             
             console.log('Prepared state:', state);
@@ -2580,6 +2603,12 @@
                 handoutImage = state.handout.image;
                 handoutVisible = state.handout.visible;
                 updateHandoutDisplay();
+            }
+            
+            // Restore character sheets
+            if (state.characterSheets) {
+                characterSheets = state.characterSheets;
+                updateSheetSelectorDisplay();
             }
             
             // Update UI elements
@@ -7270,6 +7299,17 @@
                 characterSheets.push(newSheet);
                 updateSheetSelectorDisplay();
                 saveToLocalStorage();
+                
+                // Broadcast character sheet to all players in multiplayer
+                if (isHost) {
+                    broadcastState('CHARACTER_SHEET_ADDED', characterSheets);
+                } else if (isConnected && connections.length > 0) {
+                    // Player sends to host
+                    connections[0].send({
+                        type: 'CHARACTER_SHEET_ADDED',
+                        data: characterSheets
+                    });
+                }
             } catch (err) {
                 console.error('Failed to process image:', err);
                 await customAlert('Failed to load image. Please try a different file.');
@@ -7305,6 +7345,17 @@
                 closeSheet(sheetId);
                 updateSheetSelectorDisplay();
                 saveToLocalStorage();
+                
+                // Broadcast character sheet deletion to all players in multiplayer
+                if (isHost) {
+                    broadcastState('CHARACTER_SHEET_ADDED', characterSheets);
+                } else if (isConnected && connections.length > 0) {
+                    // Player sends to host
+                    connections[0].send({
+                        type: 'CHARACTER_SHEET_ADDED',
+                        data: characterSheets
+                    });
+                }
             }
         }
 
