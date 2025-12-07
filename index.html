@@ -6816,6 +6816,11 @@
             event.target.value = '';
         }
 
+        // Helper function to check if user can edit backdrops
+        function canEditBackdrops() {
+            return peer === null || isHost;
+        }
+
         // Create Backdrop
         function createBackdrop(imageSrc, x = 0, y = 0, width = 800, height = 600, zIndex = null, visible = true, hideOthers = false) {
             const stage = document.getElementById('stage');
@@ -6841,76 +6846,78 @@
             img.src = imageSrc;
             backdrop.appendChild(img);
 
-            // Controls
-            const controls = document.createElement('div');
-            controls.className = 'backdrop-controls';
-            
-            // Only show controls if user is host
-            if (!isHost) {
-                controls.style.display = 'none';
+            // Controls - only create if user can edit backdrops
+            if (canEditBackdrops()) {
+                const controls = document.createElement('div');
+                controls.className = 'backdrop-controls';
+                
+                const lockBtn = document.createElement('button');
+                lockBtn.className = 'backdrop-btn';
+                lockBtn.textContent = 'Lock';
+                lockBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    backdrop.dataset.locked = backdrop.dataset.locked === 'true' ? 'false' : 'true';
+                    lockBtn.textContent = backdrop.dataset.locked === 'true' ? 'Unlock' : 'Lock';
+                    
+                    // Broadcast backdrop update when locked (to sync position/size)
+                    if (backdrop.dataset.locked === 'true' && isHost && isConnected) {
+                        const backdropState = backdrops.map(b => ({
+                            imageSrc: b.imageSrc,
+                            x: parseInt(b.element.style.left),
+                            y: parseInt(b.element.style.top),
+                            width: parseInt(b.element.style.width),
+                            height: parseInt(b.element.style.height),
+                            zIndex: b.element.style.zIndex,
+                            locked: b.element.dataset.locked === 'true',
+                            visible: b.element.style.display !== 'none',
+                            grid: b.grid
+                        }));
+                        broadcastState('BACKDROP_UPDATE', backdropState);
+                    }
+                };
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'backdrop-btn';
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const wasVisible = backdrop.style.display !== 'none';
+                    backdrop.remove();
+                    backdrops = backdrops.filter(b => b.element !== backdrop);
+                    
+                    // If we deleted the visible backdrop, show the first remaining one
+                    if (wasVisible && backdrops.length > 0) {
+                        backdrops[0].element.style.display = 'block';
+                        backdrops[0].visible = true;
+                    }
+                    
+                    saveToLocalStorage();
+                };
+
+                controls.appendChild(lockBtn);
+                controls.appendChild(deleteBtn);
+                backdrop.appendChild(controls);
+
+                // Resize Handle
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'resize-handle';
+                resizeHandle.textContent = '⇲';
+                backdrop.appendChild(resizeHandle);
+
+                // Resizing
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    if (backdrop.dataset.locked === 'true') return;
+                    
+                    resizingElement = backdrop;
+                    offsetX = e.clientX;
+                    offsetY = e.clientY;
+                });
             }
-            
-            const lockBtn = document.createElement('button');
-            lockBtn.className = 'backdrop-btn';
-            lockBtn.textContent = 'Lock';
-            lockBtn.onclick = (e) => {
-                e.stopPropagation();
-                backdrop.dataset.locked = backdrop.dataset.locked === 'true' ? 'false' : 'true';
-                lockBtn.textContent = backdrop.dataset.locked === 'true' ? 'Unlock' : 'Lock';
-                
-                // Broadcast backdrop update when locked (to sync position/size)
-                if (backdrop.dataset.locked === 'true' && isHost && isConnected) {
-                    const backdropState = backdrops.map(b => ({
-                        imageSrc: b.imageSrc,
-                        x: parseInt(b.element.style.left),
-                        y: parseInt(b.element.style.top),
-                        width: parseInt(b.element.style.width),
-                        height: parseInt(b.element.style.height),
-                        zIndex: b.element.style.zIndex,
-                        locked: b.element.dataset.locked === 'true',
-                        visible: b.element.style.display !== 'none',
-                        grid: b.grid
-                    }));
-                    broadcastState('BACKDROP_UPDATE', backdropState);
-                }
-            };
 
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'backdrop-btn';
-            deleteBtn.textContent = 'Delete';
-            deleteBtn.onclick = (e) => {
-                e.stopPropagation();
-                const wasVisible = backdrop.style.display !== 'none';
-                backdrop.remove();
-                backdrops = backdrops.filter(b => b.element !== backdrop);
-                
-                // If we deleted the visible backdrop, show the first remaining one
-                if (wasVisible && backdrops.length > 0) {
-                    backdrops[0].element.style.display = 'block';
-                    backdrops[0].visible = true;
-                }
-                
-                saveToLocalStorage();
-            };
-
-            controls.appendChild(lockBtn);
-            controls.appendChild(deleteBtn);
-            backdrop.appendChild(controls);
-
-            // Resize Handle
-            const resizeHandle = document.createElement('div');
-            resizeHandle.className = 'resize-handle';
-            resizeHandle.textContent = '⇲';
-            
-            // Only show resize handle if user is host
-            if (!isHost) {
-                resizeHandle.style.display = 'none';
-            }
-            
-            backdrop.appendChild(resizeHandle);
-
-            // Dragging
+            // Dragging - only allow if user can edit backdrops
             backdrop.addEventListener('mousedown', (e) => {
+                if (!canEditBackdrops()) return;
                 if (backdrop.dataset.locked === 'true') return;
                 if (e.target.closest('.backdrop-controls') || e.target.closest('.resize-handle')) return;
                 
@@ -6918,16 +6925,6 @@
                 offsetX = e.clientX - backdrop.offsetLeft;
                 offsetY = e.clientY - backdrop.offsetTop;
                 backdrop.style.zIndex = backdropZIndex++;
-            });
-
-            // Resizing
-            resizeHandle.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                if (backdrop.dataset.locked === 'true') return;
-                
-                resizingElement = backdrop;
-                offsetX = e.clientX;
-                offsetY = e.clientY;
             });
 
             stage.appendChild(backdrop);
