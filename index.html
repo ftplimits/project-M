@@ -8180,6 +8180,11 @@
             drawings = [];
             renderDrawings();
             saveToLocalStorage();
+            
+            // Broadcast clear to players
+            if (isHost && isConnected) {
+                broadcastState('GRID_DRAWING_SYNC', drawings);
+            }
         }
         
         // Drawing mouse handlers
@@ -8197,6 +8202,11 @@
                         drawings.splice(index, 1);
                         renderDrawings();
                         saveToLocalStorage();
+                        
+                        // Broadcast drawing deletion to players
+                        if (isHost && isConnected) {
+                            broadcastState('GRID_DRAWING_SYNC', drawings);
+                        }
                     }
                 }
                 return;
@@ -8309,6 +8319,11 @@
                 draggedDrawing = null;
                 drawDragOffset = { x: 0, y: 0 };
                 saveToLocalStorage();
+                
+                // Broadcast drawing position update to players
+                if (isHost && isConnected) {
+                    broadcastState('GRID_DRAWING_SYNC', drawings);
+                }
                 return;
             }
             
@@ -8997,6 +9012,11 @@
                     theatreDrawings = [];
                     renderTheatreDrawings();
                     saveToLocalStorage();
+                    
+                    // Broadcast clear to players
+                    if (isHost && isConnected) {
+                        broadcastState('THEATRE_DRAWING_SYNC', theatreDrawings);
+                    }
                 }
                 currentTheatreDrawTool = null;
                 return;
