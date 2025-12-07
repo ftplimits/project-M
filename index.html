@@ -2374,10 +2374,19 @@
                 // Create new pointer element
                 const pointerElement = document.createElement('div');
                 pointerElement.style.cssText = 'display: block; position: fixed; pointer-events: none; z-index: 9999; transform: translate(-50%, 0%);';
-                pointerElement.innerHTML = `
-                    <div style="font-size: 32px; color: #ff6b6b; text-shadow: 0 0 8px rgba(255, 107, 107, 0.8), 0 2px 4px rgba(0, 0, 0, 0.8); line-height: 0.8; margin-bottom: 2px; text-align: center; margin-top: -4px;">▲</div>
-                    <div style="background-color: rgba(0, 0, 0, 0.85); color: #ff6b6b; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: bold; font-family: Georgia, serif; white-space: nowrap; border: 2px solid #ff6b6b; box-shadow: 0 0 12px rgba(255, 107, 107, 0.6), 0 2px 8px rgba(0, 0, 0, 0.8); text-align: center;">${playerName}</div>
-                `;
+                
+                // Create arrow
+                const arrow = document.createElement('div');
+                arrow.style.cssText = 'font-size: 32px; color: #ff6b6b; text-shadow: 0 0 8px rgba(255, 107, 107, 0.8), 0 2px 4px rgba(0, 0, 0, 0.8); line-height: 0.8; margin-bottom: 2px; text-align: center; margin-top: -4px;';
+                arrow.textContent = '▲';
+                
+                // Create name label
+                const nameLabel = document.createElement('div');
+                nameLabel.style.cssText = 'background-color: rgba(0, 0, 0, 0.85); color: #ff6b6b; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: bold; font-family: Georgia, serif; white-space: nowrap; border: 2px solid #ff6b6b; box-shadow: 0 0 12px rgba(255, 107, 107, 0.6), 0 2px 8px rgba(0, 0, 0, 0.8); text-align: center;';
+                nameLabel.textContent = playerName; // Safe - uses textContent instead of innerHTML
+                
+                pointerElement.appendChild(arrow);
+                pointerElement.appendChild(nameLabel);
                 document.body.appendChild(pointerElement);
                 pointerData = { element: pointerElement, timeout: null };
                 remotePointers[playerId] = pointerData;
@@ -2775,6 +2784,8 @@
         let isPointerActive = false;
         let pointerPosition = { x: 0, y: 0 };
         let remotePointers = {}; // Map of playerId -> { element, timeout }
+        let lastPointerBroadcast = 0; // Timestamp of last pointer broadcast
+        const POINTER_BROADCAST_THROTTLE = 50; // Milliseconds between broadcasts
 
         // Handouts variables
         let handoutVisible = false;
@@ -10243,23 +10254,27 @@
                         pointer.style.top = e.clientY + 'px';
                     }
                     
-                    // Broadcast pointer position to all players
+                    // Broadcast pointer position to all players (throttled to reduce network load)
                     if (isConnected) {
-                        const message = {
-                            type: 'POINTER_UPDATE',
-                            data: {
-                                playerId: peer ? peer.id : 'unknown',
-                                playerName: playerName || 'Player',
-                                x: e.clientX,
-                                y: e.clientY,
-                                active: true
+                        const now = Date.now();
+                        if (now - lastPointerBroadcast >= POINTER_BROADCAST_THROTTLE) {
+                            lastPointerBroadcast = now;
+                            const message = {
+                                type: 'POINTER_UPDATE',
+                                data: {
+                                    playerId: peer ? peer.id : 'unknown',
+                                    playerName: playerName || 'Player',
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    active: true
+                                }
+                            };
+                            
+                            if (isHost) {
+                                broadcastState('POINTER_UPDATE', message.data);
+                            } else if (hostConnection && hostConnection.open) {
+                                hostConnection.send(message);
                             }
-                        };
-                        
-                        if (isHost) {
-                            broadcastState('POINTER_UPDATE', message.data);
-                        } else if (hostConnection && hostConnection.open) {
-                            hostConnection.send(message);
                         }
                     }
                 }
