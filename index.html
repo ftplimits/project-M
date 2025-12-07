@@ -2034,6 +2034,13 @@
                 case 'WEATHER_UPDATE':
                     setWeatherEffect(message.data);
                     break;
+                    
+                case 'POINTER_UPDATE':
+                    // Display remote player's pointer position
+                    if (message.data) {
+                        updateRemotePointer(message.data.playerId, message.data.playerName, message.data.x, message.data.y, message.data.active);
+                    }
+                    break;
             }
             
             // Host relays to other players
@@ -2347,6 +2354,49 @@
         
         function broadcastPlayerList() {
             broadcastState('PLAYER_LIST', players);
+        }
+        
+        function updateRemotePointer(playerId, playerName, x, y, active) {
+            if (!active) {
+                // Remove pointer if it exists
+                if (remotePointers[playerId]) {
+                    if (remotePointers[playerId].element) {
+                        remotePointers[playerId].element.remove();
+                    }
+                    delete remotePointers[playerId];
+                }
+                return;
+            }
+            
+            // Create or update pointer element
+            let pointerData = remotePointers[playerId];
+            if (!pointerData) {
+                // Create new pointer element
+                const pointerElement = document.createElement('div');
+                pointerElement.style.cssText = 'display: block; position: fixed; pointer-events: none; z-index: 9999; transform: translate(-50%, 0%);';
+                pointerElement.innerHTML = `
+                    <div style="font-size: 32px; color: #ff6b6b; text-shadow: 0 0 8px rgba(255, 107, 107, 0.8), 0 2px 4px rgba(0, 0, 0, 0.8); line-height: 0.8; margin-bottom: 2px; text-align: center; margin-top: -4px;">▲</div>
+                    <div style="background-color: rgba(0, 0, 0, 0.85); color: #ff6b6b; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: bold; font-family: Georgia, serif; white-space: nowrap; border: 2px solid #ff6b6b; box-shadow: 0 0 12px rgba(255, 107, 107, 0.6), 0 2px 8px rgba(0, 0, 0, 0.8); text-align: center;">${playerName}</div>
+                `;
+                document.body.appendChild(pointerElement);
+                pointerData = { element: pointerElement, timeout: null };
+                remotePointers[playerId] = pointerData;
+            }
+            
+            // Update position
+            pointerData.element.style.left = x + 'px';
+            pointerData.element.style.top = y + 'px';
+            pointerData.element.style.display = 'block';
+            
+            // Auto-hide after 5 seconds of no updates
+            if (pointerData.timeout) {
+                clearTimeout(pointerData.timeout);
+            }
+            pointerData.timeout = setTimeout(() => {
+                if (pointerData.element) {
+                    pointerData.element.style.display = 'none';
+                }
+            }, 5000);
         }
         
         function updateCreateSessionButton() {
@@ -2724,6 +2774,7 @@
         // Middle mouse pointer variables
         let isPointerActive = false;
         let pointerPosition = { x: 0, y: 0 };
+        let remotePointers = {}; // Map of playerId -> { element, timeout }
 
         // Handouts variables
         let handoutVisible = false;
@@ -3991,6 +4042,11 @@
                 token.borderColor = color;
                 renderTokens();
                 saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -4000,6 +4056,11 @@
                 token.conditionEmoji = emoji;
                 renderTokens();
                 saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -4013,6 +4074,11 @@
                 }
                 renderTokens();
                 saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -4022,6 +4088,11 @@
                 token.hpCurrent = Math.max(0, Math.min(token.hpMax, token.hpCurrent + delta));
                 renderTokens();
                 saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -4033,6 +4104,11 @@
                 token.hpCurrent = Math.min(token.hpCurrent, token.hpMax);
                 renderTokens();
                 saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -4042,6 +4118,11 @@
                 token.locked = !token.locked;
                 renderTokens();
                 saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -4051,6 +4132,11 @@
                 token.hidden = !token.hidden;
                 renderTokens();
                 saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -4060,6 +4146,11 @@
                 token.flipped = !token.flipped;
                 renderTokens();
                 saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -8249,11 +8340,7 @@
             
             theatreTextMenuVisible = true;
             
-            // Only activate and set mode if tool wasn't already active
-            if (!theatreTextToolActive) {
-                theatreTextToolActive = true;
-                setTheatreTextToolMode('place'); // Default to place when first opening
-            }
+            // Don't auto-activate tool on hover - only when user clicks Place Text button
         }
 
         function hideTheatreTextMenu() {
@@ -10155,6 +10242,26 @@
                         pointer.style.left = e.clientX + 'px';
                         pointer.style.top = e.clientY + 'px';
                     }
+                    
+                    // Broadcast pointer position to all players
+                    if (isConnected) {
+                        const message = {
+                            type: 'POINTER_UPDATE',
+                            data: {
+                                playerId: peer ? peer.id : 'unknown',
+                                playerName: playerName || 'Player',
+                                x: e.clientX,
+                                y: e.clientY,
+                                active: true
+                            }
+                        };
+                        
+                        if (isHost) {
+                            broadcastState('POINTER_UPDATE', message.data);
+                        } else if (hostConnection && hostConnection.open) {
+                            hostConnection.send(message);
+                        }
+                    }
                 }
             });
             
@@ -10169,6 +10276,26 @@
                         pointer.style.display = 'block';
                         pointer.style.left = e.clientX + 'px';
                         pointer.style.top = e.clientY + 'px';
+                    }
+                    
+                    // Broadcast pointer activation to all players
+                    if (isConnected) {
+                        const message = {
+                            type: 'POINTER_UPDATE',
+                            data: {
+                                playerId: peer ? peer.id : 'unknown',
+                                playerName: playerName || 'Player',
+                                x: e.clientX,
+                                y: e.clientY,
+                                active: true
+                            }
+                        };
+                        
+                        if (isHost) {
+                            broadcastState('POINTER_UPDATE', message.data);
+                        } else if (hostConnection && hostConnection.open) {
+                            hostConnection.send(message);
+                        }
                     }
                     return;
                 }
@@ -10427,6 +10554,26 @@
                     if (pointer) {
                         pointer.style.display = 'none';
                     }
+                    
+                    // Broadcast pointer deactivation to all players
+                    if (isConnected) {
+                        const message = {
+                            type: 'POINTER_UPDATE',
+                            data: {
+                                playerId: peer ? peer.id : 'unknown',
+                                playerName: playerName || 'Player',
+                                x: 0,
+                                y: 0,
+                                active: false
+                            }
+                        };
+                        
+                        if (isHost) {
+                            broadcastState('POINTER_UPDATE', message.data);
+                        } else if (hostConnection && hostConnection.open) {
+                            hostConnection.send(message);
+                        }
+                    }
                 }
             });
             
@@ -10524,7 +10671,7 @@
                             // Show text menu on hover
                             if (btn.id === 'textToolBtn') {
                                 showTextMenu();
-                                activateTextTool();
+                                // Don't activate tool on hover - only on click
                             }
                             
                             // Show fog menu on hover
@@ -10665,6 +10812,7 @@
             const textPlaceBtn = document.getElementById('textPlaceBtn');
             if (textPlaceBtn) {
                 textPlaceBtn.addEventListener('click', () => {
+                    activateTextTool();
                     setTextToolMode('place');
                     if (document.activeElement) document.activeElement.blur();
                 });
@@ -10673,6 +10821,7 @@
             const textDeleteBtn = document.getElementById('textDeleteBtn');
             if (textDeleteBtn) {
                 textDeleteBtn.addEventListener('click', () => {
+                    activateTextTool();
                     setTextToolMode('delete');
                     if (document.activeElement) document.activeElement.blur();
                 });
@@ -10867,6 +11016,7 @@
             const theatreTextPlaceBtn = document.getElementById('theatreTextPlaceBtn');
             if (theatreTextPlaceBtn) {
                 theatreTextPlaceBtn.addEventListener('click', () => {
+                    theatreTextToolActive = true;
                     setTheatreTextToolMode('place');
                     if (document.activeElement) document.activeElement.blur();
                 });
@@ -10875,6 +11025,7 @@
             const theatreTextDeleteBtn = document.getElementById('theatreTextDeleteBtn');
             if (theatreTextDeleteBtn) {
                 theatreTextDeleteBtn.addEventListener('click', () => {
+                    theatreTextToolActive = true;
                     setTheatreTextToolMode('delete');
                     if (document.activeElement) document.activeElement.blur();
                 });
