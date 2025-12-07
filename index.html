@@ -6289,14 +6289,24 @@
                 const key = e.key;
                 
                 // Filter out special keys that should not be assigned
-                const disallowedKeys = ['Escape', 'Tab', 'Shift', 'Control', 'Alt', 'Meta', 'CapsLock'];
+                const disallowedKeys = ['Escape', 'Tab', 'Enter', 'Shift', 'Control', 'Alt', 'Meta', 'CapsLock'];
                 if (disallowedKeys.includes(key)) {
                     return;
                 }
                 
                 // Store in shared hotkey assignments
                 avatarHotkeys[avatarId] = key;
-                input.value = key.toUpperCase();
+                
+                // Format display name consistently
+                let displayKey = key;
+                if (key === ' ') displayKey = 'SPACE';
+                else if (key === 'ArrowLeft') displayKey = '←';
+                else if (key === 'ArrowRight') displayKey = '→';
+                else if (key === 'ArrowUp') displayKey = '↑';
+                else if (key === 'ArrowDown') displayKey = '↓';
+                else displayKey = key.toUpperCase();
+                
+                input.value = displayKey;
                 
                 // Save to local storage
                 saveToLocalStorage();
@@ -10443,8 +10453,8 @@
                     currentTurnIndex = state.currentTurnIndex;
                 }
                 
-                // Restore avatar hotkeys (only if not connected, network messages take precedence)
-                if (state.avatarHotkeys && !isConnected) {
+                // Restore avatar hotkeys from localStorage (network messages will override if connected)
+                if (state.avatarHotkeys) {
                     avatarHotkeys = state.avatarHotkeys;
                 }
                 
