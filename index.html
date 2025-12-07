@@ -1577,9 +1577,8 @@
         let draggedSheet = null;
         let resizingSheet = null;
         
-        // Avatar hotkey assignment system
-        let avatarAssignments = {}; // { avatarId: playerId } - host maintains this
-        let myHotkeyAssignments = {}; // { avatarId: keyCode } - each player maintains their own
+        // Avatar hotkey system - simplified (shared mapping)
+        let avatarHotkeys = {}; // { avatarId: key } - shared mapping, anyone can assign when connected
 
         // ========================================
         // MULTIPLAYER FUNCTIONS (GLOBAL)
@@ -2292,48 +2291,45 @@
                     break;
                     
 
-                case 'AVATAR_ASSIGNMENTS':
-                    // Receive avatar assignments from host
-                    if (message.data) {
-                        avatarAssignments = message.data;
+                case 'ASSIGN_HOTKEY':
+                    // Receive hotkey assignment from any connected peer
+                    if (message.data && message.data.avatarId !== undefined && message.data.key !== undefined) {
+                        const { avatarId, key } = message.data;
+                        avatarHotkeys[avatarId] = key;
                         saveToLocalStorage();
-                    }
-                    break;
-                    
-                case 'AVATAR_ASSIGNED':
-                    // Player receives notification that they've been assigned to an avatar
-                    if (message.data && message.data.avatarId !== undefined) {
-                        const avatarId = message.data.avatarId;
-                        const defaultHotkey = message.data.defaultHotkey || 32; // Space bar
+                        console.log(`Hotkey assigned: Avatar ${avatarId} -> ${key}`);
                         
-                        // Set default hotkey if not already set
-                        if (!myHotkeyAssignments[avatarId]) {
-                            myHotkeyAssignments[avatarId] = defaultHotkey;
-                            saveToLocalStorage();
-                        }
-                        
-                        // Show notification
-                        const avatarData = avatars[avatarId];
-                        if (avatarData) {
-                            customAlert(`You've been assigned to control ${avatarData.name}! Default hotkey: Space bar. Right-click to change.`);
+                        // If host received from player, relay to other players
+                        if (isHost && conn) {
+                            connections.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'ASSIGN_HOTKEY',
+                                        data: message.data
+                                    });
+                                }
+                            });
                         }
                     }
                     break;
                     
                 case 'AVATAR_GLOW':
-                    // Receive avatar glow trigger from player
+                    // Receive avatar glow trigger from any peer
                     if (message.data && message.data.avatarId !== undefined) {
                         const avatarId = message.data.avatarId;
-                        const active = message.data.active;
+                        const action = message.data.action || 'start';
+                        const duration = message.data.duration || 800;
                         const avatarData = avatars[avatarId];
                         
                         if (avatarData && avatarData.element) {
-                            if (active) {
+                            if (action === 'start') {
                                 avatarData.element.classList.add('glowing');
-                            } else {
-                                avatarData.element.classList.remove('glowing');
-                                avatarData.element.style.filter = '';
-                                avatarData.element.style.transform = '';
+                                // Auto-remove after duration
+                                setTimeout(() => {
+                                    avatarData.element.classList.remove('glowing');
+                                    avatarData.element.style.filter = '';
+                                    avatarData.element.style.transform = '';
+                                }, duration);
                             }
                         }
                         
@@ -2442,7 +2438,7 @@
                     visible: handoutVisible
                 },
                 characterSheets: characterSheets,
-                avatarAssignments: avatarAssignments
+                avatarHotkeys: avatarHotkeys
             };
             
             console.log('Prepared state:', state);
@@ -2624,9 +2620,9 @@
                 updateSheetSelectorDisplay();
             }
             
-            // Restore avatar assignments
-            if (state.avatarAssignments) {
-                avatarAssignments = state.avatarAssignments;
+            // Restore avatar hotkeys
+            if (state.avatarHotkeys) {
+                avatarHotkeys = state.avatarHotkeys;
             }
             
             // Update UI elements
@@ -6157,30 +6153,6 @@
         }
 
         // Avatar Hotkey System
-        // Helper function to get a display name for a key code
-        function getKeyDisplayName(keyCode) {
-            const specialKeys = {
-                32: 'Space',
-                13: 'Enter',
-                27: 'Escape',
-                8: 'Backspace',
-                9: 'Tab',
-                16: 'Shift',
-                17: 'Ctrl',
-                18: 'Alt',
-                20: 'CapsLock',
-                112: 'F1', 113: 'F2', 114: 'F3', 115: 'F4', 116: 'F5', 117: 'F6',
-                118: 'F7', 119: 'F8', 120: 'F9', 121: 'F10', 122: 'F11', 123: 'F12',
-                37: '←', 38: '↑', 39: '→', 40: '↓'
-            };
-            
-            if (specialKeys[keyCode]) {
-                return specialKeys[keyCode];
-            }
-            
-            // For regular keys, convert keyCode to character
-            return String.fromCharCode(keyCode).toUpperCase();
-        }
 
         function showAvatarContextMenu(x, y, avatarElement) {
             const menu = document.getElementById('avatarContextMenu');
@@ -6188,9 +6160,6 @@
             if (!avatarData) return;
             
             const avatarId = avatars.indexOf(avatarData);
-            const assignedPlayerId = avatarAssignments[avatarId];
-            const myPlayerId = peer ? peer.id : null;
-            const isAssignedToMe = assignedPlayerId === myPlayerId;
             
             menu.innerHTML = '';
             menu.style.display = 'block';
@@ -6203,36 +6172,11 @@
             header.textContent = 'Avatar Options';
             menu.appendChild(header);
             
-            // Assigned player display (if any)
-            if (assignedPlayerId) {
-                const assignedPlayer = players.find(p => p.id === assignedPlayerId);
-                const assignedPlayerName = assignedPlayer ? assignedPlayer.name : 'Unknown Player';
-                const assignedLabel = document.createElement('div');
-                assignedLabel.style.cssText = 'color: #4ecdc4; font-size: 11px; margin-bottom: 8px; font-family: Arial, sans-serif; padding: 4px; background-color: rgba(78, 205, 196, 0.1); border-radius: 4px; text-align: center;';
-                assignedLabel.textContent = `👤 Assigned to: ${assignedPlayerName}`;
-                menu.appendChild(assignedLabel);
-            }
-            
-            // Assign Player button (host only in multiplayer)
-            if (isHost && isConnected) {
-                const assignPlayerBtn = document.createElement('button');
-                assignPlayerBtn.textContent = '👤 Assign Player';
-                assignPlayerBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
-                assignPlayerBtn.onmouseenter = () => { assignPlayerBtn.style.backgroundColor = '#3a3a3a'; };
-                assignPlayerBtn.onmouseleave = () => { assignPlayerBtn.style.backgroundColor = '#2a2a2a'; };
-                assignPlayerBtn.onclick = () => {
-                    menu.style.display = 'none';
-                    showPlayerSelectionMenu(x, y, avatarId);
-                };
-                menu.appendChild(assignPlayerBtn);
-            }
-            
-            // Assign Hotkey button (in single-player mode OR if assigned to current player in multiplayer)
-            const canAssignHotkey = !isConnected || isAssignedToMe;
-            if (canAssignHotkey) {
+            // Assign Hotkey button (only when connected to multiplayer)
+            if (isConnected) {
                 const assignHotkeyBtn = document.createElement('button');
-                const currentHotkey = myHotkeyAssignments[avatarId];
-                assignHotkeyBtn.textContent = currentHotkey ? `⌨️ Change Hotkey (${getKeyDisplayName(currentHotkey)})` : '⌨️ Assign Hotkey';
+                const currentHotkey = avatarHotkeys[avatarId];
+                assignHotkeyBtn.textContent = currentHotkey ? `⌨️ Assign Hotkey (${currentHotkey.toUpperCase()})` : '⌨️ Assign Hotkey';
                 assignHotkeyBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
                 assignHotkeyBtn.onmouseenter = () => { assignHotkeyBtn.style.backgroundColor = '#3a3a3a'; };
                 assignHotkeyBtn.onmouseleave = () => { assignHotkeyBtn.style.backgroundColor = '#2a2a2a'; };
@@ -6283,96 +6227,9 @@
             menu.appendChild(shapeBtn);
         }
         
-        // Show player selection submenu for assigning players to avatars
-        function showPlayerSelectionMenu(x, y, avatarId) {
-            const menu = document.getElementById('avatarContextMenu');
-            menu.innerHTML = '';
-            menu.style.display = 'block';
-            menu.style.left = x + 'px';
-            menu.style.top = y + 'px';
-            
-            // Header
-            const header = document.createElement('div');
-            header.style.cssText = 'color: var(--accent-color); font-size: 12px; font-weight: bold; font-family: Georgia, serif; margin-bottom: 8px; border-bottom: 1px solid var(--accent-color); padding-bottom: 4px;';
-            header.textContent = 'Select Player';
-            menu.appendChild(header);
-            
-            // Back button
-            const backBtn = document.createElement('button');
-            backBtn.textContent = '← Back';
-            backBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 11px; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
-            backBtn.onmouseenter = () => { backBtn.style.backgroundColor = '#3a3a3a'; };
-            backBtn.onmouseleave = () => { backBtn.style.backgroundColor = '#2a2a2a'; };
-            backBtn.onclick = () => {
-                menu.style.display = 'none';
-                const avatarData = avatars[avatarId];
-                if (avatarData) {
-                    showAvatarContextMenu(x, y, avatarData.element);
-                }
-            };
-            menu.appendChild(backBtn);
-            
-            // Unassign button (if currently assigned)
-            if (avatarAssignments[avatarId]) {
-                const unassignBtn = document.createElement('button');
-                unassignBtn.textContent = '✖ Unassign';
-                unassignBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #dc3545; color: #fff; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
-                unassignBtn.onmouseenter = () => { unassignBtn.style.backgroundColor = '#c82333'; };
-                unassignBtn.onmouseleave = () => { unassignBtn.style.backgroundColor = '#dc3545'; };
-                unassignBtn.onclick = () => {
-                    delete avatarAssignments[avatarId];
-                    menu.style.display = 'none';
-                    saveToLocalStorage();
-                    
-                    // Broadcast assignment to all players
-                    if (isHost && isConnected) {
-                        broadcastState('AVATAR_ASSIGNMENTS', avatarAssignments);
-                    }
-                };
-                menu.appendChild(unassignBtn);
-            }
-            
-            // Player list
-            players.forEach(player => {
-                const playerBtn = document.createElement('button');
-                playerBtn.textContent = `${player.name}${player.isHost ? ' 👑' : ''}`;
-                playerBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 4px;';
-                playerBtn.onmouseenter = () => { playerBtn.style.backgroundColor = '#3a3a3a'; };
-                playerBtn.onmouseleave = () => { playerBtn.style.backgroundColor = '#2a2a2a'; };
-                playerBtn.onclick = () => {
-                    // Assign player to avatar
-                    avatarAssignments[avatarId] = player.id;
-                    menu.style.display = 'none';
-                    saveToLocalStorage();
-                    
-                    // Broadcast assignment to all players
-                    if (isHost && isConnected) {
-                        broadcastState('AVATAR_ASSIGNMENTS', avatarAssignments);
-                        
-                        // Send message to assigned player with default hotkey (Space = 32)
-                        const conn = connections.find(c => c.peer === player.id);
-                        if (conn && conn.open) {
-                            conn.send({
-                                type: 'AVATAR_ASSIGNED',
-                                data: {
-                                    avatarId: avatarId,
-                                    defaultHotkey: 32 // Space bar
-                                }
-                            });
-                        } else if (player.id === peer.id) {
-                            // If assigning to self (host), set the default hotkey directly
-                            if (!myHotkeyAssignments[avatarId]) {
-                                myHotkeyAssignments[avatarId] = 32; // Space bar
-                                saveToLocalStorage();
-                            }
-                        }
-                    }
-                };
-                menu.appendChild(playerBtn);
-            });
-        }
+
         
-        // Prompt player to press a key for hotkey assignment
+        // Prompt user to press a key for hotkey assignment
         function promptForHotkey(avatarId) {
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
@@ -6420,16 +6277,32 @@
                 e.preventDefault();
                 e.stopPropagation();
                 
-                // Get the key code
-                const keyCode = e.keyCode;
-                const keyName = e.key;
+                // Get the key string (use event.key instead of keyCode)
+                const key = e.key;
                 
-                // Store in player's hotkey assignments
-                myHotkeyAssignments[avatarId] = keyCode;
-                input.value = keyName.toUpperCase();
+                // Store in shared hotkey assignments
+                avatarHotkeys[avatarId] = key;
+                input.value = key.toUpperCase();
                 
                 // Save to local storage
                 saveToLocalStorage();
+                
+                // Broadcast assignment to all connected peers
+                if (isConnected) {
+                    const message = {
+                        type: 'ASSIGN_HOTKEY',
+                        data: {
+                            avatarId: avatarId,
+                            key: key
+                        }
+                    };
+                    
+                    if (isHost) {
+                        broadcastState('ASSIGN_HOTKEY', message.data);
+                    } else if (connections.length > 0 && connections[0].open) {
+                        connections[0].send(message);
+                    }
+                }
                 
                 // Close dialog after short delay
                 setTimeout(() => {
@@ -6439,38 +6312,25 @@
         }
 
         // Helper function to find avatar matching a hotkey
-        function findAvatarByHotkey(keyCode) {
-            const myPlayerId = peer ? peer.id : null;
-            
-            if (isConnected) {
-                // In multiplayer mode: only trigger avatars assigned to me
-                for (const [avatarId, assignedPlayerId] of Object.entries(avatarAssignments)) {
-                    if (assignedPlayerId === myPlayerId && myHotkeyAssignments[avatarId] === keyCode) {
-                        return parseInt(avatarId);
-                    }
-                }
-            } else {
-                // In single-player mode: trigger any avatar with this hotkey
-                for (const [avatarId, assignedKeyCode] of Object.entries(myHotkeyAssignments)) {
-                    if (assignedKeyCode === keyCode) {
-                        return parseInt(avatarId);
-                    }
+        function findAvatarByHotkey(key) {
+            // Search for any avatar with this hotkey
+            for (const [avatarId, assignedKey] of Object.entries(avatarHotkeys)) {
+                if (assignedKey === key) {
+                    return parseInt(avatarId);
                 }
             }
-            
             return null;
         }
 
-        // Global keydown/keyup handlers for hotkeys
+        // Global keydown handler for hotkeys
         document.addEventListener('keydown', (e) => {
             // Ignore if typing in an input field
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             
-            const key = e.key.toLowerCase();
-            const keyCode = e.keyCode;
+            const key = e.key;
             
             // Escape key - deselect drawing tool, text tool, or fog tool
-            if (e.key === 'Escape') {
+            if (key === 'Escape') {
                 if (currentDrawTool) {
                     e.preventDefault();
                     deselectDrawTool();
@@ -6516,23 +6376,32 @@
                 }
             }
             
-            // Check if this key matches any of my assigned avatar hotkeys
-            const triggeredAvatarId = findAvatarByHotkey(keyCode);
+            // Check if this key matches any assigned avatar hotkey
+            const triggeredAvatarId = findAvatarByHotkey(key);
             
             // If we found a matching avatar, trigger the glow
             if (triggeredAvatarId !== null) {
                 e.preventDefault();
                 const avatarData = avatars[triggeredAvatarId];
                 if (avatarData && avatarData.element) {
-                    avatarData.element.classList.add('glowing');
+                    const duration = 800; // 800ms glow duration
                     
-                    // Broadcast animation trigger to all players
+                    // Apply glow locally
+                    avatarData.element.classList.add('glowing');
+                    setTimeout(() => {
+                        avatarData.element.classList.remove('glowing');
+                        avatarData.element.style.filter = '';
+                        avatarData.element.style.transform = '';
+                    }, duration);
+                    
+                    // Broadcast glow trigger to all players
                     if (isConnected) {
                         const message = {
                             type: 'AVATAR_GLOW',
                             data: { 
                                 avatarId: triggeredAvatarId, 
-                                active: true 
+                                action: 'start',
+                                duration: duration
                             }
                         };
                         
@@ -6546,41 +6415,7 @@
             }
         });
 
-        document.addEventListener('keyup', (e) => {
-            const key = e.key.toLowerCase();
-            const keyCode = e.keyCode;
-            
-            // Check if this key matches any of my assigned avatar hotkeys
-            const triggeredAvatarId = findAvatarByHotkey(keyCode);
-            
-            // If we found a matching avatar, deactivate the glow
-            if (triggeredAvatarId !== null) {
-                const avatarData = avatars[triggeredAvatarId];
-                if (avatarData && avatarData.element) {
-                    avatarData.element.classList.remove('glowing');
-                    // Reset transform and filter
-                    avatarData.element.style.filter = '';
-                    avatarData.element.style.transform = '';
-                    
-                    // Broadcast animation stop to all players
-                    if (isConnected) {
-                        const message = {
-                            type: 'AVATAR_GLOW',
-                            data: { 
-                                avatarId: triggeredAvatarId, 
-                                active: false 
-                            }
-                        };
-                        
-                        if (isHost) {
-                            broadcastState('AVATAR_GLOW', message.data);
-                        } else if (connections.length > 0 && connections[0].open) {
-                            connections[0].send(message);
-                        }
-                    }
-                }
-            }
-        });
+
 
         // Dice System Functions
         function initializeDiceContainer() {
@@ -10414,8 +10249,7 @@
                 initiativeOrder: initiativeOrder,
                 initiativeValues: initiativeValues,
                 currentTurnIndex: currentTurnIndex,
-                avatarAssignments: avatarAssignments,
-                myHotkeyAssignments: myHotkeyAssignments
+                avatarHotkeys: avatarHotkeys
             };
             
             try {
@@ -10594,14 +10428,9 @@
                     currentTurnIndex = state.currentTurnIndex;
                 }
                 
-                // Restore avatar assignments (host only)
-                if (state.avatarAssignments) {
-                    avatarAssignments = state.avatarAssignments;
-                }
-                
-                // Restore my hotkey assignments
-                if (state.myHotkeyAssignments) {
-                    myHotkeyAssignments = state.myHotkeyAssignments;
+                // Restore avatar hotkeys (only if not connected, network messages take precedence)
+                if (state.avatarHotkeys && !isConnected) {
+                    avatarHotkeys = state.avatarHotkeys;
                 }
                 
                 // Restore grid for active scene
