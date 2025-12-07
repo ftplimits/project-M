@@ -1518,6 +1518,33 @@
     <input type="file" id="handoutInput" accept="image/*" style="display: none;" onchange="handleHandoutUpload(event)">
 
     <script>
+        // ========================================
+        // AVATAR HOTKEY SYSTEM - IMPLEMENTATION NOTES
+        // ========================================
+        // This application uses a LOCAL-ONLY hotkey system (Option B):
+        //
+        // 1. Any user can assign a hotkey to any avatar locally
+        // 2. Assignments are NOT broadcast to peers (local to each client)
+        // 3. When a hotkey is pressed:
+        //    - Trigger glow animation locally
+        //    - Broadcast AVATAR_GLOW message to all peers
+        // 4. Peers receive AVATAR_GLOW and animate their copy of the avatar
+        //
+        // Key Functions:
+        //   - localAvatarHotkeys (line ~1587): Global storage for local mappings
+        //   - showAssignHotkeyPromptLocal(): Shows key capture modal
+        //   - addAssignHotkeyMenuItemLocal(): Adds menu item to context menu
+        //   - sendToAllPeers(): Broadcasts messages to all connected peers
+        //   - handleIncomingPeerMessageForHotkeys(): Handles incoming AVATAR_GLOW
+        //
+        // Integration:
+        //   - Context Menu: addAssignHotkeyMenuItemLocal() called in showAvatarContextMenu()
+        //   - Message Router: handleIncomingPeerMessageForHotkeys() called on AVATAR_GLOW
+        //   - Keydown Listener: Checks localAvatarHotkeys and broadcasts on match
+        //
+        // For detailed documentation, see /tmp/HOTKEY_SYSTEM_DOCUMENTATION.md
+        // ========================================
+        
         let backdrops = [];
         let avatars = [];
         let draggedElement = null;
@@ -2299,9 +2326,21 @@
 
                 case 'AVATAR_GLOW':
                     // AVATAR_GLOW message handler - receives glow animation from peers
-                    // Message format: { avatarId, action: 'start'|'stop', duration }
+                    // Message format: { type, data: { avatarId, action: 'start'|'stop', duration } }
                     // This is called by handleIncomingMessage when peers send AVATAR_GLOW
                     handleIncomingPeerMessageForHotkeys(message);
+                    
+                    // If host received from player, relay to other players
+                    if (isHost && conn && message.data) {
+                        connections.forEach(c => {
+                            if (c.peer !== conn.peer && c.open) {
+                                c.send({
+                                    type: 'AVATAR_GLOW',
+                                    data: message.data
+                                });
+                            }
+                        });
+                    }
                     break;
                     
                 case 'CHARACTER_SHEET_ADDED':
@@ -6107,30 +6146,6 @@
 
         // Avatar Hotkey System
         // Helper function to get a display name for a key code
-        function getKeyDisplayName(keyCode) {
-            const specialKeys = {
-                32: 'Space',
-                13: 'Enter',
-                27: 'Escape',
-                8: 'Backspace',
-                9: 'Tab',
-                16: 'Shift',
-                17: 'Ctrl',
-                18: 'Alt',
-                20: 'CapsLock',
-                112: 'F1', 113: 'F2', 114: 'F3', 115: 'F4', 116: 'F5', 117: 'F6',
-                118: 'F7', 119: 'F8', 120: 'F9', 121: 'F10', 122: 'F11', 123: 'F12',
-                37: '←', 38: '↑', 39: '→', 40: '↓'
-            };
-            
-            if (specialKeys[keyCode]) {
-                return specialKeys[keyCode];
-            }
-            
-            // For regular keys, convert keyCode to character
-            return String.fromCharCode(keyCode).toUpperCase();
-        }
-
         function showAvatarContextMenu(x, y, avatarElement) {
             const menu = document.getElementById('avatarContextMenu');
             const avatarData = avatars.find(a => a.element === avatarElement);
@@ -6358,29 +6373,18 @@
          *     handleIncomingPeerMessageForHotkeys(message);
          *     break;
          * 
-         * @param {object} message - The message object { type, avatarId, action, duration }
+         * @param {object} message - The message object { type, data: { avatarId, action, duration } }
          */
         function handleIncomingPeerMessageForHotkeys(message) {
-            if (message.type !== 'AVATAR_GLOW') return;
+            if (message.type !== 'AVATAR_GLOW' || !message.data) return;
             
-            const { avatarId, action, duration } = message;
+            const { avatarId, action, duration } = message.data;
             
             // Trigger the glow animation locally
             triggerAvatarGlowLocal(avatarId, action, duration || 600);
             
             // If host received this from a player, relay to all other players
-            if (isHost && message.data) {
-                connections.forEach(conn => {
-                    if (conn.open) {
-                        conn.send({
-                            type: 'AVATAR_GLOW',
-                            avatarId: message.data.avatarId || avatarId,
-                            action: message.data.action || action,
-                            duration: message.data.duration || duration || 600
-                        });
-                    }
-                });
-            }
+            // The message router in handleIncomingMessage will handle relay via conn parameter
         }
         
         /**
@@ -6511,13 +6515,15 @@
                     avatarData.element.classList.add('glowing');
                     
                     // Broadcast AVATAR_GLOW message to all peers
-                    // Format: { type: 'AVATAR_GLOW', avatarId, action: 'start', duration }
+                    // Format: { type: 'AVATAR_GLOW', data: { avatarId, action, duration } }
                     const glowDuration = 600; // Duration in ms (matches CSS animation)
                     const message = {
                         type: 'AVATAR_GLOW',
-                        avatarId: triggeredAvatarId,
-                        action: 'start',
-                        duration: glowDuration
+                        data: {
+                            avatarId: triggeredAvatarId,
+                            action: 'start',
+                            duration: glowDuration
+                        }
                     };
                     
                     // Send to all peers using the wired broadcast function
@@ -6542,9 +6548,11 @@
                     // Broadcast AVATAR_GLOW stop message to all peers
                     const message = {
                         type: 'AVATAR_GLOW',
-                        avatarId: triggeredAvatarId,
-                        action: 'stop',
-                        duration: 0
+                        data: {
+                            avatarId: triggeredAvatarId,
+                            action: 'stop',
+                            duration: 0
+                        }
                     };
                     
                     // Send to all peers using the wired broadcast function
