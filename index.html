@@ -8268,6 +8268,11 @@
                 draggedDrawing = null;
                 drawDragOffset = { x: 0, y: 0 };
                 saveToLocalStorage();
+                
+                // Broadcast drawing position update to players
+                if (isHost && isConnected) {
+                    broadcastState('GRID_DRAWING_SYNC', drawings);
+                }
                 return;
             }
             
