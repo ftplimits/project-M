@@ -8129,6 +8129,11 @@
             drawings = [];
             renderDrawings();
             saveToLocalStorage();
+            
+            // Broadcast clear to players
+            if (isHost && isConnected) {
+                broadcastState('GRID_DRAWING_SYNC', drawings);
+            }
         }
         
         // Drawing mouse handlers
@@ -8146,6 +8151,11 @@
                         drawings.splice(index, 1);
                         renderDrawings();
                         saveToLocalStorage();
+                        
+                        // Broadcast drawing deletion to players
+                        if (isHost && isConnected) {
+                            broadcastState('GRID_DRAWING_SYNC', drawings);
+                        }
                     }
                 }
                 return;
