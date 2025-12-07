@@ -2300,7 +2300,7 @@
                         console.log(`Hotkey assigned: Avatar ${avatarId} -> ${key}`);
                         
                         // If host received from player, relay to other players
-                        if (isHost && conn) {
+                        if (isHost && conn && isConnected) {
                             connections.forEach(c => {
                                 if (c.peer !== conn.peer && c.open) {
                                     c.send({
@@ -6176,7 +6176,15 @@
             if (isConnected) {
                 const assignHotkeyBtn = document.createElement('button');
                 const currentHotkey = avatarHotkeys[avatarId];
-                assignHotkeyBtn.textContent = currentHotkey ? `⌨️ Assign Hotkey (${currentHotkey.toUpperCase()})` : '⌨️ Assign Hotkey';
+                // Format key display name (e.g., ' ' -> 'SPACE', 'ArrowLeft' -> '←')
+                let displayKey = currentHotkey;
+                if (currentHotkey === ' ') displayKey = 'SPACE';
+                else if (currentHotkey === 'ArrowLeft') displayKey = '←';
+                else if (currentHotkey === 'ArrowRight') displayKey = '→';
+                else if (currentHotkey === 'ArrowUp') displayKey = '↑';
+                else if (currentHotkey === 'ArrowDown') displayKey = '↓';
+                else displayKey = currentHotkey.toUpperCase();
+                assignHotkeyBtn.textContent = currentHotkey ? `⌨️ Assign Hotkey (${displayKey})` : '⌨️ Assign Hotkey';
                 assignHotkeyBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #e0e0e0; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
                 assignHotkeyBtn.onmouseenter = () => { assignHotkeyBtn.style.backgroundColor = '#3a3a3a'; };
                 assignHotkeyBtn.onmouseleave = () => { assignHotkeyBtn.style.backgroundColor = '#2a2a2a'; };
@@ -6280,6 +6288,12 @@
                 // Get the key string (use event.key instead of keyCode)
                 const key = e.key;
                 
+                // Filter out special keys that should not be assigned
+                const disallowedKeys = ['Escape', 'Tab', 'Shift', 'Control', 'Alt', 'Meta', 'CapsLock'];
+                if (disallowedKeys.includes(key)) {
+                    return;
+                }
+                
                 // Store in shared hotkey assignments
                 avatarHotkeys[avatarId] = key;
                 input.value = key.toUpperCase();
@@ -6313,9 +6327,10 @@
 
         // Helper function to find avatar matching a hotkey
         function findAvatarByHotkey(key) {
-            // Search for any avatar with this hotkey
+            // Search for any avatar with this hotkey (case-insensitive)
+            const keyLower = key.toLowerCase();
             for (const [avatarId, assignedKey] of Object.entries(avatarHotkeys)) {
-                if (assignedKey === key) {
+                if (assignedKey.toLowerCase() === keyLower) {
                     return parseInt(avatarId);
                 }
             }
