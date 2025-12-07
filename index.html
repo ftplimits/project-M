@@ -1632,11 +1632,13 @@
             
             console.log('Peer object created, waiting for open event...');
             
-            const connectionTimeout = setTimeout(async () => {
+            const connectionTimeout = setTimeout(() => {
                 if (!peer.open) {
                     console.error('Peer connection timeout after 45 seconds');
                     peer.destroy();
-                    await customAlert('Connection timed out. Please try again.');
+                    customAlert('Connection timed out. Please try again.').catch(err => {
+                        console.error('Error showing timeout alert:', err);
+                    });
                 }
             }, 45000);
             
@@ -1696,10 +1698,12 @@
                 });
             });
             
-            peer.on('error', async (err) => {
+            peer.on('error', (err) => {
                 clearTimeout(connectionTimeout);
                 console.error('Peer error:', err);
-                await customAlert('Connection error. Please try again.');
+                customAlert('Connection error. Please try again.').catch(alertErr => {
+                    console.error('Error showing error alert:', alertErr);
+                });
             });
         }
         
