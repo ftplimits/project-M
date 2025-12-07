@@ -4195,6 +4195,7 @@
                 tokenDragOffset = { x: 0, y: 0 };
                 tokenDragStart = null;
                 renderTokens(); // Re-render to clear measurement line
+                saveToLocalStorage();
                 
                 // Broadcast token update to players or host
                 if (isConnected) {
@@ -4212,7 +4213,6 @@
                             }
                         });
                     }
-                    saveToLocalStorage();
                 }
             }
         }
