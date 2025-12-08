@@ -148,6 +148,17 @@
             z-index: 10000;
         }
 
+        /* Initiative Hover Line Canvas */
+        .initiative-hover-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2050;
+        }
+
         /* Dice Styles */
         .dice-spin {
             animation: dice-spin 0.5s ease-in-out;
@@ -1505,7 +1516,7 @@
     <canvas id="weatherCanvas"></canvas>
 
     <!-- Initiative Hover Line Canvas -->
-    <canvas id="initiativeHoverCanvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2050;"></canvas>
+    <canvas id="initiativeHoverCanvas" class="initiative-hover-canvas"></canvas>
 
     <!-- Dice Toggle Button -->
     <div id="diceToggle" class="dice-toggle" onclick="toggleDiceContainer()" oncontextmenu="return false">
@@ -6168,16 +6179,7 @@
             }
             
             // Broadcast dice roll to all connected players
-            if (isConnected) {
-                if (isHost) {
-                    broadcastState('DICE_ROLL', rollData);
-                } else if (connections.length > 0 && connections[0].open) {
-                    connections[0].send({
-                        type: 'DICE_ROLL',
-                        data: rollData
-                    });
-                }
-            }
+            broadcastDiceRoll(rollData);
         }
 
         async function addPreset() {
@@ -7090,6 +7092,20 @@
             }
         });
 
+        // Helper function to broadcast dice rolls to all connected players
+        function broadcastDiceRoll(rollData) {
+            if (isConnected) {
+                if (isHost) {
+                    broadcastState('DICE_ROLL', rollData);
+                } else if (connections.length > 0 && connections[0].open) {
+                    connections[0].send({
+                        type: 'DICE_ROLL',
+                        data: rollData
+                    });
+                }
+            }
+        }
+
         // Dice System Functions
         function initializeDiceContainer() {
             const container = document.getElementById('diceContainer');
@@ -7287,16 +7303,7 @@
             animateDieSpin(die.type);
             
             // Broadcast dice roll to all connected players
-            if (isConnected) {
-                if (isHost) {
-                    broadcastState('DICE_ROLL', rollData);
-                } else if (connections.length > 0 && connections[0].open) {
-                    connections[0].send({
-                        type: 'DICE_ROLL',
-                        data: rollData
-                    });
-                }
-            }
+            broadcastDiceRoll(rollData);
         }
 
         function rollWithAdvantage(die) {
@@ -7326,16 +7333,7 @@
             animateDieSpin(die.type);
             
             // Broadcast dice roll to all connected players
-            if (isConnected) {
-                if (isHost) {
-                    broadcastState('DICE_ROLL', rollData);
-                } else if (connections.length > 0 && connections[0].open) {
-                    connections[0].send({
-                        type: 'DICE_ROLL',
-                        data: rollData
-                    });
-                }
-            }
+            broadcastDiceRoll(rollData);
         }
 
         function rollWithDisadvantage(die) {
@@ -7365,16 +7363,7 @@
             animateDieSpin(die.type);
             
             // Broadcast dice roll to all connected players
-            if (isConnected) {
-                if (isHost) {
-                    broadcastState('DICE_ROLL', rollData);
-                } else if (connections.length > 0 && connections[0].open) {
-                    connections[0].send({
-                        type: 'DICE_ROLL',
-                        data: rollData
-                    });
-                }
-            }
+            broadcastDiceRoll(rollData);
         }
 
         function animateDieSpin(dieType) {
@@ -10679,9 +10668,11 @@
             const canvas = document.getElementById('initiativeHoverCanvas');
             if (!canvas) return;
             
-            // Set canvas dimensions to match viewport
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            // Set canvas dimensions to match viewport (only if they differ)
+            if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
             
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
