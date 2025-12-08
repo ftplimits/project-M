@@ -148,6 +148,17 @@
             z-index: 10000;
         }
 
+        /* Initiative Hover Line Canvas */
+        .initiative-hover-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2050;
+        }
+
         /* Dice Styles */
         .dice-spin {
             animation: dice-spin 0.5s ease-in-out;
@@ -1504,6 +1515,9 @@
     <!-- Weather Canvas -->
     <canvas id="weatherCanvas"></canvas>
 
+    <!-- Initiative Hover Line Canvas -->
+    <canvas id="initiativeHoverCanvas" class="initiative-hover-canvas"></canvas>
+
     <!-- Dice Toggle Button -->
     <div id="diceToggle" class="dice-toggle" onclick="toggleDiceContainer()" oncontextmenu="return false">
         <div style="font-size: 16px; color: #d97706; font-weight: bold;">🎲</div>
@@ -2495,6 +2509,42 @@
                                     c.send({
                                         type: 'CHARACTER_SHEET_ADDED',
                                         data: characterSheets
+                                    });
+                                }
+                            });
+                        }
+                    }
+                    break;
+                    
+                case 'DICE_ROLL':
+                    // Receive dice roll from another player
+                    if (message.data) {
+                        console.log('Received DICE_ROLL from player:', message.data.playerName);
+                        // Add the roll to local roll log
+                        addDiceRoll(message.data);
+                        
+                        // Show notification
+                        let formula;
+                        if (message.data.presetName) {
+                            formula = message.data.presetName;
+                        } else if (message.data.advantage) {
+                            formula = `${message.data.type} (ADV)${message.data.modifier !== 0 ? (message.data.modifier > 0 ? '+' + message.data.modifier : message.data.modifier) : ''} [${message.data.rolls.join(', ')}]`;
+                        } else if (message.data.disadvantage) {
+                            formula = `${message.data.type} (DIS)${message.data.modifier !== 0 ? (message.data.modifier > 0 ? '+' + message.data.modifier : message.data.modifier) : ''} [${message.data.rolls.join(', ')}]`;
+                        } else if (message.data.formula) {
+                            formula = message.data.formula;
+                        } else {
+                            formula = `${message.data.count > 1 ? message.data.count : ''}${message.data.type}${message.data.modifier !== 0 ? (message.data.modifier > 0 ? '+' + message.data.modifier : message.data.modifier) : ''}`;
+                        }
+                        showDiceNotification(message.data.playerName, formula, message.data.total);
+                        
+                        // If host received from player, relay to other players
+                        if (isHost && conn) {
+                            connections.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'DICE_ROLL',
+                                        data: message.data
                                     });
                                 }
                             });
@@ -6127,6 +6177,9 @@
                     updatePresetsPanel(); // Update again to remove spin
                 }, 500);
             }
+            
+            // Broadcast dice roll to all connected players
+            broadcastDiceRoll(rollData);
         }
 
         async function addPreset() {
@@ -7039,6 +7092,20 @@
             }
         });
 
+        // Helper function to broadcast dice rolls to all connected players
+        function broadcastDiceRoll(rollData) {
+            if (isConnected) {
+                if (isHost) {
+                    broadcastState('DICE_ROLL', rollData);
+                } else if (connections.length > 0 && connections[0].open) {
+                    connections[0].send({
+                        type: 'DICE_ROLL',
+                        data: rollData
+                    });
+                }
+            }
+        }
+
         // Dice System Functions
         function initializeDiceContainer() {
             const container = document.getElementById('diceContainer');
@@ -7234,6 +7301,9 @@
             showDiceNotification(playerName, formula, total);
             
             animateDieSpin(die.type);
+            
+            // Broadcast dice roll to all connected players
+            broadcastDiceRoll(rollData);
         }
 
         function rollWithAdvantage(die) {
@@ -7261,6 +7331,9 @@
             showDiceNotification(playerName, formula, total);
             
             animateDieSpin(die.type);
+            
+            // Broadcast dice roll to all connected players
+            broadcastDiceRoll(rollData);
         }
 
         function rollWithDisadvantage(die) {
@@ -7288,6 +7361,9 @@
             showDiceNotification(playerName, formula, total);
             
             animateDieSpin(die.type);
+            
+            // Broadcast dice roll to all connected players
+            broadcastDiceRoll(rollData);
         }
 
         function animateDieSpin(dieType) {
@@ -7307,8 +7383,8 @@
 
         function addDiceRoll(rollData) {
             diceRollLog.unshift(rollData);
-            if (diceRollLog.length > 8) {
-                diceRollLog = diceRollLog.slice(0, 8);
+            if (diceRollLog.length > 12) {
+                diceRollLog = diceRollLog.slice(0, 12);
             }
             updateRollLogDisplay();
         }
@@ -10437,10 +10513,14 @@
                     if (!isCurrentTurn) {
                         tokenDiv.style.transform = 'scale(1.05)';
                     }
+                    // Draw hover line to token on grid
+                    drawInitiativeHoverLine(tokenId, tokenDiv);
                 });
                 
                 tokenDiv.addEventListener('mouseleave', () => {
                     tokenDiv.style.transform = isCurrentTurn ? 'scale(1.1)' : 'scale(1)';
+                    // Clear hover line
+                    clearInitiativeHoverLine();
                 });
                 
                 tokensContainer.appendChild(tokenDiv);
@@ -10576,6 +10656,93 @@
                     });
                 }
             }
+        }
+        
+        // Initiative Hover Line Functions
+        function drawInitiativeHoverLine(tokenId, trackerElement) {
+            // Find the token on the grid
+            const token = tokens.find(t => t.id === tokenId);
+            if (!token) return;
+            
+            // Get canvas and context
+            const canvas = document.getElementById('initiativeHoverCanvas');
+            if (!canvas) return;
+            
+            // Set canvas dimensions to match viewport (only if they differ)
+            if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Get tracker element position (center of token in initiative tracker)
+            const trackerRect = trackerElement.getBoundingClientRect();
+            const trackerX = trackerRect.left + trackerRect.width / 2;
+            const trackerY = trackerRect.bottom;
+            
+            // Get token position on grid (center of token on token canvas)
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop || !activeBackdrop.grid.enabled) return;
+            
+            // Calculate token position in world coordinates
+            const tokenCanvas = document.getElementById('tokenCanvas');
+            if (!tokenCanvas) return;
+            
+            // Transform token grid coordinates to screen coordinates
+            const transform = activeBackdrop.gridTransform;
+            const tokenWorldX = token.x;
+            const tokenWorldY = token.y;
+            
+            // Apply grid transform to get screen coordinates
+            const tokenScreenX = tokenWorldX * transform.zoom + transform.panX;
+            const tokenScreenY = tokenWorldY * transform.zoom + transform.panY;
+            
+            // Draw dashed line with alternating black and white dashes
+            ctx.lineWidth = 2; // Same thickness as grid lines
+            
+            // Calculate line length and angle
+            const dx = tokenScreenX - trackerX;
+            const dy = tokenScreenY - trackerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx);
+            
+            // Draw alternating black and white dashes
+            const dashLength = 10;
+            const numDashes = Math.floor(distance / dashLength);
+            
+            for (let i = 0; i < numDashes; i++) {
+                const startDist = i * dashLength;
+                const endDist = Math.min((i + 0.5) * dashLength, distance);
+                
+                if (i % 2 === 0) {
+                    // White dash (semi-transparent)
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                } else {
+                    // Black dash (semi-transparent)
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+                }
+                
+                ctx.beginPath();
+                ctx.moveTo(
+                    trackerX + Math.cos(angle) * startDist,
+                    trackerY + Math.sin(angle) * startDist
+                );
+                ctx.lineTo(
+                    trackerX + Math.cos(angle) * endDist,
+                    trackerY + Math.sin(angle) * endDist
+                );
+                ctx.stroke();
+            }
+        }
+        
+        function clearInitiativeHoverLine() {
+            const canvas = document.getElementById('initiativeHoverCanvas');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
         // Handouts Functions
