@@ -3783,6 +3783,28 @@
             };
             menu.appendChild(saveOption);
 
+            // Reset to Default option
+            const resetOption = document.createElement('div');
+            resetOption.style.cssText = `
+                padding: 8px 12px;
+                cursor: pointer;
+                color: #e0e0e0;
+                font-family: Arial, sans-serif;
+                font-size: 13px;
+                border-radius: 4px;
+                transition: background-color 0.2s;
+                border-bottom: 1px solid var(--accent-color);
+                margin-bottom: 4px;
+            `;
+            resetOption.textContent = '🔄 Reset to Default';
+            resetOption.onmouseenter = () => resetOption.style.backgroundColor = '#2a2a2a';
+            resetOption.onmouseleave = () => resetOption.style.backgroundColor = 'transparent';
+            resetOption.onclick = () => {
+                menu.style.display = 'none';
+                resetToDefaultTheme();
+            };
+            menu.appendChild(resetOption);
+
             // Show saved themes
             if (savedThemes.length > 0) {
                 const header = document.createElement('div');
@@ -3906,6 +3928,28 @@
                 savedThemes.splice(index, 1);
                 saveSavedThemes();
             }
+        }
+
+        function resetToDefaultTheme() {
+            // Default VTT theme colors
+            const defaultColors = {
+                accent: '#d4a574',
+                background: '#2a2a2a',
+                buttonBg: '#1a1a1a'
+            };
+            
+            // Apply default colors to CSS variables
+            document.documentElement.style.setProperty('--accent-color', defaultColors.accent);
+            document.documentElement.style.setProperty('--background-color', defaultColors.background);
+            document.documentElement.style.setProperty('--button-bg-color', defaultColors.buttonBg);
+            
+            // Update color picker inputs
+            document.getElementById('accentColor').value = defaultColors.accent;
+            document.getElementById('backgroundColor').value = defaultColors.background;
+            document.getElementById('buttonBgColor').value = defaultColors.buttonBg;
+            
+            // Save the default colors to localStorage
+            saveColors();
         }
 
         // Grid System Functions
@@ -7001,7 +7045,7 @@
                     return;
                 } else if (theatreTextToolActive) {
                     e.preventDefault();
-                    theatreTextToolActive = false;
+                    deselectTheatreTextTool();
                     theatreTextMenuVisible = false;
                     document.getElementById('theatreTextToolMenu').style.display = 'none';
                     updateTheatreTextButton();
@@ -9833,6 +9877,22 @@
             }
         }
 
+        function deselectTheatreTextTool() {
+            theatreTextToolActive = false;
+            theatreTextToolMode = 'place'; // Reset to default mode
+            
+            // Remove active class from both buttons
+            const placeBtn = document.getElementById('theatreTextPlaceBtn');
+            const deleteBtn = document.getElementById('theatreTextDeleteBtn');
+            
+            if (placeBtn) {
+                placeBtn.classList.remove('active');
+            }
+            if (deleteBtn) {
+                deleteBtn.classList.remove('active');
+            }
+        }
+
         function renderTheatreDrawings() {
             const canvas = document.getElementById('theatreDrawingCanvas');
             const ctx = canvas.getContext('2d');
@@ -10695,16 +10755,26 @@
             const tokenWorldX = token.x;
             const tokenWorldY = token.y;
             
-            // Apply grid transform to get screen coordinates
+            // Calculate token size (accounting for size multiplier)
+            const baseSize = token.size || 50;
+            const sizeMultiplier = token.sizeMultiplier || 1;
+            const actualSize = baseSize * sizeMultiplier;
+            const transformedSize = actualSize * transform.zoom;
+            
+            // Apply grid transform to get screen coordinates (top-left corner)
             const tokenScreenX = tokenWorldX * transform.zoom + transform.panX;
             const tokenScreenY = tokenWorldY * transform.zoom + transform.panY;
+            
+            // Calculate center of token by adding half the size
+            const tokenCenterX = tokenScreenX + transformedSize / 2;
+            const tokenCenterY = tokenScreenY + transformedSize / 2;
             
             // Draw dashed line with alternating black and white dashes
             ctx.lineWidth = 2; // Same thickness as grid lines
             
-            // Calculate line length and angle
-            const dx = tokenScreenX - trackerX;
-            const dy = tokenScreenY - trackerY;
+            // Calculate line length and angle (using token center)
+            const dx = tokenCenterX - trackerX;
+            const dy = tokenCenterY - trackerY;
             const distance = Math.sqrt(dx * dx + dy * dy);
             const angle = Math.atan2(dy, dx);
             
@@ -12604,7 +12674,7 @@
                         return;
                     } else if (theatreTextToolActive) {
                         e.preventDefault();
-                        theatreTextToolActive = false;
+                        deselectTheatreTextTool();
                         theatreTextMenuVisible = false;
                         document.getElementById('theatreTextToolMenu').style.display = 'none';
                         updateTheatreTextButton();
@@ -13381,8 +13451,7 @@
                     const menu = document.getElementById('theatreTextToolMenu');
                     if (menu.style.display === 'block') {
                         hideTheatreTextMenu();
-                        theatreTextToolActive = false;
-                        theatreTextToolMode = 'place'; // Reset mode when closing
+                        deselectTheatreTextTool();
                         updateTheatreTextButton();
                     } else {
                         showTheatreTextMenu();
