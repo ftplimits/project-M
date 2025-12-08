@@ -988,8 +988,29 @@
         </div>
     </div>
 
+    <!-- HP Edit Dialog -->
+    <div id="hpEditDialog" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.85); z-index: 10000; align-items: center; justify-content: center;">
+        <div style="background-color: #1a1a1a; border: 3px solid #d4a574; border-radius: 12px; padding: 30px 40px; box-shadow: 0 8px 32px rgba(212, 175, 55, 0.4); text-align: center; min-width: 350px;">
+            <div style="font-size: 20px; font-weight: bold; color: #d4a574; font-family: Georgia, serif; margin-bottom: 20px;">
+                Edit HP: <span id="hpEditTokenName"></span>
+            </div>
+            <div style="font-size: 14px; color: #888; font-family: Arial, sans-serif; margin-bottom: 15px;">
+                Enter a number, or +X/-X for relative change
+            </div>
+            <input type="text" id="hpEditInput" style="width: 100%; padding: 12px; background-color: #2a2a2a; color: #e0e0e0; border: 2px solid #d4a574; border-radius: 6px; font-size: 18px; font-weight: bold; text-align: center; font-family: Arial, sans-serif; margin-bottom: 20px;" placeholder="e.g. 25, +5, -10">
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button id="hpEditConfirm" style="padding: 12px 30px; background-color: #d4a574; color: #000; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; font-family: Georgia, serif; box-shadow: 0 4px 12px rgba(212, 175, 55, 0.4);">
+                    Confirm
+                </button>
+                <button id="hpEditCancel" style="padding: 12px 30px; background-color: #6c757d; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; font-family: Georgia, serif; box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Connected Players List - Top Left -->
-    <div id="connectedPlayersList" style="display: none; position: fixed; top: 80px; left: -270px; background-color: rgba(26, 26, 26, 0.95); border: 2px solid #d4a574; border-radius: 8px; padding: 12px; min-width: 200px; max-width: 280px; box-shadow: 0 4px 20px rgba(0,0,0,0.8); z-index: 1000; transition: left 0.3s ease-in-out;">
+    <div id="connectedPlayersList" style="display: none; position: fixed; top: 80px; left: -270px; background-color: rgba(26, 26, 26, 0.95); border: 2px solid #d4a574; border-radius: 8px; padding: 12px; min-width: 200px; max-width: 280px; box-shadow: 0 4px 20px rgba(0,0,0,0.8); z-index: 2500; transition: left 0.3s ease-in-out;">
         <div style="font-size: 14px; font-weight: bold; color: #d4a574; margin-bottom: 10px; font-family: Georgia, serif; border-bottom: 1px solid #444; padding-bottom: 6px;">
             🎭 Players
         </div>
@@ -997,7 +1018,7 @@
     </div>
 
     <!-- Players List Toggle Tab -->
-    <div id="playersToggleTab" style="display: none; position: fixed; top: 80px; left: 10px; background-color: #1a1a1a; border: 2px solid #d4a574; border-radius: 8px; padding: 12px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; z-index: 1001; transition: left 0.3s ease-in-out, background-color 0.2s; user-select: none;" onclick="togglePlayersList()">
+    <div id="playersToggleTab" style="display: none; position: fixed; top: 80px; left: 10px; background-color: #1a1a1a; border: 2px solid #d4a574; border-radius: 8px; padding: 12px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; z-index: 2500; transition: left 0.3s ease-in-out, background-color 0.2s; user-select: none;" onclick="togglePlayersList()">
         <div style="font-size: 14px; color: #d4a574; font-weight: bold; font-family: Arial, sans-serif; writing-mode: vertical-rl; text-orientation: mixed;">
             ▶
         </div>
@@ -1013,6 +1034,7 @@
         <button class="floating-btn" id="gridButton" onclick="toggleGrid()" oncontextmenu="showGridMenu(event)">Grid</button>
         <button class="floating-btn" id="theatreDrawButton">Draw</button>
         <button class="floating-btn" id="theatreTextButton">Text</button>
+        <button class="floating-btn" id="musicButton" onclick="toggleMusicPanel()" title="Music Player">🎵</button>
         <button class="floating-btn" onclick="saveToJSON()" oncontextmenu="return false">Save</button>
         <button class="floating-btn" onclick="loadFromJSON()" oncontextmenu="return false">Load</button>
         <div class="theme-button-container">
@@ -1081,6 +1103,48 @@
     <!-- Weather Menu -->
     <div id="weatherMenu" class="weather-menu"></div>
 
+    <!-- Music Player Panel -->
+    <div id="musicPanel" style="display: none; position: fixed; right: 10px; top: 80px; width: 280px; max-height: 500px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); flex-direction: column;">
+        <div style="font-size: 16px; font-weight: bold; color: var(--accent-color); margin-bottom: 12px; font-family: 'Georgia', serif; border-bottom: 1px solid var(--accent-color); padding-bottom: 8px; text-align: center;">
+            🎵 Music Player
+        </div>
+        
+        <!-- Add Track Button - Host Only -->
+        <button id="addTrackBtn" onclick="addMusicTrack()" style="margin-bottom: 12px; padding: 8px; background-color: #28a745; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: 'Arial', sans-serif; transition: background-color 0.2s;" onmouseenter="this.style.backgroundColor='#218838'" onmouseleave="this.style.backgroundColor='#28a745'">
+            + Add Track (0/10)
+        </button>
+        
+        <!-- Track List -->
+        <div id="musicTrackList" style="overflow-y: auto; flex: 1; margin-bottom: 12px;">
+            <!-- Tracks will be inserted here dynamically -->
+        </div>
+        
+        <!-- Repeat Toggle -->
+        <div style="padding: 10px; background-color: #2a2a2a; border-radius: 6px; border: 1px solid #444; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--accent-color); font-size: 12px; font-weight: bold; font-family: 'Arial', sans-serif;">
+                    Repeat
+                </span>
+                <button id="musicRepeatToggle" onclick="toggleMusicRepeat()" style="padding: 4px 12px; background-color: #28a745; color: #fff; border: none; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; font-family: 'Arial', sans-serif; transition: background-color 0.2s;">
+                    ON
+                </button>
+            </div>
+        </div>
+        
+        <!-- Volume Control -->
+        <div style="padding: 12px; background-color: #2a2a2a; border-radius: 6px; border: 1px solid #444;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="color: var(--accent-color); font-size: 12px; font-weight: bold; font-family: 'Arial', sans-serif;">
+                    Volume
+                </span>
+                <span id="musicVolumeValue" style="color: #e0e0e0; font-size: 12px; font-family: 'Arial', sans-serif;">
+                    25%
+                </span>
+            </div>
+            <input type="range" id="musicVolumeSlider" min="0" max="100" value="25" oninput="handleVolumeChange(parseInt(this.value) / 100)" style="width: 100%; accent-color: var(--accent-color);">
+        </div>
+    </div>
+
     <!-- Theme Menu -->
     <div id="themeMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 8px; z-index: 3000; box-shadow: 0 4px 12px rgba(0,0,0,0.8); min-width: 200px;"></div>
 
@@ -1090,6 +1154,30 @@
     <!-- Scene Name Banner -->
     <div id="sceneBanner" style="position: fixed; top: 20px; right: 20px; z-index: 9999; pointer-events: none;">
         <div style="background: linear-gradient(135deg, rgba(26, 26, 26, 0.95) 0%, rgba(42, 42, 42, 0.95) 100%); color: var(--accent-color); padding: 12px 32px; border: 3px solid var(--accent-color); border-radius: 8px; font-size: 20px; font-weight: bold; font-family: Georgia, serif; box-shadow: 0 0 30px rgba(212, 165, 116, 0.8), 0 4px 12px rgba(0, 0, 0, 0.9); text-shadow: 0 0 10px rgba(212, 165, 116, 0.5); letter-spacing: 1px;" id="sceneNameText">Scene</div>
+    </div>
+
+    <!-- Player Volume Control -->
+    <div id="playerVolumeControl" style="position: fixed; top: 20px; right: 20px; z-index: 9998; pointer-events: auto;">
+        <div style="background: linear-gradient(135deg, rgba(26, 26, 26, 0.95) 0%, rgba(42, 42, 42, 0.95) 100%); color: var(--accent-color); padding: 8px 12px; border: 2px solid var(--accent-color); border-radius: 8px; font-size: 18px; cursor: pointer; box-shadow: 0 0 20px rgba(212, 165, 116, 0.6), 0 4px 8px rgba(0, 0, 0, 0.8); transition: all 0.3s ease;" 
+            onmouseenter="showPlayerVolumeSlider()" 
+            onmouseleave="hidePlayerVolumeSlider()"
+            title="Music Volume">
+            🎵
+        </div>
+        <!-- Volume Slider Popup -->
+        <div id="playerVolumeSlider" style="display: none; position: absolute; top: 50%; right: 60px; transform: translateY(-50%); background-color: rgba(26, 26, 26, 0.98); border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.9); min-width: 200px;"
+            onmouseenter="showPlayerVolumeSlider()" 
+            onmouseleave="hidePlayerVolumeSlider()">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="color: var(--accent-color); font-size: 12px; font-weight: bold; font-family: 'Arial', sans-serif;">
+                    Music Volume
+                </span>
+                <span id="playerVolumeValue" style="color: #e0e0e0; font-size: 12px; font-family: 'Arial', sans-serif;">
+                    25%
+                </span>
+            </div>
+            <input type="range" id="playerVolumeSliderInput" min="0" max="100" value="25" oninput="handlePlayerVolumeChange(parseInt(this.value) / 100)" style="width: 100%; accent-color: var(--accent-color);">
+        </div>
     </div>
 
     <!-- Token Context Menu -->
@@ -1604,6 +1692,11 @@
         let draggedSheet = null;
         let resizingSheet = null;
         
+        // Viewport scaling for multiplayer sync
+        let viewportScaleX = 1;
+        let viewportScaleY = 1;
+        let hostViewportDimensions = null;
+        
         // ========================================
         // AVATAR HOTKEY SYSTEM - OPTION B (LOCAL-ONLY)
         // ========================================
@@ -1612,6 +1705,22 @@
         // When a hotkey is pressed, the client triggers local glow and broadcasts AVATAR_GLOW
         // Format: { avatarId: keyString } where keyString is event.key (e.g., ' ' for Space)
         let localAvatarHotkeys = {};
+        
+        // Track active glow timeouts to prevent multiple simultaneous animations
+        let activeGlowTimeouts = {};
+        
+        // Track active glow broadcast intervals (for periodic refresh while key held)
+        let activeGlowIntervals = {};
+        
+        // Music Player state
+        let musicTracks = [];
+        let currentTrackId = null;
+        let defaultTrackId = null;
+        let musicVolume = 0.25; // 25% default
+        let musicPanelVisible = false;
+        let musicContextMenu = null;
+        let audioElement = null; // Single audio element for playback
+        let musicRepeat = true; // Loop tracks by default
 
         // ========================================
         // MULTIPLAYER FUNCTIONS (GLOBAL)
@@ -1799,6 +1908,8 @@
                 updateMultiplayerMenu();
                 updateSceneBanner();
                 updateAvatarControlsVisibility();
+                updateMusicPanel();
+                updatePlayerVolumeDisplay();
                 
                 // Copy link to clipboard and show success notification
                 const shareLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
@@ -1992,6 +2103,8 @@
                     isConnected = true;
                     updateCreateSessionButton();
                     updateSceneBanner();
+                    updateMusicPanel();
+                    updatePlayerVolumeDisplay();
                     
                     // Hide loading notification and show success
                     hideLoadingNotification();
@@ -2026,15 +2139,15 @@
                     break;
                     
                 case 'BACKDROP_UPDATE':
-                    // Handle backdrop updates (position, size, lock state)
+                    // Handle backdrop updates (position, size, lock state) with viewport scaling
                     if (message.data && Array.isArray(message.data)) {
                         message.data.forEach((backdropData, index) => {
                             if (backdrops[index]) {
                                 const bd = backdrops[index];
-                                bd.element.style.left = backdropData.x + 'px';
-                                bd.element.style.top = backdropData.y + 'px';
-                                bd.element.style.width = backdropData.width + 'px';
-                                bd.element.style.height = backdropData.height + 'px';
+                                bd.element.style.left = Math.round(backdropData.x * viewportScaleX) + 'px';
+                                bd.element.style.top = Math.round(backdropData.y * viewportScaleY) + 'px';
+                                bd.element.style.width = Math.round(backdropData.width * viewportScaleX) + 'px';
+                                bd.element.style.height = Math.round(backdropData.height * viewportScaleY) + 'px';
                                 bd.element.style.zIndex = backdropData.zIndex;
                                 bd.element.dataset.locked = backdropData.locked ? 'true' : 'false';
                                 bd.element.style.display = backdropData.visible ? 'block' : 'none';
@@ -2052,7 +2165,7 @@
                     break;
                     
                 case 'BACKDROP_ADDED':
-                    // Player receives new backdrop from host
+                    // Player receives new backdrop from host with viewport scaling
                     if (message.data && Array.isArray(message.data)) {
                         console.log('Received BACKDROP_ADDED, syncing backdrops');
                         // Clear and recreate all backdrops
@@ -2062,10 +2175,10 @@
                         message.data.forEach(backdropData => {
                             createBackdrop(
                                 backdropData.imageSrc,
-                                backdropData.x,
-                                backdropData.y,
-                                backdropData.width,
-                                backdropData.height,
+                                Math.round(backdropData.x * viewportScaleX),
+                                Math.round(backdropData.y * viewportScaleY),
+                                Math.round(backdropData.width * viewportScaleX),
+                                Math.round(backdropData.height * viewportScaleY),
                                 backdropData.zIndex,
                                 backdropData.visible,
                                 false
@@ -2081,7 +2194,7 @@
                     break;
                     
                 case 'AVATAR_ADDED':
-                    // Player receives new avatar from host
+                    // Player receives new avatar from host with viewport scaling
                     if (message.data && Array.isArray(message.data)) {
                         console.log('Received AVATAR_ADDED, syncing avatars');
                         // Clear and recreate all avatars
@@ -2089,15 +2202,23 @@
                         avatars = [];
                         
                         message.data.forEach(avatarData => {
-                            createAvatar(
+                            const avatarElement = createAvatar(
                                 avatarData.imageSrc,
-                                avatarData.x,
-                                avatarData.y,
+                                Math.round(avatarData.x * viewportScaleX),
+                                Math.round(avatarData.y * viewportScaleY),
                                 avatarData.zIndex,
                                 avatarData.name,
                                 avatarData.flipped,
                                 avatarData.aboveGrid || false
                             );
+                            
+                            // Restore width and height with scaling
+                            if (avatarData.width) {
+                                avatarElement.style.width = Math.round(avatarData.width * viewportScaleX) + 'px';
+                            }
+                            if (avatarData.height) {
+                                avatarElement.style.height = Math.round(avatarData.height * viewportScaleY) + 'px';
+                            }
                         });
                     }
                     break;
@@ -2267,6 +2388,20 @@
                     }
                     break;
                     
+                case 'MUSIC_PLAY':
+                    // Host is playing a track - all players play it too
+                    if (message.data && !isHost) {
+                        playMusicTrack(message.data);
+                    }
+                    break;
+                    
+                case 'MUSIC_STOP':
+                    // Host stopped music - all players stop too
+                    if (!isHost) {
+                        stopMusic();
+                    }
+                    break;
+                    
                 case 'VIEW_SYNC':
                     // Receive view sync from host
                     if (message.data) {
@@ -2388,6 +2523,12 @@
                 saveAvatarStates(currentBackdropIndex);
             }
             
+            // Include host viewport dimensions for scaling
+            const hostViewport = {
+                width: window.innerWidth,
+                height: window.innerHeight
+            };
+            
             const state = {
                 backdrops: backdrops.map(b => ({
                     imageSrc: b.imageSrc,
@@ -2433,7 +2574,11 @@
                     image: handoutImage,
                     visible: handoutVisible
                 },
-                characterSheets: characterSheets
+                characterSheets: characterSheets,
+                musicTracks: musicTracks,
+                defaultTrackId: defaultTrackId,
+                currentTrackId: currentTrackId,
+                hostViewport: hostViewport
             };
             
             console.log('Prepared state:', state);
@@ -2444,22 +2589,43 @@
         function applyFullState(state) {
             console.log('Applying full state from host:', state);
             
+            // Calculate and store viewport scaling ratios
+            const playerViewport = {
+                width: window.innerWidth,
+                height: window.innerHeight
+            };
+            
+            let scaleX = 1;
+            let scaleY = 1;
+            
+            if (state.hostViewport) {
+                scaleX = playerViewport.width / state.hostViewport.width;
+                scaleY = playerViewport.height / state.hostViewport.height;
+                
+                // Store globally for ongoing syncs
+                viewportScaleX = scaleX;
+                viewportScaleY = scaleY;
+                hostViewportDimensions = state.hostViewport;
+                
+                console.log('Viewport scaling - Host:', state.hostViewport, 'Player:', playerViewport, 'Scale:', { scaleX, scaleY });
+            }
+            
             // Clear existing game elements
             backdrops.forEach(b => b.element.remove());
             backdrops = [];
             avatars.forEach(a => a.element.remove());
             avatars = [];
             
-            // Recreate backdrops
+            // Recreate backdrops with scaled positions
             if (state.backdrops && state.backdrops.length > 0) {
                 state.backdrops.forEach((backdropData, index) => {
                     // createBackdrop returns the DOM element, but we need to update the backdropData in the array
                     createBackdrop(
                         backdropData.imageSrc,
-                        backdropData.x,
-                        backdropData.y,
-                        backdropData.width,
-                        backdropData.height,
+                        Math.round(backdropData.x * scaleX),
+                        Math.round(backdropData.y * scaleY),
+                        Math.round(backdropData.width * scaleX),
+                        Math.round(backdropData.height * scaleY),
                         backdropData.zIndex,
                         backdropData.visible,
                         false // Don't hide others
@@ -2474,13 +2640,13 @@
                 });
             }
             
-            // Recreate avatars
+            // Recreate avatars with scaled positions
             if (state.avatars && state.avatars.length > 0) {
                 state.avatars.forEach(avatarData => {
                     createAvatar(
                         avatarData.imageSrc,
-                        avatarData.x,
-                        avatarData.y,
+                        Math.round(avatarData.x * scaleX),
+                        Math.round(avatarData.y * scaleY),
                         avatarData.zIndex,
                         avatarData.name,
                         avatarData.flipped,
@@ -2488,6 +2654,14 @@
                     );
                     
                     const avatar = avatars[avatars.length - 1];
+                    
+                    // Restore width and height with scaling
+                    if (avatarData.width) {
+                        avatar.element.style.width = Math.round(avatarData.width * scaleX) + 'px';
+                    }
+                    if (avatarData.height) {
+                        avatar.element.style.height = Math.round(avatarData.height * scaleY) + 'px';
+                    }
                     
                     // Restore locked state
                     if (avatarData.locked) {
@@ -2615,6 +2789,19 @@
                 updateSheetSelectorDisplay();
             }
             
+            // Restore music tracks
+            if (state.musicTracks) {
+                musicTracks = state.musicTracks;
+                updateMusicPanel();
+            }
+            if (state.defaultTrackId !== undefined) {
+                defaultTrackId = state.defaultTrackId;
+            }
+            // If host is playing a track, auto-play it for the connecting player
+            if (state.currentTrackId && state.currentTrackId !== null) {
+                playMusicTrack(state.currentTrackId);
+            }
+            
             // Note: Local avatar hotkeys are NOT synced from host (Option B - local-only)
             
             // Update UI elements
@@ -2718,14 +2905,14 @@
         }
         
         function syncAvatars(avatarData) {
-            // Sync avatar positions and properties from network
+            // Sync avatar positions and properties from network with viewport scaling
             avatarData.forEach(netAvatar => {
                 const localAvatar = avatars.find(a => a.imageSrc === netAvatar.imageSrc);
                 if (localAvatar) {
-                    localAvatar.element.style.left = netAvatar.x + 'px';
-                    localAvatar.element.style.top = netAvatar.y + 'px';
-                    localAvatar.element.style.width = netAvatar.width + 'px';
-                    localAvatar.element.style.height = netAvatar.height + 'px';
+                    localAvatar.element.style.left = Math.round(netAvatar.x * viewportScaleX) + 'px';
+                    localAvatar.element.style.top = Math.round(netAvatar.y * viewportScaleY) + 'px';
+                    localAvatar.element.style.width = Math.round(netAvatar.width * viewportScaleX) + 'px';
+                    localAvatar.element.style.height = Math.round(netAvatar.height * viewportScaleY) + 'px';
                     localAvatar.element.style.zIndex = netAvatar.zIndex;
                     localAvatar.name = netAvatar.name;
                     localAvatar.flipped = netAvatar.flipped;
@@ -3056,6 +3243,9 @@
         }
         
         function disconnectFromRoom() {
+            // Save whether this user was host before resetting flags
+            const wasHost = isHost;
+            
             if (peer) {
                 peer.destroy();
             }
@@ -3065,7 +3255,78 @@
             isHost = false;
             roomCode = null;
             myPeerId = null;
+            
+            // Reset viewport scaling
+            viewportScaleX = 1;
+            viewportScaleY = 1;
+            hostViewportDimensions = null;
+            
+            // Clear any active glow intervals
+            Object.values(activeGlowIntervals).forEach(intervalId => clearInterval(intervalId));
+            activeGlowIntervals = {};
+            Object.values(activeGlowTimeouts).forEach(timeoutId => clearTimeout(timeoutId));
+            activeGlowTimeouts = {};
+            
+            // SECURITY: Clear all game state for players on disconnect to prevent spoilers
+            // Host keeps their data since they own the campaign
+            if (!wasHost) {
+                // Clear all game state arrays
+                backdrops = [];
+                tokens = [];
+                avatars = [];
+                fogAreas = [];
+                drawings = [];
+                textObjects = [];
+                gridImages = [];
+                theatreTextObjects = [];
+                handouts = [];
+                characterSheets = [];
+                initiativeOrder = [];
+                musicTracks = [];
+                
+                // Reset current track
+                currentTrackId = null;
+                if (audioElement) {
+                    audioElement.pause();
+                    audioElement.src = '';
+                }
+                
+                // Clear all canvases
+                const gridCanvas = document.getElementById('gridCanvas');
+                const tokenCanvas = document.getElementById('tokenCanvas');
+                const drawingCanvas = document.getElementById('drawingCanvas');
+                const fogCanvas = document.getElementById('fogCanvas');
+                
+                [gridCanvas, tokenCanvas, drawingCanvas, fogCanvas].forEach(canvas => {
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    }
+                });
+                
+                // Clear theatre mode
+                const theatreBackdrop = document.getElementById('theatreBackdrop');
+                if (theatreBackdrop) {
+                    theatreBackdrop.style.backgroundImage = 'none';
+                }
+                
+                // Reset UI
+                renderBackdropThumbnails();
+                renderAvatars();
+                updateHandoutsPanel();
+                updateCharacterSheetsPanel();
+                updateInitiativeTracker();
+                updateMusicPanel();
+                
+                // Clear localStorage game data (keep preferences)
+                localStorage.removeItem('monomyth_vtt_data');
+                
+                console.log('Game state cleared on disconnect (player security)');
+            }
+            
             updateCreateSessionButton();
+            updateMusicPanel();
+            updatePlayerVolumeDisplay();
             document.getElementById('multiplayerMenu').style.display = 'none';
         }
         
@@ -3984,6 +4245,12 @@
             const gridWorldSize = GRID_CELLS_TOTAL * gridSize;
             const gridScreenSize = gridWorldSize * zoom;
             
+            // If grid is smaller than viewport (zoomed way out), allow free panning
+            // No need to clamp when the entire grid fits on screen
+            if (gridScreenSize < window.innerWidth && gridScreenSize < window.innerHeight) {
+                return { panX: rawPanX, panY: rawPanY };
+            }
+            
             // Very generous clamping - only prevent losing the grid entirely
             // Allow panning until only a small portion of grid remains visible
             const minVisibleAmount = 0.05; // Only 5% of grid needs to be on screen
@@ -4331,28 +4598,21 @@
                         const bgWidth = textMetrics.width + padding * 2;
                         const bgHeight = transformedSize * 0.25 + padding;
                         
-                        // Background - top-left corner
+                        // Background - top-left corner (moved closer to edge)
                         ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
                         ctx.fillRect(
-                            transformedX + transformedSize * 0.05,
-                            transformedY + transformedSize * 0.05,
+                            transformedX + transformedSize * 0.02,
+                            transformedY + transformedSize * 0.02,
                             bgWidth,
                             bgHeight
                         );
                         
-                        // Text - colored based on HP percentage
-                        const hpPercent = token.hpCurrent / token.hpMax;
-                        if (hpPercent > 0.5) {
-                            ctx.fillStyle = '#22c55e'; // Green
-                        } else if (hpPercent > 0.25) {
-                            ctx.fillStyle = '#eab308'; // Yellow
-                        } else {
-                            ctx.fillStyle = '#ef4444'; // Red
-                        }
+                        // Text - always gold/yellow (matching theme)
+                        ctx.fillStyle = '#d4a574'; // Gold accent color
                         ctx.fillText(
                             hpText,
-                            transformedX + transformedSize * 0.05 + padding,
-                            transformedY + transformedSize * 0.05 + padding / 2
+                            transformedX + transformedSize * 0.02 + padding,
+                            transformedY + transformedSize * 0.02 + padding / 2
                         );
                         ctx.restore();
                     }
@@ -4385,6 +4645,71 @@
                         labelY
                     );
                     ctx.restore();
+                    
+                    // Draw red X if token is eliminated
+                    if (token.eliminated) {
+                        ctx.save();
+                        ctx.strokeStyle = '#dc3545'; // Red
+                        ctx.fillStyle = '#dc3545';
+                        ctx.lineWidth = Math.max(4, transformedSize * 0.08);
+                        ctx.lineCap = 'round';
+                        
+                        const centerX = transformedX + transformedSize / 2;
+                        const centerY = transformedY + transformedSize / 2;
+                        const xSize = transformedSize * 0.6; // X is 60% of token size
+                        
+                        // Draw first diagonal (\)
+                        ctx.beginPath();
+                        ctx.moveTo(centerX - xSize / 2, centerY - xSize / 2);
+                        ctx.lineTo(centerX + xSize / 2, centerY + xSize / 2);
+                        ctx.stroke();
+                        
+                        // Draw second diagonal (/)
+                        ctx.beginPath();
+                        ctx.moveTo(centerX + xSize / 2, centerY - xSize / 2);
+                        ctx.lineTo(centerX - xSize / 2, centerY + xSize / 2);
+                        ctx.stroke();
+                        
+                        // Add dripping blood effect
+                        const dripSize = transformedSize * 0.05;
+                        
+                        // Function to draw a drip
+                        const drawDrip = (x, y, length, width) => {
+                            ctx.beginPath();
+                            ctx.moveTo(x, y);
+                            // Draw teardrop shape
+                            ctx.quadraticCurveTo(x - width, y + length * 0.4, x, y + length);
+                            ctx.quadraticCurveTo(x + width, y + length * 0.4, x, y);
+                            ctx.fill();
+                        };
+                        
+                        // Drips from the four endpoints of the X
+                        // Top-left to bottom-right diagonal endpoints
+                        drawDrip(centerX - xSize / 2, centerY - xSize / 2, dripSize * 2.5, dripSize * 0.8);
+                        drawDrip(centerX + xSize / 2, centerY + xSize / 2, dripSize * 3, dripSize * 0.9);
+                        
+                        // Top-right to bottom-left diagonal endpoints  
+                        drawDrip(centerX + xSize / 2, centerY - xSize / 2, dripSize * 2, dripSize * 0.7);
+                        drawDrip(centerX - xSize / 2, centerY + xSize / 2, dripSize * 3.5, dripSize);
+                        
+                        // Center drip (where X crosses)
+                        drawDrip(centerX, centerY, dripSize * 4, dripSize * 1.2);
+                        
+                        // Add a few small drops below
+                        ctx.globalAlpha = 0.9;
+                        const drawDrop = (x, y, size) => {
+                            ctx.beginPath();
+                            ctx.arc(x, y, size, 0, Math.PI * 2);
+                            ctx.fill();
+                        };
+                        
+                        drawDrop(centerX - xSize * 0.15, centerY + xSize * 0.45, dripSize * 0.6);
+                        drawDrop(centerX + xSize * 0.2, centerY + xSize * 0.5, dripSize * 0.5);
+                        drawDrop(centerX - xSize * 0.05, centerY + xSize * 0.55, dripSize * 0.4);
+                        
+                        ctx.globalAlpha = 1.0;
+                        ctx.restore();
+                    }
                 };
                 
                 // Draw immediately if image is loaded, otherwise wait for load
@@ -4592,6 +4917,93 @@
                     broadcastState('TOKEN_SYNC', tokens);
                 }
             }
+        }
+
+        function toggleTokenEliminate(tokenId) {
+            const token = tokens.find(t => t.id === tokenId);
+            if (token) {
+                token.eliminated = !token.eliminated;
+                renderTokens();
+                saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
+            }
+        }
+
+        // HP Edit Dialog functions
+        let currentHPEditTokenId = null;
+
+        function showHPEditDialog(tokenId) {
+            const token = tokens.find(t => t.id === tokenId);
+            if (!token) return;
+
+            currentHPEditTokenId = tokenId;
+            document.getElementById('hpEditTokenName').textContent = token.name;
+            document.getElementById('hpEditInput').value = token.hpCurrent;
+            document.getElementById('hpEditDialog').style.display = 'flex';
+            
+            // Focus and select the input
+            setTimeout(() => {
+                const input = document.getElementById('hpEditInput');
+                input.focus();
+                input.select();
+            }, 100);
+        }
+
+        function closeHPEditDialog() {
+            document.getElementById('hpEditDialog').style.display = 'none';
+            currentHPEditTokenId = null;
+        }
+
+        function confirmHPEdit() {
+            if (currentHPEditTokenId === null) return;
+
+            const token = tokens.find(t => t.id === currentHPEditTokenId);
+            if (!token) {
+                closeHPEditDialog();
+                return;
+            }
+
+            const input = document.getElementById('hpEditInput').value.trim();
+            if (input === '') {
+                closeHPEditDialog();
+                return;
+            }
+
+            let hpValue;
+
+            // Check for relative change (+X or -X)
+            if (input.startsWith('+')) {
+                const change = parseInt(input.substring(1));
+                if (!isNaN(change)) {
+                    hpValue = token.hpCurrent + change;
+                }
+            } else if (input.startsWith('-')) {
+                const change = parseInt(input.substring(1));
+                if (!isNaN(change)) {
+                    hpValue = token.hpCurrent - change;
+                }
+            } else {
+                // Absolute value
+                hpValue = parseInt(input);
+            }
+
+            if (!isNaN(hpValue)) {
+                // Clamp between 0 and max HP
+                token.hpCurrent = Math.max(0, Math.min(hpValue, token.hpMax));
+                renderTokens();
+                saveToLocalStorage();
+
+                // Broadcast to players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
+            }
+
+            closeHPEditDialog();
         }
 
         // Token Mouse Interactions
@@ -4981,17 +5393,16 @@
                 rightColumn.appendChild(hpControlsContainer);
             }
             
-            // Initiative button
-            const initiativeBtn = createMenuButton(
-                initiativeOrder.includes(tokenId) ? '⚔️ Remove from Initiative' : '⚔️ Add to Initiative',
+            // Eliminate button
+            const eliminateBtn = createMenuButton(
+                token.eliminated ? '↩️ Un-Eliminate' : '❌ Eliminate',
                 () => {
-                    toggleInitiative(tokenId);
+                    toggleTokenEliminate(tokenId);
                     menu.style.display = 'none';
                 }
             );
-            initiativeBtn.style.marginTop = '8px';
-            initiativeBtn.title = 'Or CTRL + Left Click token';
-            rightColumn.appendChild(initiativeBtn);
+            eliminateBtn.style.marginTop = '8px';
+            rightColumn.appendChild(eliminateBtn);
             
             // Delete button
             const deleteBtn = document.createElement('button');
@@ -5827,6 +6238,20 @@
             });
         }
 
+        // Music Panel Toggle
+        function toggleMusicPanel() {
+            musicPanelVisible = !musicPanelVisible;
+            const panel = document.getElementById('musicPanel');
+            if (!panel) return;
+            
+            if (musicPanelVisible) {
+                panel.style.display = 'flex';
+                updateMusicPanel();
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+
         // Weather Effects Functions
         function toggleWeatherMenu(event) {
             const menu = document.getElementById('weatherMenu');
@@ -6346,19 +6771,46 @@
             if (!avatarData || !avatarData.element) return;
             
             if (action === 'start') {
+                // Clear any existing timeout for this avatar (allows refreshes to extend glow)
+                if (activeGlowTimeouts[avatarId]) {
+                    clearTimeout(activeGlowTimeouts[avatarId]);
+                    delete activeGlowTimeouts[avatarId];
+                }
+                
                 avatarData.element.classList.add('glowing');
-                // Optionally auto-remove after duration
+                
+                // Set timeout to auto-remove if duration > 0
                 if (duration > 0) {
-                    setTimeout(() => {
+                    const timeoutId = setTimeout(() => {
                         avatarData.element.classList.remove('glowing');
                         avatarData.element.style.filter = '';
                         avatarData.element.style.transform = '';
+                        delete activeGlowTimeouts[avatarId];
                     }, duration);
+                    activeGlowTimeouts[avatarId] = timeoutId;
                 }
             } else if (action === 'stop') {
-                avatarData.element.classList.remove('glowing');
-                avatarData.element.style.filter = '';
-                avatarData.element.style.transform = '';
+                // Clear any existing timeout
+                if (activeGlowTimeouts[avatarId]) {
+                    clearTimeout(activeGlowTimeouts[avatarId]);
+                    delete activeGlowTimeouts[avatarId];
+                }
+                
+                // If stop has a duration, delay the removal (for 1 second grace period)
+                if (duration > 0) {
+                    const timeoutId = setTimeout(() => {
+                        avatarData.element.classList.remove('glowing');
+                        avatarData.element.style.filter = '';
+                        avatarData.element.style.transform = '';
+                        delete activeGlowTimeouts[avatarId];
+                    }, duration);
+                    activeGlowTimeouts[avatarId] = timeoutId;
+                } else {
+                    // Immediate stop
+                    avatarData.element.classList.remove('glowing');
+                    avatarData.element.style.filter = '';
+                    avatarData.element.style.transform = '';
+                }
             }
         }
         
@@ -6444,6 +6896,11 @@
 
         // Global keydown/keyup handlers for hotkeys
         document.addEventListener('keydown', (e) => {
+            // CRITICAL: Ignore keyboard repeat events to prevent jitter on remote players
+            if (e.repeat) {
+                return; // This is a keyboard repeat, ignore it completely
+            }
+            
             // Ignore if typing in an input field
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             
@@ -6509,23 +6966,34 @@
                 
                 const avatarData = avatars[triggeredAvatarId];
                 if (avatarData && avatarData.element) {
-                    // Trigger local glow animation
+                    // Clear any existing interval for this avatar
+                    if (activeGlowIntervals[triggeredAvatarId]) {
+                        clearInterval(activeGlowIntervals[triggeredAvatarId]);
+                        delete activeGlowIntervals[triggeredAvatarId];
+                    }
+                    
+                    // Trigger local glow animation - persist until keyup
                     avatarData.element.classList.add('glowing');
                     
-                    // Broadcast AVATAR_GLOW message to all peers
-                    // Format: { type: 'AVATAR_GLOW', data: { avatarId, action, duration } }
-                    const glowDuration = 600; // Duration in ms (matches CSS animation)
-                    const message = {
-                        type: 'AVATAR_GLOW',
-                        data: {
-                            avatarId: triggeredAvatarId,
-                            action: 'start',
-                            duration: glowDuration
-                        }
+                    // Broadcast function
+                    const broadcastGlow = () => {
+                        const message = {
+                            type: 'AVATAR_GLOW',
+                            data: {
+                                avatarId: triggeredAvatarId,
+                                action: 'start',
+                                duration: 500 // Auto-remove after 500ms if no refresh received
+                            }
+                        };
+                        sendToAllPeers(message);
                     };
                     
-                    // Send to all peers using the wired broadcast function
-                    sendToAllPeers(message);
+                    // Send initial broadcast immediately
+                    broadcastGlow();
+                    
+                    // Set up interval to broadcast every 250ms while key is held
+                    const intervalId = setInterval(broadcastGlow, 250);
+                    activeGlowIntervals[triggeredAvatarId] = intervalId;
                 }
             }
         });
@@ -6534,27 +7002,37 @@
             // Check if this key matches any local avatar hotkey
             const triggeredAvatarId = findAvatarByHotkeyLocal(e.key);
             
-            // If we found a matching avatar, stop the glow locally and broadcast
+            // If we found a matching avatar, stop the interval and send final message
             if (triggeredAvatarId !== null) {
                 const avatarData = avatars[triggeredAvatarId];
                 if (avatarData && avatarData.element) {
-                    // Remove local glow animation
-                    avatarData.element.classList.remove('glowing');
-                    avatarData.element.style.filter = '';
-                    avatarData.element.style.transform = '';
+                    // Clear the broadcast interval
+                    if (activeGlowIntervals[triggeredAvatarId]) {
+                        clearInterval(activeGlowIntervals[triggeredAvatarId]);
+                        delete activeGlowIntervals[triggeredAvatarId];
+                    }
                     
-                    // Broadcast AVATAR_GLOW stop message to all peers
+                    // Send final broadcast with 1/2 second duration for fade-out
                     const message = {
                         type: 'AVATAR_GLOW',
                         data: {
                             avatarId: triggeredAvatarId,
-                            action: 'stop',
-                            duration: 0
+                            action: 'start',
+                            duration: 500 // 1/2 second fade-out
                         }
                     };
-                    
-                    // Send to all peers using the wired broadcast function
                     sendToAllPeers(message);
+                    
+                    // Local player also adds 1/2 second delay
+                    const delayAfterRelease = 500;
+                    const timeoutId = setTimeout(() => {
+                        avatarData.element.classList.remove('glowing');
+                        avatarData.element.style.filter = '';
+                        avatarData.element.style.transform = '';
+                        delete activeGlowTimeouts[triggeredAvatarId];
+                    }, delayAfterRelease);
+                    
+                    activeGlowTimeouts[triggeredAvatarId] = timeoutId;
                 }
             }
         });
@@ -8938,6 +9416,11 @@
                 textObjects.splice(index, 1);
                 renderTextObjects();
                 saveToLocalStorage();
+                
+                // Broadcast text objects to players
+                if (isHost && isConnected) {
+                    broadcastState('GRID_TEXT_SYNC', textObjects);
+                }
             }
         }
         
@@ -9085,15 +9568,18 @@
             ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
             ctx.fill();
             
-            // Border - solid red if shown, dashed red if hidden
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = 2;
-            if (fog.hidden) {
-                ctx.setLineDash([10, 5]);
-            } else {
-                ctx.setLineDash([]);
+            // Border - only show to host or solo players (not to connected non-host players)
+            if (isHost || !isConnected) {
+                // Solid red if shown, dashed red if hidden
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 2;
+                if (fog.hidden) {
+                    ctx.setLineDash([10, 5]);
+                } else {
+                    ctx.setLineDash([]);
+                }
+                ctx.stroke();
             }
-            ctx.stroke();
             
             ctx.restore();
         }
@@ -9591,6 +10077,11 @@
                     fog.hidden = !fog.hidden;
                     renderFogAreas();
                     saveToLocalStorage();
+                    
+                    // Broadcast fog to players
+                    if (isHost && isConnected) {
+                        broadcastState('FOG_SYNC', fogAreas);
+                    }
                 }
                 return;
             }
@@ -10391,7 +10882,9 @@
                 initiativeOrder: initiativeOrder,
                 initiativeValues: initiativeValues,
                 currentTurnIndex: currentTurnIndex,
-                localAvatarHotkeys: localAvatarHotkeys
+                localAvatarHotkeys: localAvatarHotkeys,
+                musicTracks: musicTracks,
+                defaultTrackId: defaultTrackId
             };
             
             try {
@@ -10573,6 +11066,14 @@
                 // Restore local avatar hotkeys
                 if (state.localAvatarHotkeys) {
                     localAvatarHotkeys = state.localAvatarHotkeys;
+                }
+                
+                // Restore music tracks
+                if (state.musicTracks) {
+                    musicTracks = state.musicTracks;
+                }
+                if (state.defaultTrackId !== undefined) {
+                    defaultTrackId = state.defaultTrackId;
                 }
                 
                 // Restore grid for active scene
@@ -10885,6 +11386,494 @@
             }
             event.target.value = '';
         }
+        
+        // ===== MUSIC PLAYER FUNCTIONS =====
+        
+        // Add a music track
+        function addMusicTrack() {
+            const url = prompt('Enter music track URL (Dropbox, Google Drive, or direct link):');
+            if (!url || url.trim() === '') return;
+            
+            const name = prompt('Enter track name:', 'Track ' + (musicTracks.length + 1));
+            if (!name || name.trim() === '') return;
+            
+            if (musicTracks.length >= 10) {
+                alert('Maximum of 10 tracks allowed.');
+                return;
+            }
+            
+            const newTrack = {
+                id: Date.now(),
+                name: name.trim(),
+                url: url.trim()
+            };
+            
+            musicTracks.push(newTrack);
+            updateMusicPanel();
+            saveToLocalStorage();
+        }
+        
+        // Delete a music track
+        function deleteMusicTrack(trackId) {
+            if (!confirm('Delete this track?')) return;
+            
+            // Stop playback if this track is playing
+            if (currentTrackId === trackId) {
+                stopMusic();
+            }
+            
+            // Remove from default if it was default
+            if (defaultTrackId === trackId) {
+                defaultTrackId = null;
+            }
+            
+            musicTracks = musicTracks.filter(t => t.id !== trackId);
+            updateMusicPanel();
+            saveToLocalStorage();
+        }
+        
+        // Rename a music track
+        function renameMusicTrack(trackId) {
+            const track = musicTracks.find(t => t.id === trackId);
+            if (!track) return;
+            
+            const newName = prompt('Enter new track name:', track.name);
+            if (!newName || newName.trim() === '') return;
+            
+            track.name = newName.trim();
+            updateMusicPanel();
+            saveToLocalStorage();
+        }
+        
+        // Toggle music playback (start/stop)
+        function toggleMusicTrack(trackId) {
+            const track = musicTracks.find(t => t.id === trackId);
+            if (!track) return;
+            
+            // If this track is already playing, stop it
+            if (currentTrackId === trackId) {
+                stopMusic();
+                return;
+            }
+            
+            // Otherwise, play this track
+            playMusicTrack(trackId);
+        }
+        
+        // Play a specific track
+        function playMusicTrack(trackId) {
+            const track = musicTracks.find(t => t.id === trackId);
+            if (!track) return;
+            
+            // Stop any currently playing track
+            if (audioElement) {
+                audioElement.pause();
+                audioElement.src = '';
+            }
+            
+            // Create/update audio element
+            if (!audioElement) {
+                audioElement = new Audio();
+                audioElement.loop = musicRepeat;
+            }
+            
+            audioElement.src = track.url;
+            audioElement.volume = musicVolume;
+            audioElement.loop = musicRepeat;
+            
+            // Play the track
+            audioElement.play().catch(err => {
+                console.error('Failed to play track:', err);
+                alert('Failed to play track. Check the URL or your browser settings.');
+            });
+            
+            currentTrackId = trackId;
+            updateMusicPanel();
+            updateMusicButton();
+            updatePlayerVolumeDisplay();
+            
+            // Broadcast to other players if host
+            if (isConnected && isHost) {
+                broadcastState('MUSIC_PLAY', trackId);
+            }
+        }
+        
+        // Stop music playback
+        function stopMusic() {
+            if (audioElement) {
+                audioElement.pause();
+                audioElement.src = '';
+            }
+            
+            currentTrackId = null;
+            updateMusicPanel();
+            updateMusicButton();
+            updatePlayerVolumeDisplay();
+            
+            // Broadcast to other players if host
+            if (isConnected && isHost) {
+                broadcastState('MUSIC_STOP', null);
+            }
+        }
+        
+        // Set track as default
+        function setTrackAsDefault(trackId) {
+            defaultTrackId = trackId;
+            updateMusicPanel();
+            saveToLocalStorage();
+        }
+        
+        // Update music volume
+        function handleVolumeChange(newVolume) {
+            musicVolume = newVolume;
+            if (audioElement) {
+                audioElement.volume = newVolume;
+            }
+            
+            // Save to localStorage
+            try {
+                localStorage.setItem('monomyth_music_volume', newVolume.toString());
+            } catch (err) {
+                console.error('Failed to save volume preference:', err);
+            }
+        }
+        
+        // Toggle music repeat on/off
+        function toggleMusicRepeat() {
+            musicRepeat = !musicRepeat;
+            
+            // Update audio element if it exists
+            if (audioElement) {
+                audioElement.loop = musicRepeat;
+            }
+            
+            // Update button appearance
+            const toggleBtn = document.getElementById('musicRepeatToggle');
+            if (toggleBtn) {
+                toggleBtn.textContent = musicRepeat ? 'ON' : 'OFF';
+                toggleBtn.style.backgroundColor = musicRepeat ? '#28a745' : '#6c757d';
+            }
+            
+            // Save to localStorage
+            try {
+                localStorage.setItem('monomyth_music_repeat', musicRepeat.toString());
+            } catch (err) {
+                console.error('Failed to save repeat preference:', err);
+            }
+        }
+        
+        // Player volume control functions (for the small icon in top-right)
+        let playerVolumeSliderTimeout = null;
+        
+        function handlePlayerVolumeChange(newVolume) {
+            musicVolume = newVolume;
+            if (audioElement) {
+                audioElement.volume = newVolume;
+            }
+            
+            // Update both volume displays
+            const playerVolumeValue = document.getElementById('playerVolumeValue');
+            if (playerVolumeValue) {
+                playerVolumeValue.textContent = Math.round(newVolume * 100) + '%';
+            }
+            
+            // Also update the main panel if it's open
+            updateMusicPanel();
+            
+            // Save to localStorage
+            try {
+                localStorage.setItem('monomyth_music_volume', newVolume.toString());
+            } catch (err) {
+                console.error('Failed to save volume preference:', err);
+            }
+        }
+        
+        function showPlayerVolumeSlider() {
+            if (playerVolumeSliderTimeout) {
+                clearTimeout(playerVolumeSliderTimeout);
+                playerVolumeSliderTimeout = null;
+            }
+            const slider = document.getElementById('playerVolumeSlider');
+            if (slider) {
+                slider.style.display = 'block';
+            }
+        }
+        
+        function hidePlayerVolumeSlider() {
+            playerVolumeSliderTimeout = setTimeout(() => {
+                const slider = document.getElementById('playerVolumeSlider');
+                if (slider) {
+                    slider.style.display = 'none';
+                }
+            }, 300); // Small delay to allow moving to the slider
+        }
+        
+        function updatePlayerVolumeDisplay() {
+            const control = document.getElementById('playerVolumeControl');
+            const sliderInput = document.getElementById('playerVolumeSliderInput');
+            const valueDisplay = document.getElementById('playerVolumeValue');
+            
+            if (!control) return;
+            
+            // Show/hide the control: only for non-host connected players when music is playing
+            if (currentTrackId && isConnected && !isHost) {
+                control.style.display = 'block';
+            } else {
+                control.style.display = 'none';
+            }
+            
+            // Update slider and value display
+            if (sliderInput) {
+                sliderInput.value = musicVolume * 100;
+            }
+            if (valueDisplay) {
+                valueDisplay.textContent = Math.round(musicVolume * 100) + '%';
+            }
+        }
+        
+        // Update music button appearance
+        function updateMusicButton() {
+            const btn = document.getElementById('musicButton');
+            if (!btn) return;
+            
+            if (currentTrackId) {
+                btn.style.background = 'linear-gradient(135deg, var(--accent-color) 0%, #c89960 100%)';
+                btn.style.color = '#1a1a1a';
+                btn.style.borderColor = 'var(--accent-color)';
+                btn.style.boxShadow = '0 0 20px rgba(212, 165, 116, 0.6)';
+            } else {
+                btn.style.background = 'linear-gradient(135deg, var(--button-bg-color) 0%, var(--background-color) 100%)';
+                btn.style.color = 'var(--accent-color)';
+                btn.style.borderColor = 'var(--accent-color)';
+                btn.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.5)';
+            }
+        }
+        
+        // Update music panel UI
+        function updateMusicPanel() {
+            const panel = document.getElementById('musicPanel');
+            if (!panel || !musicPanelVisible) return;
+            
+            // Update Add Track button visibility and text
+            const addTrackBtn = document.getElementById('addTrackBtn');
+            if (addTrackBtn) {
+                if (isHost || !isConnected) {
+                    addTrackBtn.style.display = 'block';
+                    addTrackBtn.textContent = `+ Add Track (${musicTracks.length}/10)`;
+                    addTrackBtn.disabled = musicTracks.length >= 10;
+                } else {
+                    addTrackBtn.style.display = 'none';
+                }
+            }
+            
+            const trackList = document.getElementById('musicTrackList');
+            if (!trackList) return;
+            
+            // Clear existing tracks
+            trackList.innerHTML = '';
+            
+            if (musicTracks.length === 0) {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.style.cssText = `
+                    color: #888;
+                    font-size: 13px;
+                    font-family: Arial, sans-serif;
+                    padding: 20px;
+                    text-align: center;
+                `;
+                emptyMsg.textContent = 'No tracks added yet';
+                trackList.appendChild(emptyMsg);
+            } else {
+                musicTracks.forEach(track => {
+                    const trackDiv = document.createElement('div');
+                    trackDiv.style.cssText = `
+                        padding: 10px;
+                        margin-bottom: 8px;
+                        background-color: ${currentTrackId === track.id ? '#3a3a2a' : '#2a2a2a'};
+                        border-radius: 6px;
+                        border: ${currentTrackId === track.id ? '2px solid var(--accent-color)' : '1px solid #444'};
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    `;
+                    
+                    trackDiv.onmouseenter = () => {
+                        if (currentTrackId !== track.id) {
+                            trackDiv.style.backgroundColor = '#3a3a3a';
+                            trackDiv.style.borderColor = 'var(--accent-color)';
+                        }
+                    };
+                    trackDiv.onmouseleave = () => {
+                        if (currentTrackId !== track.id) {
+                            trackDiv.style.backgroundColor = '#2a2a2a';
+                            trackDiv.style.borderColor = '#444';
+                        }
+                    };
+                    
+                    trackDiv.onclick = () => toggleMusicTrack(track.id);
+                    
+                    trackDiv.oncontextmenu = (e) => {
+                        if (isHost || !isConnected) {
+                            e.preventDefault();
+                            musicContextMenu = { x: e.clientX, y: e.clientY, trackId: track.id };
+                            showMusicContextMenu();
+                        }
+                    };
+                    
+                    const innerContent = document.createElement('div');
+                    innerContent.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+                    
+                    const icon = document.createElement('span');
+                    icon.style.fontSize = '16px';
+                    icon.textContent = currentTrackId === track.id ? '▶' : '⏸';
+                    
+                    const textDiv = document.createElement('div');
+                    textDiv.style.flex = '1';
+                    
+                    const nameSpan = document.createElement('div');
+                    nameSpan.style.cssText = `
+                        color: ${currentTrackId === track.id ? 'var(--accent-color)' : '#e0e0e0'};
+                        font-size: 13px;
+                        font-weight: bold;
+                        font-family: Arial, sans-serif;
+                        margin-bottom: 2px;
+                    `;
+                    nameSpan.textContent = track.name;
+                    
+                    if (defaultTrackId === track.id) {
+                        const star = document.createElement('span');
+                        star.style.cssText = 'margin-left: 6px; color: var(--accent-color); font-size: 12px;';
+                        star.textContent = '★';
+                        nameSpan.appendChild(star);
+                    }
+                    
+                    textDiv.appendChild(nameSpan);
+                    innerContent.appendChild(icon);
+                    innerContent.appendChild(textDiv);
+                    trackDiv.appendChild(innerContent);
+                    trackList.appendChild(trackDiv);
+                });
+            }
+            
+            // Update volume display
+            const volumeValue = document.getElementById('musicVolumeValue');
+            if (volumeValue) {
+                volumeValue.textContent = Math.round(musicVolume * 100) + '%';
+            }
+            
+            // Update repeat toggle button
+            const repeatToggle = document.getElementById('musicRepeatToggle');
+            if (repeatToggle) {
+                repeatToggle.textContent = musicRepeat ? 'ON' : 'OFF';
+                repeatToggle.style.backgroundColor = musicRepeat ? '#28a745' : '#6c757d';
+            }
+            
+            const volumeSlider = document.getElementById('musicVolumeSlider');
+            if (volumeSlider) {
+                volumeSlider.value = musicVolume * 100;
+            }
+        }
+        
+        // Show music context menu
+        function showMusicContextMenu() {
+            if (!musicContextMenu) return;
+            
+            // Remove any existing menu
+            const existingMenu = document.getElementById('musicContextMenuPopup');
+            if (existingMenu) existingMenu.remove();
+            
+            // Create backdrop
+            const backdrop = document.createElement('div');
+            backdrop.id = 'musicContextMenuBackdrop';
+            backdrop.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 2999;
+            `;
+            backdrop.onclick = () => {
+                musicContextMenu = null;
+                backdrop.remove();
+                const menu = document.getElementById('musicContextMenuPopup');
+                if (menu) menu.remove();
+            };
+            document.body.appendChild(backdrop);
+            
+            // Create menu
+            const menu = document.createElement('div');
+            menu.id = 'musicContextMenuPopup';
+            menu.style.cssText = `
+                position: fixed;
+                left: ${musicContextMenu.x}px;
+                top: ${musicContextMenu.y}px;
+                background-color: #1a1a1a;
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                padding: 8px;
+                z-index: 3000;
+                min-width: 180px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+            `;
+            
+            // Set as default button
+            const setDefaultBtn = document.createElement('button');
+            setDefaultBtn.textContent = '★ Set as Default';
+            setDefaultBtn.style.cssText = `
+                width: 100%;
+                padding: 8px;
+                margin-bottom: 4px;
+                background-color: transparent;
+                color: var(--accent-color);
+                border: none;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: bold;
+                cursor: pointer;
+                font-family: Arial, sans-serif;
+                text-align: left;
+                transition: background-color 0.2s;
+            `;
+            setDefaultBtn.onmouseenter = () => { setDefaultBtn.style.backgroundColor = '#2a2a2a'; };
+            setDefaultBtn.onmouseleave = () => { setDefaultBtn.style.backgroundColor = 'transparent'; };
+            setDefaultBtn.onclick = () => {
+                setTrackAsDefault(musicContextMenu.trackId);
+                musicContextMenu = null;
+                backdrop.remove();
+                menu.remove();
+            };
+            menu.appendChild(setDefaultBtn);
+            
+            // Rename button
+            const renameBtn = document.createElement('button');
+            renameBtn.textContent = '✏️ Rename';
+            renameBtn.style.cssText = setDefaultBtn.style.cssText.replace('var(--accent-color)', '#e0e0e0');
+            renameBtn.onmouseenter = () => { renameBtn.style.backgroundColor = '#2a2a2a'; };
+            renameBtn.onmouseleave = () => { renameBtn.style.backgroundColor = 'transparent'; };
+            renameBtn.onclick = () => {
+                renameMusicTrack(musicContextMenu.trackId);
+                musicContextMenu = null;
+                backdrop.remove();
+                menu.remove();
+            };
+            menu.appendChild(renameBtn);
+            
+            // Delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = '🗑️ Delete';
+            deleteBtn.style.cssText = setDefaultBtn.style.cssText.replace('var(--accent-color)', '#dc3545');
+            deleteBtn.onmouseenter = () => { deleteBtn.style.backgroundColor = '#2a2a2a'; };
+            deleteBtn.onmouseleave = () => { deleteBtn.style.backgroundColor = 'transparent'; };
+            deleteBtn.onclick = () => {
+                deleteMusicTrack(musicContextMenu.trackId);
+                musicContextMenu = null;
+                backdrop.remove();
+                menu.remove();
+            };
+            menu.appendChild(deleteBtn);
+            
+            document.body.appendChild(menu);
+        }
 
         // Load on startup
         window.addEventListener('load', () => {
@@ -10894,6 +11883,24 @@
             initializeDiceContainer();
             loadRecentAvatars();
             loadRecentHandouts();
+            
+            // Load music volume preference
+            const savedVolume = localStorage.getItem('monomyth_music_volume');
+            if (savedVolume) {
+                const volume = parseFloat(savedVolume);
+                if (!isNaN(volume) && volume >= 0 && volume <= 1) {
+                    musicVolume = volume;
+                }
+            }
+            
+            // Load music repeat preference
+            const savedRepeat = localStorage.getItem('monomyth_music_repeat');
+            if (savedRepeat !== null) {
+                musicRepeat = savedRepeat === 'true';
+            }
+            
+            // Initialize player volume control
+            updatePlayerVolumeDisplay();
             
             // Initialize UI states
             updateSceneBanner();
@@ -10986,6 +11993,11 @@
                                     fog.hidden = !fog.hidden;
                                     renderFogAreas();
                                     saveToLocalStorage();
+                                    
+                                    // Broadcast fog to players
+                                    if (isHost && isConnected) {
+                                        broadcastState('FOG_SYNC', fogAreas);
+                                    }
                                 } else {
                                     // Check for text dragging first (when no tool is active)
                                     const textObj = getTextAtPosition(e.clientX, e.clientY);
@@ -11063,6 +12075,18 @@
                     } else if (currentFogTool === 'polygon' && isFogging) {
                         handleFogDoubleClick(e);
                     } else {
+                        // Check for double-clicking token with HP counter to edit HP
+                        const tokenId = getTokenAtPosition(e.clientX, e.clientY);
+                        if (tokenId !== null) {
+                            const token = tokens.find(t => t.id === tokenId);
+                            if (token && token.hpCounterEnabled) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                showHPEditDialog(tokenId);
+                                return;
+                            }
+                        }
+                        
                         // Check for double-clicking text to edit
                         const textObj = getTextAtPosition(e.clientX, e.clientY);
                         if (textObj) {
@@ -12206,6 +13230,13 @@
             
             document.getElementById('welcomeContinueBtn').addEventListener('click', () => {
                 document.getElementById('welcomeSplash').style.display = 'none';
+                
+                // Autoplay default track if set and not already playing
+                if (defaultTrackId && !currentTrackId) {
+                    setTimeout(() => {
+                        playMusicTrack(defaultTrackId);
+                    }, 500);
+                }
             });
             
             // Close multiplayer menu when clicking outside
@@ -12213,6 +13244,24 @@
                 if (e.target.id === 'multiplayerMenu') {
                     document.getElementById('multiplayerMenu').style.display = 'none';
                     multiplayerMenuVisible = false;
+                }
+            });
+            
+            // HP Edit Dialog event listeners
+            document.getElementById('hpEditConfirm').addEventListener('click', confirmHPEdit);
+            document.getElementById('hpEditCancel').addEventListener('click', closeHPEditDialog);
+            
+            // Allow Enter key to confirm HP edit
+            document.getElementById('hpEditInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    confirmHPEdit();
+                }
+            });
+            
+            // Allow Escape key to cancel HP edit
+            document.getElementById('hpEditDialog').addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeHPEditDialog();
                 }
             });
             
@@ -12234,6 +13283,14 @@
                     console.log('Auto-joining room from URL parameter');
                     joinRoom();
                 }, 500);
+            }
+        });
+        
+        // Cleanup audio when page unloads
+        window.addEventListener('beforeunload', () => {
+            if (audioElement) {
+                audioElement.pause();
+                audioElement.src = '';
             }
         });
     </script>
