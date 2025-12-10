@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 
-<!-- Copyright Rin White "DM DooM 2025 -->
+<!-- Copyright Rin White "DM DooM" 2025 -->
 
 <html lang="en">
 <head>
@@ -687,7 +687,8 @@
         /* Theme Button with Hover Dropdown */
         .theme-button-container {
             position: relative;
-            display: inline-block;
+            display: flex;
+            align-items: center;
         }
 
         .theme-dropdown {
@@ -1024,16 +1025,16 @@
     </div>
 
     <!-- Connected Players List - Top Left -->
-    <div id="connectedPlayersList" style="display: none; position: fixed; top: 80px; left: -270px; background-color: rgba(26, 26, 26, 0.95); border: 2px solid #d4a574; border-radius: 8px; padding: 12px; min-width: 200px; max-width: 280px; box-shadow: 0 4px 20px rgba(0,0,0,0.8); z-index: 2500; transition: left 0.3s ease-in-out;">
-        <div style="font-size: 14px; font-weight: bold; color: #d4a574; margin-bottom: 10px; font-family: Georgia, serif; border-bottom: 1px solid #444; padding-bottom: 6px;">
+    <div id="connectedPlayersList" style="display: none; position: fixed; top: 80px; left: -270px; background-color: rgba(26, 26, 26, 0.95); border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; min-width: 200px; max-width: 280px; box-shadow: 0 4px 20px rgba(0,0,0,0.8); z-index: 2500; transition: left 0.3s ease-in-out;">
+        <div style="font-size: 14px; font-weight: bold; color: var(--accent-color); margin-bottom: 10px; font-family: Georgia, serif; border-bottom: 1px solid #444; padding-bottom: 6px;">
             🎭 Players
         </div>
         <div id="connectedPlayersContainer"></div>
     </div>
 
     <!-- Players List Toggle Tab -->
-    <div id="playersToggleTab" style="display: none; position: fixed; top: 80px; left: 10px; background-color: #1a1a1a; border: 2px solid #d4a574; border-radius: 8px; padding: 12px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; z-index: 2500; transition: left 0.3s ease-in-out, background-color 0.2s; user-select: none;" onclick="togglePlayersList()">
-        <div style="font-size: 14px; color: #d4a574; font-weight: bold; font-family: Arial, sans-serif; writing-mode: vertical-rl; text-orientation: mixed;">
+    <div id="playersToggleTab" style="display: none; position: fixed; top: 80px; left: 10px; background-color: var(--button-bg-color); border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; z-index: 2500; transition: left 0.3s ease-in-out, background-color 0.2s; user-select: none;" onclick="togglePlayersList()">
+        <div style="font-size: 14px; color: var(--accent-color); font-weight: bold; font-family: Arial, sans-serif; writing-mode: vertical-rl; text-orientation: mixed;">
             ▶
         </div>
     </div>
@@ -2365,9 +2366,46 @@
                     break;
                     
                 case 'BACKDROP_SWITCH':
-                    // Player receives backdrop switch from host
+                case 'SCENE_SWITCH':
+                    // Player receives scene switch from host with full backdrop data
                     if (message.data && message.data.index !== undefined) {
-                        switchToBackdrop(message.data.index);
+                        const sceneIndex = message.data.index;
+                        
+                        // Check if player already has this backdrop
+                        if (!backdrops[sceneIndex] && message.data.backdropData) {
+                            // Player doesn't have this scene yet - create it from provided data
+                            const bd = message.data.backdropData;
+                            console.log('Loading new scene on-demand:', bd.name);
+                            
+                            // Calculate viewport scaling
+                            let scaleX = 1, scaleY = 1;
+                            if (hostViewportDimensions) {
+                                scaleX = window.innerWidth / hostViewportDimensions.width;
+                                scaleY = window.innerHeight / hostViewportDimensions.height;
+                            }
+                            
+                            // Create the backdrop
+                            createBackdrop(
+                                bd.imageSrc,
+                                Math.round(bd.x * scaleX),
+                                Math.round(bd.y * scaleY),
+                                Math.round(bd.width * scaleX),
+                                Math.round(bd.height * scaleY),
+                                bd.zIndex,
+                                false, // Not visible yet
+                                false
+                            );
+                            
+                            // Store metadata
+                            const newBackdrop = backdrops[backdrops.length - 1];
+                            newBackdrop.name = bd.name || 'Scene';
+                            newBackdrop.grid = bd.grid || { enabled: false, size: 50, color: '#ffffff', bgOpacity: 0.3 };
+                            newBackdrop.gridTransform = bd.gridTransform || { zoom: 1, panX: 0, panY: 0 };
+                            newBackdrop.avatarStates = bd.avatarStates || [];
+                        }
+                        
+                        // Now switch to the scene
+                        switchToBackdrop(sceneIndex);
                     }
                     break;
                     
@@ -2494,6 +2532,72 @@
                         });
                     }
                     return; // Avoid double relay by generic relay at end of function
+                
+                case 'AVATAR_IMAGE_SWAP':
+                    // Handle alternate image swapping from other players
+                    if (message.data) {
+                        const { avatarId, showAlternate } = message.data;
+                        const avatarData = avatars[avatarId];
+                        
+                        if (avatarData && avatarData.element) {
+                            const img = avatarData.element.querySelector('img');
+                            if (img) {
+                                if (showAlternate && avatarData.alternateImageSrc) {
+                                    img.src = avatarData.alternateImageSrc;
+                                    avatarData.isShowingAlternate = true;
+                                } else {
+                                    img.src = avatarData.imageSrc;
+                                    avatarData.isShowingAlternate = false;
+                                }
+                            }
+                        }
+                        
+                        // If host received from player, relay to other players
+                        if (isHost && conn) {
+                            connections.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'AVATAR_IMAGE_SWAP',
+                                        data: message.data
+                                    });
+                                }
+                            });
+                        }
+                    }
+                    return; // Avoid double relay
+                
+                case 'AVATAR_ALT_IMAGE_SET':
+                    // Handle alternate image being set/removed
+                    if (message.data) {
+                        const { avatarId, alternateImageSrc } = message.data;
+                        const avatarData = avatars[avatarId];
+                        
+                        if (avatarData) {
+                            avatarData.alternateImageSrc = alternateImageSrc;
+                            
+                            // If currently showing alternate and it was removed, revert to original
+                            if (!alternateImageSrc && avatarData.isShowingAlternate) {
+                                const img = avatarData.element.querySelector('img');
+                                if (img) img.src = avatarData.imageSrc;
+                                avatarData.isShowingAlternate = false;
+                            }
+                            
+                            saveToLocalStorage();
+                        }
+                        
+                        // If host received from player, relay to other players
+                        if (isHost && conn) {
+                            connections.forEach(c => {
+                                if (c.peer !== conn.peer && c.open) {
+                                    c.send({
+                                        type: 'AVATAR_ALT_IMAGE_SET',
+                                        data: message.data
+                                    });
+                                }
+                            });
+                        }
+                    }
+                    return; // Avoid double relay
                     
                 case 'CHARACTER_SHEET_ADDED':
                     // Receive character sheet from host or player
@@ -2582,22 +2686,38 @@
                 height: window.innerHeight
             };
             
-            const state = {
-                backdrops: backdrops.map(b => ({
-                    imageSrc: b.imageSrc,
-                    x: parseInt(b.element.style.left),
-                    y: parseInt(b.element.style.top),
-                    width: parseInt(b.element.style.width),
-                    height: parseInt(b.element.style.height),
-                    zIndex: b.element.style.zIndex,
-                    visible: b.visible,
+            // OPTIMIZATION: Only send visible backdrop to reduce initial connection payload
+            // Other scenes will be loaded on-demand when host switches to them
+            const visibleBackdrop = backdrops.find(b => b.visible);
+            const activeBackdropData = visibleBackdrop ? [{
+                imageSrc: visibleBackdrop.imageSrc,
+                x: parseInt(visibleBackdrop.element.style.left),
+                y: parseInt(visibleBackdrop.element.style.top),
+                width: parseInt(visibleBackdrop.element.style.width),
+                height: parseInt(visibleBackdrop.element.style.height),
+                zIndex: visibleBackdrop.element.style.zIndex,
+                visible: visibleBackdrop.visible,
+                name: visibleBackdrop.name,
+                grid: visibleBackdrop.grid,
+                gridTransform: visibleBackdrop.gridTransform,
+                avatarStates: visibleBackdrop.avatarStates || []
+            }] : [];
+            
+            // OPTIMIZATION: Send metadata for other scenes (without images) so players know they exist
+            const inactiveBackdropsMetadata = backdrops
+                .filter(b => !b.visible)
+                .map(b => ({
                     name: b.name,
-                    grid: b.grid,
-                    gridTransform: b.gridTransform,
-                    avatarStates: b.avatarStates || []
-                })),
+                    index: backdrops.indexOf(b),
+                    // No imageSrc - will be loaded on-demand
+                }));
+            
+            const state = {
+                backdrops: activeBackdropData,
+                inactiveBackdropsMetadata: inactiveBackdropsMetadata, // List of scenes that exist but aren't loaded yet
                 avatars: avatars.map(a => ({
                     imageSrc: a.imageSrc,
+                    alternateImageSrc: a.alternateImageSrc || null,
                     x: parseInt(a.element.style.left),
                     y: parseInt(a.element.style.top),
                     width: parseInt(a.element.style.width),
@@ -2623,19 +2743,36 @@
                 initiativeOrder: initiativeOrder,
                 initiativeValues: initiativeValues,
                 currentTurnIndex: currentTurnIndex,
-                handout: {
+                // OPTIMIZATION: Only send handout if it's actually visible
+                handout: handoutVisible ? {
                     image: handoutImage,
                     visible: handoutVisible
+                } : {
+                    image: null,
+                    visible: false
                 },
                 characterSheets: characterSheets,
-                musicTracks: musicTracks,
+                musicTracks: musicTracks, // Just URLs - lightweight
                 defaultTrackId: defaultTrackId,
                 currentTrackId: currentTrackId,
-                hostViewport: hostViewport
+                hostViewport: hostViewport,
+                themeColors: {
+                    accent: getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim(),
+                    background: getComputedStyle(document.documentElement).getPropertyValue('--background-color').trim(),
+                    buttonBg: getComputedStyle(document.documentElement).getPropertyValue('--button-bg-color').trim()
+                }
             };
             
             console.log('Prepared state:', state);
-            console.log('State has', state.backdrops.length, 'backdrops and', state.avatars.length, 'avatars');
+            console.log('State has', state.backdrops.length, 'active backdrops and', state.avatars.length, 'avatars');
+            console.log('Inactive scenes (to be loaded on-demand):', state.inactiveBackdropsMetadata.length);
+            
+            // Log estimated payload size for optimization tracking
+            const stateJSON = JSON.stringify(state);
+            const stateSizeKB = (stateJSON.length / 1024).toFixed(2);
+            console.log(`📊 FULL_STATE payload size: ${stateSizeKB} KB`);
+            console.log('🚀 Optimization: Only active scene sent. Other scenes load on-demand.');
+            
             return state;
         }
         
@@ -2731,6 +2868,11 @@
                         avatar.rounded = true;
                         avatar.element.classList.add('rounded');
                     }
+                    
+                    // Restore alternate image if present
+                    if (avatarData.alternateImageSrc) {
+                        avatar.alternateImageSrc = avatarData.alternateImageSrc;
+                    }
                 });
             }
             
@@ -2743,6 +2885,17 @@
             if (state.players) {
                 players = state.players;
                 updateMultiplayerMenu();
+            }
+            
+            // Apply theme colors from host
+            if (state.themeColors) {
+                document.documentElement.style.setProperty('--accent-color', state.themeColors.accent);
+                document.documentElement.style.setProperty('--background-color', state.themeColors.background);
+                document.documentElement.style.setProperty('--button-bg-color', state.themeColors.buttonBg);
+                // Update color picker inputs
+                document.getElementById('accentColor').value = state.themeColors.accent;
+                document.getElementById('backgroundColor').value = state.themeColors.background;
+                document.getElementById('buttonBgColor').value = state.themeColors.buttonBg;
             }
             
             // Restore tokens
@@ -3137,10 +3290,10 @@
             
             players.forEach(player => {
                 const div = document.createElement('div');
-                div.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 4px; background-color: #2a2a2a; border-radius: 6px; border: 1px solid #444;';
+                div.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 4px; background-color: var(--button-bg-color); border-radius: 6px; border: 1px solid #444;';
                 
                 div.innerHTML = `
-                    <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #4ecdc4; flex-shrink: 0;"></div>
+                    <div style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--accent-color); flex-shrink: 0;"></div>
                     <div style="color: #e0e0e0; font-size: 13px; font-family: Arial, sans-serif; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                         ${player.name}
                     </div>
@@ -3524,7 +3677,14 @@
         const MAX_RECENT_AVATARS = 5;
 
         // Utility function to downscale images for performance
-        const downscaleImage = (file, maxWidth = 2048, maxHeight = 2048) => {
+        /**
+         * Comprehensive image compression function
+         * Handles smart resizing, format conversion, and quality optimization
+         * @param {File} file - The image file to compress
+         * @param {string} type - Type of image: 'backdrop', 'avatar', 'token', 'gridImage'
+         * @returns {Promise<string>} Compressed image as base64 data URL
+         */
+        const compressImage = (file, type = 'backdrop') => {
             return new Promise((resolve, reject) => {
                 const img = new Image();
                 const reader = new FileReader();
@@ -3535,6 +3695,41 @@
                     img.onerror = () => reject(new Error('Failed to load image'));
                     
                     img.onload = () => {
+                        // Define max dimensions and quality by type
+                        let maxWidth, maxHeight, quality, useWebP;
+                        
+                        switch(type) {
+                            case 'backdrop':
+                                maxWidth = 1920;
+                                maxHeight = 1080;
+                                quality = 0.85;
+                                useWebP = false; // Use JPEG for backdrops (photographic content)
+                                break;
+                            case 'avatar':
+                                maxWidth = 800;
+                                maxHeight = 800;
+                                quality = 0.80;
+                                useWebP = true; // WebP for avatars (may have transparency)
+                                break;
+                            case 'token':
+                                maxWidth = 256;
+                                maxHeight = 256;
+                                quality = 0.80;
+                                useWebP = true; // WebP for tokens
+                                break;
+                            case 'gridImage':
+                                maxWidth = 3072;
+                                maxHeight = 3072;
+                                quality = 0.85;
+                                useWebP = false; // Use JPEG for large maps
+                                break;
+                            default:
+                                maxWidth = 2048;
+                                maxHeight = 2048;
+                                quality = 0.85;
+                                useWebP = false;
+                        }
+                        
                         let width = img.width;
                         let height = img.height;
                         
@@ -3543,10 +3738,9 @@
                             const ratio = Math.min(maxWidth / width, maxHeight / height);
                             width = Math.round(width * ratio);
                             height = Math.round(height * ratio);
-                            
-                            console.log(`Downscaling image from ${img.width}x${img.height} to ${width}x${height} for performance`);
+                            console.log(`[${type}] Resizing from ${img.width}x${img.height} to ${width}x${height}`);
                         } else {
-                            console.log(`Image ${img.width}x${img.height} is within limits, no downscaling needed`);
+                            console.log(`[${type}] Image ${width}x${height} within limits, compressing only`);
                         }
                         
                         // Create canvas and resize
@@ -3555,21 +3749,55 @@
                         canvas.height = height;
                         const ctx = canvas.getContext('2d');
                         
-                        // Use better image smoothing
+                        // High quality image smoothing
                         ctx.imageSmoothingEnabled = true;
                         ctx.imageSmoothingQuality = 'high';
                         
                         // Draw resized image
                         ctx.drawImage(img, 0, 0, width, height);
                         
-                        // Preserve PNG format for transparency, use JPEG for compression
-                        const isPNG = file.type === 'image/png';
-                        const format = isPNG ? 'image/png' : 'image/jpeg';
-                        const quality = isPNG ? 1.0 : 0.9; // PNG = lossless, JPEG = 90%
+                        // Check for transparency (only if using WebP)
+                        let hasTransparency = false;
+                        if (useWebP && (file.type === 'image/png' || file.type === 'image/webp')) {
+                            const imageData = ctx.getImageData(0, 0, width, height);
+                            for (let i = 3; i < imageData.data.length; i += 4) {
+                                if (imageData.data[i] < 255) {
+                                    hasTransparency = true;
+                                    break;
+                                }
+                            }
+                        }
                         
-                        console.log(`Saving as ${format} with quality ${quality}`);
+                        // Determine output format
+                        let format, finalQuality;
+                        if (useWebP) {
+                            // Try WebP first (better compression)
+                            format = 'image/webp';
+                            finalQuality = quality;
+                            
+                            // Test if browser supports WebP
+                            const testCanvas = document.createElement('canvas');
+                            testCanvas.width = testCanvas.height = 1;
+                            const testDataUrl = testCanvas.toDataURL('image/webp');
+                            
+                            // If WebP not supported or has transparency that matters, fallback to PNG
+                            if (!testDataUrl.includes('data:image/webp') || (hasTransparency && type === 'avatar')) {
+                                format = hasTransparency ? 'image/png' : 'image/jpeg';
+                                finalQuality = hasTransparency ? 0.95 : quality;
+                            }
+                        } else {
+                            // Use JPEG for non-transparent content
+                            format = 'image/jpeg';
+                            finalQuality = quality;
+                        }
                         
-                        const dataUrl = canvas.toDataURL(format, quality);
+                        const originalSize = e.target.result.length;
+                        const dataUrl = canvas.toDataURL(format, finalQuality);
+                        const newSize = dataUrl.length;
+                        const reduction = ((1 - newSize / originalSize) * 100).toFixed(1);
+                        
+                        console.log(`[${type}] Compressed: ${format} @ ${(finalQuality * 100).toFixed(0)}% quality | ${(originalSize / 1024).toFixed(0)}KB → ${(newSize / 1024).toFixed(0)}KB (${reduction}% reduction)`);
+                        
                         resolve(dataUrl);
                     };
                     
@@ -3578,6 +3806,11 @@
                 
                 reader.readAsDataURL(file);
             });
+        };
+        
+        // Legacy function for backward compatibility
+        const downscaleImage = (file, maxWidth = 2048, maxHeight = 2048) => {
+            return compressImage(file, 'gridImage');
         };
 
 
@@ -3977,6 +4210,7 @@
             const fogCanvas = document.getElementById('fogCanvas');
             const gridImageBelowCanvas = document.getElementById('gridImageBelowCanvas');
             const gridImageAboveCanvas = document.getElementById('gridImageAboveCanvas');
+            const initiativeTracker = document.getElementById('initiativeTracker');
             
             gridCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             overlayCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
@@ -3986,6 +4220,11 @@
             fogCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             gridImageBelowCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             gridImageAboveCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
+            
+            // Hide initiative tracker when grid is disabled
+            if (initiativeTracker) {
+                initiativeTracker.style.display = activeBackdrop.grid.enabled ? (initiativeOrder.length > 0 ? 'flex' : 'none') : 'none';
+            }
             
             // Only show toolbar for host or if not connected (solo play)
             if (gridToolbar) {
@@ -4468,44 +4707,7 @@
 
         // Token System Functions
         function downscaleToken(file) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                const reader = new FileReader();
-                
-                reader.onerror = () => reject(new Error('Failed to read file'));
-                
-                reader.onload = (e) => {
-                    img.onerror = () => reject(new Error('Failed to load image'));
-                    
-                    img.onload = () => {
-                        const maxSize = 256;
-                        let width = img.width;
-                        let height = img.height;
-                        
-                        if (width > maxSize || height > maxSize) {
-                            const ratio = Math.min(maxSize / width, maxSize / height);
-                            width = Math.round(width * ratio);
-                            height = Math.round(height * ratio);
-                        }
-                        
-                        const canvas = document.createElement('canvas');
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        
-                        ctx.imageSmoothingEnabled = true;
-                        ctx.imageSmoothingQuality = 'high';
-                        ctx.drawImage(img, 0, 0, width, height);
-                        
-                        const dataUrl = canvas.toDataURL('image/png', 0.9);
-                        resolve(dataUrl);
-                    };
-                    
-                    img.src = e.target.result;
-                };
-                
-                reader.readAsDataURL(file);
-            });
+            return compressImage(file, 'token');
         }
 
         function uploadToken() {
@@ -4541,6 +4743,7 @@
                     hidden: false,
                     locked: false,
                     flipped: false,
+                    rotation: 0, // 0, 90, 180, or 270 degrees
                     borderColor: null,
                     conditionEmoji: null,
                     hpCounterEnabled: false,
@@ -4611,6 +4814,15 @@
                 
                 const drawToken = () => {
                     ctx.save();
+                    
+                    // Apply rotation if needed (rotate around center of token)
+                    if (token.rotation && token.rotation !== 0) {
+                        const centerX = transformedX + transformedSize / 2;
+                        const centerY = transformedY + transformedSize / 2;
+                        ctx.translate(centerX, centerY);
+                        ctx.rotate((token.rotation * Math.PI) / 180);
+                        ctx.translate(-centerX, -centerY);
+                    }
                     
                     // Apply horizontal flip if needed
                     if (token.flipped === true) {
@@ -5015,6 +5227,23 @@
                 }
             }
         }
+        
+        function rotateToken(tokenId, degrees) {
+            const token = tokens.find(t => t.id === tokenId);
+            if (token) {
+                // Add degrees and normalize to 0-359 range
+                token.rotation = (token.rotation + degrees) % 360;
+                if (token.rotation < 0) token.rotation += 360;
+                
+                renderTokens();
+                saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
+            }
+        }
 
         function toggleTokenEliminate(tokenId) {
             const token = tokens.find(t => t.id === tokenId);
@@ -5351,6 +5580,18 @@
                 () => toggleTokenFlip(tokenId)
             );
             leftColumn.appendChild(flipBtn);
+            
+            // Rotation section
+            addSectionLabel(leftColumn, 'Rotation:');
+            
+            const rotateButtons = [
+                { label: '↻ 90°', value: 90 },
+                { label: '↻ 180°', value: 180 }
+            ];
+            rotateButtons.forEach(({ label, value }) => {
+                const btn = createMenuButton(label, () => rotateToken(tokenId, value));
+                leftColumn.appendChild(btn);
+            });
             
             // Size section
             addSectionLabel(leftColumn, 'Size:');
@@ -5909,9 +6150,25 @@
             saveToLocalStorage();
             updateSceneBanner();
             
-            // Broadcast backdrop switch to all players
+            // Broadcast backdrop switch to all players with full scene data
             if (isHost && isConnected) {
-                broadcastState('BACKDROP_SWITCH', { index: index });
+                const newBackdrop = backdrops[index];
+                broadcastState('SCENE_SWITCH', {
+                    index: index,
+                    backdropData: {
+                        imageSrc: newBackdrop.imageSrc,
+                        x: parseInt(newBackdrop.element.style.left),
+                        y: parseInt(newBackdrop.element.style.top),
+                        width: parseInt(newBackdrop.element.style.width),
+                        height: parseInt(newBackdrop.element.style.height),
+                        zIndex: newBackdrop.element.style.zIndex,
+                        visible: newBackdrop.visible,
+                        name: newBackdrop.name,
+                        grid: newBackdrop.grid,
+                        gridTransform: newBackdrop.gridTransform,
+                        avatarStates: newBackdrop.avatarStates || []
+                    }
+                });
             }
         }
 
@@ -6376,7 +6633,12 @@
                 { name: 'None', value: null, emoji: '⭕' },
                 { name: 'Rain', value: 'rain', emoji: '🌧️' },
                 { name: 'Snow', value: 'snow', emoji: '❄️' },
+                { name: 'Leaves', value: 'leaves', emoji: '🍂' },
                 { name: 'Embers', value: 'embers', emoji: '🔥' },
+                { name: 'Aurora', value: 'aurora', emoji: '🌌' },
+                { name: 'Fireflies', value: 'fireflies', emoji: '✨' },
+                { name: 'Blossoms', value: 'blossoms', emoji: '🌸' },
+                { name: 'Ash', value: 'ash', emoji: '💨' },
                 { name: 'Fog', value: 'fog', emoji: '🌫️' },
                 { name: 'Sand', value: 'sand', emoji: '🏜️' }
             ];
@@ -6428,7 +6690,15 @@
             const particles = [];
             const sandParticles = [];
             
-            const particleCount = effect === 'fog' || effect === 'sand' ? 12 : effect === 'embers' ? 50 : 150;
+            const particleCount = 
+                effect === 'fog' || effect === 'sand' ? 12 : 
+                effect === 'embers' ? 120 : // Increased from 50 to 120 for denser effect
+                effect === 'aurora' ? 8 : 
+                effect === 'fireflies' ? 30 : 
+                effect === 'leaves' ? 100 :
+                effect === 'blossoms' ? 80 :
+                effect === 'ash' ? 120 :
+                150; // Default for rain/snow
             const sandParticleCount = 100;
 
             const resizeCanvas = () => {
@@ -6466,7 +6736,80 @@
                         speedY: 0.2 + Math.random() * 0.6,
                         opacity: 0.08 + Math.random() * 0.12
                     });
+                } else if (effect === 'aurora') {
+                    // Aurora waves - flowing colorful bands
+                    particles.push({
+                        y: Math.random() * window.innerHeight * 0.5, // Top half of screen
+                        offset: Math.random() * Math.PI * 2,
+                        speed: 0.002 + Math.random() * 0.003,
+                        amplitude: 30 + Math.random() * 50,
+                        wavelength: 0.003 + Math.random() * 0.002,
+                        height: 40 + Math.random() * 60,
+                        hue: 120 + Math.random() * 60, // Green to cyan range
+                        opacity: 0.3 + Math.random() * 0.4
+                    });
+                } else if (effect === 'fireflies') {
+                    // Fireflies - glowing particles that pulse and drift
+                    particles.push({
+                        x: Math.random() * window.innerWidth,
+                        y: Math.random() * window.innerHeight,
+                        speedX: (Math.random() - 0.5) * 0.5,
+                        speedY: (Math.random() - 0.5) * 0.5,
+                        size: 2 + Math.random() * 2,
+                        pulseOffset: Math.random() * Math.PI * 2,
+                        pulseSpeed: 0.02 + Math.random() * 0.03,
+                        baseOpacity: 0.5 + Math.random() * 0.3
+                    });
+                } else if (effect === 'leaves') {
+                    // Falling leaves - rotating autumn leaves
+                    const colors = [
+                        { r: 218, g: 112, b: 47 },  // Orange
+                        { r: 139, g: 69, b: 19 },   // Brown
+                        { r: 255, g: 140, b: 0 },   // Dark orange
+                        { r: 205, g: 92, b: 92 },   // Indian red
+                        { r: 184, g: 134, b: 11 }   // Dark goldenrod
+                    ];
+                    const color = colors[Math.floor(Math.random() * colors.length)];
+                    particles.push({
+                        x: Math.random() * window.innerWidth,
+                        y: Math.random() * window.innerHeight,
+                        speed: 0.5 + Math.random() * 1,
+                        rotation: Math.random() * Math.PI * 2,
+                        rotationSpeed: (Math.random() - 0.5) * 0.1,
+                        drift: (Math.random() - 0.5) * 1.5,
+                        size: 4 + Math.random() * 4,
+                        color: color,
+                        opacity: 0.6 + Math.random() * 0.4,
+                        sway: Math.random() * Math.PI * 2,
+                        swaySpeed: 0.02 + Math.random() * 0.03
+                    });
+                } else if (effect === 'blossoms') {
+                    // Cherry blossoms - pink petals
+                    particles.push({
+                        x: Math.random() * window.innerWidth,
+                        y: Math.random() * window.innerHeight,
+                        speed: 0.3 + Math.random() * 0.7,
+                        rotation: Math.random() * Math.PI * 2,
+                        rotationSpeed: (Math.random() - 0.5) * 0.08,
+                        drift: (Math.random() - 0.5) * 1,
+                        size: 3 + Math.random() * 3,
+                        opacity: 0.5 + Math.random() * 0.4,
+                        sway: Math.random() * Math.PI * 2,
+                        swaySpeed: 0.02 + Math.random() * 0.02
+                    });
+                } else if (effect === 'ash') {
+                    // Ash - gray/black particles
+                    particles.push({
+                        x: Math.random() * window.innerWidth,
+                        y: Math.random() * window.innerHeight,
+                        speed: 0.2 + Math.random() * 0.6,
+                        drift: (Math.random() - 0.5) * 0.8,
+                        size: 1 + Math.random() * 2,
+                        opacity: 0.3 + Math.random() * 0.5,
+                        grayValue: 50 + Math.random() * 100
+                    });
                 } else {
+                    // Rain, snow, embers (existing)
                     particles.push({
                         x: Math.random() * window.innerWidth,
                         y: Math.random() * window.innerHeight,
@@ -6541,6 +6884,141 @@
                         if (particle.y > window.innerHeight + particle.radius) particle.y = -particle.radius;
                         if (particle.y < -particle.radius) particle.y = window.innerHeight + particle.radius;
                         
+                    } else if (effect === 'aurora') {
+                        // Aurora borealis - flowing colorful waves
+                        particle.offset += particle.speed;
+                        
+                        const gradient = ctx.createLinearGradient(0, particle.y, 0, particle.y + particle.height);
+                        const hue = (particle.hue + Math.sin(particle.offset) * 30) % 360;
+                        gradient.addColorStop(0, `hsla(${hue}, 70%, 60%, 0)`);
+                        gradient.addColorStop(0.5, `hsla(${hue}, 70%, 60%, ${particle.opacity})`);
+                        gradient.addColorStop(1, `hsla(${hue}, 70%, 60%, 0)`);
+                        
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        for (let x = 0; x < window.innerWidth; x += 5) {
+                            const waveY = particle.y + Math.sin(x * particle.wavelength + particle.offset) * particle.amplitude;
+                            if (x === 0) {
+                                ctx.moveTo(x, waveY);
+                            } else {
+                                ctx.lineTo(x, waveY);
+                            }
+                        }
+                        ctx.lineTo(window.innerWidth, particle.y + particle.height);
+                        ctx.lineTo(0, particle.y + particle.height);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                    } else if (effect === 'fireflies') {
+                        // Fireflies - pulsing glowing particles
+                        particle.pulseOffset += particle.pulseSpeed;
+                        const pulse = (Math.sin(particle.pulseOffset) + 1) / 2; // 0 to 1
+                        const currentOpacity = particle.baseOpacity * (0.3 + pulse * 0.7);
+                        
+                        const gradient = ctx.createRadialGradient(
+                            particle.x, particle.y, 0,
+                            particle.x, particle.y, particle.size * 2
+                        );
+                        gradient.addColorStop(0, `rgba(255, 255, 150, ${currentOpacity})`);
+                        gradient.addColorStop(0.5, `rgba(200, 255, 150, ${currentOpacity * 0.6})`);
+                        gradient.addColorStop(1, `rgba(100, 200, 100, 0)`);
+                        
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(particle.x, particle.y, particle.size * 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        particle.x += particle.speedX;
+                        particle.y += particle.speedY;
+                        
+                        if (particle.x > window.innerWidth) particle.x = 0;
+                        if (particle.x < 0) particle.x = window.innerWidth;
+                        if (particle.y > window.innerHeight) particle.y = 0;
+                        if (particle.y < 0) particle.y = window.innerHeight;
+                        
+                    } else if (effect === 'leaves') {
+                        // Falling leaves with rotation and sway
+                        ctx.save();
+                        particle.sway += particle.swaySpeed;
+                        const swayX = Math.sin(particle.sway) * 20;
+                        
+                        ctx.translate(particle.x + swayX, particle.y);
+                        ctx.rotate(particle.rotation);
+                        
+                        // Draw leaf shape (simple ellipse)
+                        ctx.fillStyle = `rgba(${particle.color.r}, ${particle.color.g}, ${particle.color.b}, ${particle.opacity})`;
+                        ctx.beginPath();
+                        ctx.ellipse(0, 0, particle.size, particle.size * 1.5, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Add vein detail
+                        ctx.strokeStyle = `rgba(${Math.max(0, particle.color.r - 30)}, ${Math.max(0, particle.color.g - 30)}, ${Math.max(0, particle.color.b - 30)}, ${particle.opacity * 0.5})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.beginPath();
+                        ctx.moveTo(0, -particle.size * 1.5);
+                        ctx.lineTo(0, particle.size * 1.5);
+                        ctx.stroke();
+                        
+                        ctx.restore();
+                        
+                        particle.y += particle.speed;
+                        particle.x += particle.drift * 0.1;
+                        particle.rotation += particle.rotationSpeed;
+                        
+                        if (particle.y > window.innerHeight) particle.y = -10;
+                        if (particle.x > window.innerWidth) particle.x = 0;
+                        if (particle.x < 0) particle.x = window.innerWidth;
+                        
+                    } else if (effect === 'blossoms') {
+                        // Cherry blossoms - pink petals
+                        ctx.save();
+                        particle.sway += particle.swaySpeed;
+                        const swayX = Math.sin(particle.sway) * 15;
+                        
+                        ctx.translate(particle.x + swayX, particle.y);
+                        ctx.rotate(particle.rotation);
+                        
+                        // Draw petal (5-petal flower shape)
+                        ctx.fillStyle = `rgba(255, 182, 193, ${particle.opacity})`;
+                        for (let i = 0; i < 5; i++) {
+                            ctx.save();
+                            ctx.rotate((Math.PI * 2 * i) / 5);
+                            ctx.beginPath();
+                            ctx.ellipse(0, particle.size * 0.6, particle.size * 0.5, particle.size * 0.8, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.restore();
+                        }
+                        
+                        // Center
+                        ctx.fillStyle = `rgba(255, 240, 200, ${particle.opacity})`;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, particle.size * 0.3, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.restore();
+                        
+                        particle.y += particle.speed;
+                        particle.x += particle.drift * 0.1;
+                        particle.rotation += particle.rotationSpeed;
+                        
+                        if (particle.y > window.innerHeight) particle.y = -10;
+                        if (particle.x > window.innerWidth) particle.x = 0;
+                        if (particle.x < 0) particle.x = window.innerWidth;
+                        
+                    } else if (effect === 'ash') {
+                        // Ash particles
+                        ctx.fillStyle = `rgba(${particle.grayValue}, ${particle.grayValue}, ${particle.grayValue}, ${particle.opacity})`;
+                        ctx.beginPath();
+                        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        particle.y += particle.speed;
+                        particle.x += particle.drift;
+                        
+                        if (particle.y > window.innerHeight) particle.y = 0;
+                        if (particle.x > window.innerWidth) particle.x = 0;
+                        if (particle.x < 0) particle.x = window.innerWidth;
+                        
                     } else if (effect === 'rain') {
                         ctx.fillStyle = `rgba(174, 194, 224, ${particle.opacity})`;
                         ctx.fillRect(particle.x, particle.y, particle.size, 10);
@@ -6563,7 +7041,7 @@
                         ctx.fill();
                     }
 
-                    if (effect !== 'fog' && effect !== 'sand') {
+                    if (effect !== 'fog' && effect !== 'sand' && effect !== 'aurora' && effect !== 'fireflies' && effect !== 'leaves' && effect !== 'blossoms' && effect !== 'ash') {
                         particle.y += particle.speed;
                         particle.x += particle.drift;
 
@@ -6731,6 +7209,77 @@
                 menu.style.display = 'none';
             };
             menu.appendChild(shapeBtn);
+            
+            // Alternate Image Upload/Remove
+            const altImageBtn = document.createElement('button');
+            const hasAltImage = avatarData.alternateImageSrc !== null;
+            altImageBtn.innerHTML = hasAltImage ? '✓ Use Alternate Image' : '📷 Use Alternate Image';
+            altImageBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: ' + (hasAltImage ? '#4ade80' : '#e0e0e0') + '; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
+            altImageBtn.onmouseenter = () => { altImageBtn.style.backgroundColor = '#3a3a3a'; };
+            altImageBtn.onmouseleave = () => { altImageBtn.style.backgroundColor = '#2a2a2a'; };
+            altImageBtn.onclick = () => {
+                menu.style.display = 'none';
+                
+                // Create file input for alternate image upload
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        compressImage(file, 'avatar').then(compressedDataUrl => {
+                            avatarData.alternateImageSrc = compressedDataUrl;
+                            saveToLocalStorage();
+                            
+                            // Broadcast to all players
+                            if (isHost && isConnected) {
+                                const message = {
+                                    type: 'AVATAR_ALT_IMAGE_SET',
+                                    data: {
+                                        avatarId: avatarId,
+                                        alternateImageSrc: compressedDataUrl
+                                    }
+                                };
+                                sendToAllPeers(message);
+                            }
+                        }).catch(err => {
+                            console.error('Failed to compress alternate avatar image:', err);
+                            alert('Failed to load alternate image. Please try a different file.');
+                        });
+                    }
+                };
+                input.click();
+            };
+            
+            // Right-click to remove alternate image
+            altImageBtn.oncontextmenu = (e) => {
+                e.preventDefault();
+                if (avatarData.alternateImageSrc) {
+                    // Restore original image if currently showing alternate
+                    if (avatarData.isShowingAlternate) {
+                        const img = avatarElement.querySelector('img');
+                        if (img) img.src = avatarData.imageSrc;
+                        avatarData.isShowingAlternate = false;
+                    }
+                    
+                    avatarData.alternateImageSrc = null;
+                    saveToLocalStorage();
+                    menu.style.display = 'none';
+                    
+                    // Broadcast removal to all players
+                    if (isHost && isConnected) {
+                        const message = {
+                            type: 'AVATAR_ALT_IMAGE_SET',
+                            data: {
+                                avatarId: avatarId,
+                                alternateImageSrc: null
+                            }
+                        };
+                        sendToAllPeers(message);
+                    }
+                }
+            };
+            menu.appendChild(altImageBtn);
         }
         
         // ========================================
@@ -7072,6 +7621,31 @@
                         delete activeGlowIntervals[triggeredAvatarId];
                     }
                     
+                    // Clear any pending glow removal timeout (prevents flicker on rapid key presses)
+                    if (activeGlowTimeouts[triggeredAvatarId]) {
+                        clearTimeout(activeGlowTimeouts[triggeredAvatarId]);
+                        delete activeGlowTimeouts[triggeredAvatarId];
+                    }
+                    
+                    // ALTERNATE IMAGE: Swap to alternate if available
+                    if (avatarData.alternateImageSrc && !avatarData.isShowingAlternate) {
+                        const img = avatarData.element.querySelector('img');
+                        if (img) {
+                            img.src = avatarData.alternateImageSrc;
+                            avatarData.isShowingAlternate = true;
+                            
+                            // Broadcast image swap to all players
+                            const imageSwapMessage = {
+                                type: 'AVATAR_IMAGE_SWAP',
+                                data: {
+                                    avatarId: triggeredAvatarId,
+                                    showAlternate: true
+                                }
+                            };
+                            sendToAllPeers(imageSwapMessage);
+                        }
+                    }
+                    
                     // Trigger local glow animation - persist until keyup
                     avatarData.element.classList.add('glowing');
                     
@@ -7106,25 +7680,44 @@
             if (triggeredAvatarId !== null) {
                 const avatarData = avatars[triggeredAvatarId];
                 if (avatarData && avatarData.element) {
+                    // ALTERNATE IMAGE: Swap back to original if showing alternate
+                    if (avatarData.isShowingAlternate) {
+                        const img = avatarData.element.querySelector('img');
+                        if (img) {
+                            img.src = avatarData.imageSrc;
+                            avatarData.isShowingAlternate = false;
+                            
+                            // Broadcast image swap back to all players
+                            const imageSwapMessage = {
+                                type: 'AVATAR_IMAGE_SWAP',
+                                data: {
+                                    avatarId: triggeredAvatarId,
+                                    showAlternate: false
+                                }
+                            };
+                            sendToAllPeers(imageSwapMessage);
+                        }
+                    }
+                    
                     // Clear the broadcast interval
                     if (activeGlowIntervals[triggeredAvatarId]) {
                         clearInterval(activeGlowIntervals[triggeredAvatarId]);
                         delete activeGlowIntervals[triggeredAvatarId];
                     }
                     
-                    // Send final broadcast with 1/2 second duration for fade-out
+                    // Send final broadcast with 1/8 second duration for fade-out
                     const message = {
                         type: 'AVATAR_GLOW',
                         data: {
                             avatarId: triggeredAvatarId,
                             action: 'start',
-                            duration: 500 // 1/2 second fade-out
+                            duration: 125 // 1/8 second fade-out
                         }
                     };
                     sendToAllPeers(message);
                     
-                    // Local player also adds 1/2 second delay
-                    const delayAfterRelease = 500;
+                    // Local player also adds 1/8 second delay
+                    const delayAfterRelease = 125;
                     const timeoutId = setTimeout(() => {
                         avatarData.element.classList.remove('glowing');
                         avatarData.element.style.filter = '';
@@ -7607,9 +8200,8 @@
         function handleBackdropUpload(event) {
             const file = event.target.files[0];
             if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    createBackdrop(e.target.result, 0, 0, 800, 600, null, true, true);
+                compressImage(file, 'backdrop').then(compressedDataUrl => {
+                    createBackdrop(compressedDataUrl, 0, 0, 800, 600, null, true, true);
                     updateSceneBanner();
                     saveToLocalStorage();
                     
@@ -7617,8 +8209,10 @@
                     if (isHost && isConnected) {
                         broadcastState('BACKDROP_ADDED', getFullState().backdrops);
                     }
-                };
-                reader.readAsDataURL(file);
+                }).catch(err => {
+                    console.error('Failed to compress backdrop:', err);
+                    alert('Failed to load backdrop image. Please try a different file.');
+                });
             }
             event.target.value = '';
         }
@@ -7626,19 +8220,19 @@
         function handleAvatarUpload(event) {
             const file = event.target.files[0];
             if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const imageSrc = e.target.result;
-                    createAvatar(imageSrc);
-                    addToRecentAvatars(imageSrc);
+                compressImage(file, 'avatar').then(compressedDataUrl => {
+                    createAvatar(compressedDataUrl);
+                    addToRecentAvatars(compressedDataUrl);
                     saveToLocalStorage();
                     
                     // Broadcast new avatar to all players
                     if (isHost && isConnected) {
                         broadcastState('AVATAR_ADDED', getFullState().avatars);
                     }
-                };
-                reader.readAsDataURL(file);
+                }).catch(err => {
+                    console.error('Failed to compress avatar:', err);
+                    alert('Failed to load avatar image. Please try a different file.');
+                });
             }
             event.target.value = '';
         }
@@ -7969,6 +8563,8 @@
             const avatarData = {
                 element: avatar,
                 imageSrc: imageSrc,
+                alternateImageSrc: null, // For alternate image feature
+                isShowingAlternate: false, // Track if alternate is currently displayed
                 x: x,
                 y: y,
                 locked: false,
@@ -8692,9 +9288,9 @@
                 return;
             }
             
-            // Check if clicking on an image to drag
+            // Check if clicking on an image to drag (requires Shift key, host or offline)
             const imageId = getGridImageAtPosition(e.clientX, e.clientY);
-            if (imageId) {
+            if (imageId && e.shiftKey && (isHost || !isConnected)) { // Host or offline can drag with Shift key
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -9007,10 +9603,10 @@
                 return;
             }
             
-            // No tool selected - check for dragging existing drawings (only host)
+            // No tool selected - check for dragging existing drawings (host or offline with shift)
             if (!currentDrawTool) {
                 const drawing = getDrawingAtPosition(e.clientX, e.clientY);
-                if (drawing && isHost) { // Only host can drag drawings
+                if (drawing && (isHost || !isConnected) && e.shiftKey) { // Host or offline can drag drawings with shift
                     e.preventDefault();
                     e.stopPropagation();
                     const activeBackdrop = getActiveBackdrop();
@@ -10458,8 +11054,11 @@
             
             if (!tracker || !tokensContainer) return;
             
-            // Show/hide tracker based on whether there are tokens in initiative
-            if (initiativeOrder.length === 0) {
+            // Get active backdrop
+            const activeBackdrop = getActiveBackdrop();
+            
+            // Show/hide tracker based on whether there are tokens in initiative AND grid is enabled
+            if (initiativeOrder.length === 0 || !activeBackdrop || !activeBackdrop.grid.enabled) {
                 tracker.style.display = 'none';
                 return;
             }
@@ -11098,6 +11697,7 @@
                 })),
                 avatars: avatars.map(a => ({
                     imageSrc: a.imageSrc,
+                    alternateImageSrc: a.alternateImageSrc || null,
                     x: parseInt(a.element.style.left),
                     y: parseInt(a.element.style.top),
                     width: parseInt(a.element.style.width),
@@ -11194,6 +11794,11 @@
                         avatar.classList.add('rounded');
                         const avatarData = avatars.find(av => av.element === avatar);
                         if (avatarData) avatarData.rounded = true;
+                    }
+                    // Restore alternate image if present
+                    if (a.alternateImageSrc) {
+                        const avatarData = avatars.find(av => av.element === avatar);
+                        if (avatarData) avatarData.alternateImageSrc = a.alternateImageSrc;
                     }
                 });
                 
@@ -11368,6 +11973,7 @@
                 })),
                 avatars: avatars.map(a => ({
                     imageSrc: a.imageSrc,
+                    alternateImageSrc: a.alternateImageSrc || null,
                     x: parseInt(a.element.style.left),
                     y: parseInt(a.element.style.top),
                     width: parseInt(a.element.style.width),
@@ -11474,6 +12080,11 @@
                                 avatar.classList.add('rounded');
                                 const avatarData = avatars.find(av => av.element === avatar);
                                 if (avatarData) avatarData.rounded = true;
+                            }
+                            // Restore alternate image if present
+                            if (a.alternateImageSrc) {
+                                const avatarData = avatars.find(av => av.element === avatar);
+                                if (avatarData) avatarData.alternateImageSrc = a.alternateImageSrc;
                             }
                         });
                         
@@ -12203,17 +12814,19 @@
                                     e.stopPropagation();
                                     deleteTextObject(textObj.id);
                                 } else if (textObj && textToolMode === 'place') {
-                                    // Place mode - drag existing text
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    const activeBackdrop = getActiveBackdrop();
-                                    if (activeBackdrop) {
-                                        const worldPoint = inverseTransformPoint(e.clientX, e.clientY, activeBackdrop.gridTransform);
-                                        draggedText = textObj;
-                                        textDragOffset = {
-                                            x: worldPoint.x - textObj.x,
-                                            y: worldPoint.y - textObj.y
-                                        };
+                                    // Place mode - drag existing text (requires shift, host or offline)
+                                    if (e.shiftKey && (isHost || !isConnected)) { // Host or offline can drag text with shift
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const activeBackdrop = getActiveBackdrop();
+                                        if (activeBackdrop) {
+                                            const worldPoint = inverseTransformPoint(e.clientX, e.clientY, activeBackdrop.gridTransform);
+                                            draggedText = textObj;
+                                            textDragOffset = {
+                                                x: worldPoint.x - textObj.x,
+                                                y: worldPoint.y - textObj.y
+                                            };
+                                        }
                                     }
                                 } else if (!textObj && textToolMode === 'place') {
                                     // Place mode - place new text
@@ -12241,7 +12854,7 @@
                                 } else {
                                     // Check for text dragging first (when no tool is active)
                                     const textObj = getTextAtPosition(e.clientX, e.clientY);
-                                    if (textObj && isHost) { // Only host can drag text
+                                    if (textObj && (isHost || !isConnected)) { // Host or offline can drag text
                                         e.preventDefault();
                                         e.stopPropagation();
                                         const activeBackdrop = getActiveBackdrop();
@@ -12259,24 +12872,8 @@
                                     }
                                 }
                             } else {
-                                // Check for text dragging first (when no tool is active) - only host
-                                const textObj = getTextAtPosition(e.clientX, e.clientY);
-                                if (textObj && isHost) { // Only host can drag text
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    const activeBackdrop = getActiveBackdrop();
-                                    if (activeBackdrop) {
-                                        const worldPoint = inverseTransformPoint(e.clientX, e.clientY, activeBackdrop.gridTransform);
-                                        draggedText = textObj;
-                                        textDragOffset = {
-                                            x: worldPoint.x - textObj.x,
-                                            y: worldPoint.y - textObj.y
-                                        };
-                                    }
-                                } else {
-                                    // Check for drawing interaction
-                                    handleDrawingMouseDown(e);
-                                }
+                                // No shift - just check for drawing interaction
+                                handleDrawingMouseDown(e);
                             }
                         }
                     } else if (e.button === 2) {
@@ -12522,8 +13119,8 @@
                                 }
                                 return;
                             } else {
-                                // Start dragging text (or editing if double-click - handled separately) - only host
-                                if (isHost) { // Only host can drag theatre text
+                                // Start dragging text (or editing if double-click - handled separately) - host or offline
+                                if ((isHost || !isConnected) && e.shiftKey) { // Host or offline can drag theatre text with shift
                                     e.preventDefault();
                                     e.stopPropagation();
                                     draggedTheatreText = clickedText;
@@ -12536,9 +13133,9 @@
                             }
                         }
                         
-                        // Check if clicking on existing theatre drawing (for dragging) - only host
+                        // Check if clicking on existing theatre drawing (for dragging) - host or offline with shift
                         const clickedDrawing = getTheatreDrawingAtPosition(e.clientX, e.clientY);
-                        if (clickedDrawing && !currentTheatreDrawTool && !theatreTextToolActive && isHost) { // Only host can drag
+                        if (clickedDrawing && !currentTheatreDrawTool && !theatreTextToolActive && (isHost || !isConnected) && e.shiftKey) { // Host or offline can drag with shift
                             e.preventDefault();
                             e.stopPropagation();
                             draggedTheatreDrawing = clickedDrawing;
@@ -13508,6 +14105,188 @@
             startAvatarFlipSystem();
         });
         
+        // Handle window resize to maintain relative positions
+        let previousWindowWidth = window.innerWidth;
+        let previousWindowHeight = window.innerHeight;
+        
+        window.addEventListener('resize', () => {
+            const newWidth = window.innerWidth;
+            const newHeight = window.innerHeight;
+            
+            // Calculate scale factors
+            const scaleX = newWidth / previousWindowWidth;
+            const scaleY = newHeight / previousWindowHeight;
+            
+            // Only apply scaling if window actually changed size
+            if (scaleX !== 1 || scaleY !== 1) {
+                // Scale backdrops
+                backdrops.forEach(backdrop => {
+                    const currentX = parseInt(backdrop.element.style.left) || 0;
+                    const currentY = parseInt(backdrop.element.style.top) || 0;
+                    const currentWidth = parseInt(backdrop.element.style.width) || 0;
+                    const currentHeight = parseInt(backdrop.element.style.height) || 0;
+                    
+                    backdrop.element.style.left = Math.round(currentX * scaleX) + 'px';
+                    backdrop.element.style.top = Math.round(currentY * scaleY) + 'px';
+                    backdrop.element.style.width = Math.round(currentWidth * scaleX) + 'px';
+                    backdrop.element.style.height = Math.round(currentHeight * scaleY) + 'px';
+                });
+                
+                // Scale avatars
+                avatars.forEach(avatar => {
+                    const currentX = parseInt(avatar.element.style.left) || 0;
+                    const currentY = parseInt(avatar.element.style.top) || 0;
+                    const currentWidth = parseInt(avatar.element.style.width) || 0;
+                    const currentHeight = parseInt(avatar.element.style.height) || 0;
+                    
+                    avatar.element.style.left = Math.round(currentX * scaleX) + 'px';
+                    avatar.element.style.top = Math.round(currentY * scaleY) + 'px';
+                    avatar.element.style.width = Math.round(currentWidth * scaleX) + 'px';
+                    avatar.element.style.height = Math.round(currentHeight * scaleY) + 'px';
+                    
+                    avatar.x = parseInt(avatar.element.style.left);
+                    avatar.y = parseInt(avatar.element.style.top);
+                    avatar.width = parseInt(avatar.element.style.width);
+                    avatar.height = parseInt(avatar.element.style.height);
+                });
+                
+                // Scale text objects
+                textObjects.forEach(textObj => {
+                    textObj.x = Math.round(textObj.x * scaleX);
+                    textObj.y = Math.round(textObj.y * scaleY);
+                    textObj.fontSize = Math.round(textObj.fontSize * Math.min(scaleX, scaleY));
+                });
+                renderTextObjects();
+                
+                // Scale theatre text objects
+                theatreTextObjects.forEach(textObj => {
+                    textObj.x = Math.round(textObj.x * scaleX);
+                    textObj.y = Math.round(textObj.y * scaleY);
+                    textObj.fontSize = Math.round(textObj.fontSize * Math.min(scaleX, scaleY));
+                });
+                renderTheatreTextObjects();
+                
+                // Scale drawings
+                drawings.forEach(drawing => {
+                    if (drawing.type === 'line') {
+                        drawing.x1 = Math.round(drawing.x1 * scaleX);
+                        drawing.y1 = Math.round(drawing.y1 * scaleY);
+                        drawing.x2 = Math.round(drawing.x2 * scaleX);
+                        drawing.y2 = Math.round(drawing.y2 * scaleY);
+                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
+                    } else if (drawing.type === 'circle') {
+                        drawing.x = Math.round(drawing.x * scaleX);
+                        drawing.y = Math.round(drawing.y * scaleY);
+                        drawing.radius = Math.round(drawing.radius * Math.min(scaleX, scaleY));
+                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
+                    } else if (drawing.type === 'rectangle') {
+                        drawing.x = Math.round(drawing.x * scaleX);
+                        drawing.y = Math.round(drawing.y * scaleY);
+                        drawing.width = Math.round(drawing.width * scaleX);
+                        drawing.height = Math.round(drawing.height * scaleY);
+                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
+                    } else if (drawing.type === 'polygon') {
+                        drawing.points = drawing.points.map(p => ({
+                            x: Math.round(p.x * scaleX),
+                            y: Math.round(p.y * scaleY)
+                        }));
+                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
+                    }
+                });
+                renderDrawings();
+                
+                // Scale theatre drawings
+                theatreDrawings.forEach(drawing => {
+                    if (drawing.type === 'line') {
+                        drawing.x1 = Math.round(drawing.x1 * scaleX);
+                        drawing.y1 = Math.round(drawing.y1 * scaleY);
+                        drawing.x2 = Math.round(drawing.x2 * scaleX);
+                        drawing.y2 = Math.round(drawing.y2 * scaleY);
+                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
+                    } else if (drawing.type === 'circle') {
+                        drawing.x = Math.round(drawing.x * scaleX);
+                        drawing.y = Math.round(drawing.y * scaleY);
+                        drawing.radius = Math.round(drawing.radius * Math.min(scaleX, scaleY));
+                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
+                    } else if (drawing.type === 'rectangle') {
+                        drawing.x = Math.round(drawing.x * scaleX);
+                        drawing.y = Math.round(drawing.y * scaleY);
+                        drawing.width = Math.round(drawing.width * scaleX);
+                        drawing.height = Math.round(drawing.height * scaleY);
+                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
+                    } else if (drawing.type === 'polygon') {
+                        drawing.points = drawing.points.map(p => ({
+                            x: Math.round(p.x * scaleX),
+                            y: Math.round(p.y * scaleY)
+                        }));
+                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
+                    }
+                });
+                renderTheatreDrawings();
+                
+                // Scale tokens
+                tokens.forEach(token => {
+                    token.x = Math.round(token.x * scaleX);
+                    token.y = Math.round(token.y * scaleY);
+                    token.size = Math.round(token.size * Math.min(scaleX, scaleY));
+                });
+                renderTokens();
+                
+                // Scale fog areas
+                fogAreas.forEach(fog => {
+                    if (fog.type === 'rectangle') {
+                        fog.x = Math.round(fog.x * scaleX);
+                        fog.y = Math.round(fog.y * scaleY);
+                        fog.width = Math.round(fog.width * scaleX);
+                        fog.height = Math.round(fog.height * scaleY);
+                    } else if (fog.type === 'circle') {
+                        fog.x = Math.round(fog.x * scaleX);
+                        fog.y = Math.round(fog.y * scaleY);
+                        fog.radius = Math.round(fog.radius * Math.min(scaleX, scaleY));
+                    } else if (fog.type === 'polygon') {
+                        fog.points = fog.points.map(p => ({
+                            x: Math.round(p.x * scaleX),
+                            y: Math.round(p.y * scaleY)
+                        }));
+                    }
+                });
+                renderFogAreas();
+                
+                // Update grid if enabled
+                const visibleBackdrop = backdrops.find(b => b.visible);
+                if (visibleBackdrop && visibleBackdrop.grid && visibleBackdrop.grid.enabled) {
+                    // Scale grid transform
+                    if (visibleBackdrop.gridTransform) {
+                        visibleBackdrop.gridTransform.panX = Math.round(visibleBackdrop.gridTransform.panX * scaleX);
+                        visibleBackdrop.gridTransform.panY = Math.round(visibleBackdrop.gridTransform.panY * scaleY);
+                    }
+                    renderGrid();
+                    renderGridImages();
+                }
+                
+                // Scale grid images
+                gridImages.forEach(img => {
+                    img.x = Math.round(img.x * scaleX);
+                    img.y = Math.round(img.y * scaleY);
+                    img.width = Math.round(img.width * scaleX);
+                    img.height = Math.round(img.height * scaleY);
+                });
+                renderGridImages();
+                
+                // Update spotlight if active
+                if (spotlightedAvatarId !== null) {
+                    updateSpotlightOverlay();
+                }
+                
+                // Save the state after scaling
+                saveToLocalStorage();
+            }
+            
+            // Update stored dimensions for next resize
+            previousWindowWidth = newWidth;
+            previousWindowHeight = newHeight;
+        });
+        
         // Auto-join from URL parameter - OUTSIDE main load event to ensure it runs
         window.addEventListener('load', () => {
             console.log('Auto-join check running...');
@@ -13536,4 +14315,4 @@
 </body>
 </html>
 
-<!-- Copyright Rin White "DM DooM 2025 -->
+<!-- Copyright Rin White "DM DooM" 2025 -->
