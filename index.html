@@ -1049,7 +1049,8 @@
         <button class="floating-btn" id="gridButton" onclick="toggleGrid()" oncontextmenu="showGridMenu(event)">Grid</button>
         <button class="floating-btn" id="theatreDrawButton">Draw</button>
         <button class="floating-btn" id="theatreTextButton">Text</button>
-        <button class="floating-btn" id="musicButton" onclick="toggleMusicPanel()" title="Music Player">🎵</button>
+        <button class="floating-btn" id="musicButton" title="Music Player">🎵</button>
+        <button class="floating-btn" id="soundEffectsButton" title="Sound Effects">🔊</button>
         <button class="floating-btn" onclick="saveToJSON()" oncontextmenu="return false">Save</button>
         <button class="floating-btn" onclick="loadFromJSON()" oncontextmenu="return false">Load</button>
         <div class="theme-button-container">
@@ -1078,6 +1079,7 @@
     <input type="file" id="avatarInput" class="hidden-input" accept="image/*" onchange="handleAvatarUpload(event)">
     <input type="file" id="tokenInput" class="hidden-input" accept="image/*" onchange="handleTokenUpload(event)">
     <input type="file" id="jsonInput" class="hidden-input" accept=".json" onchange="handleJSONUpload(event)">
+    <input type="file" id="soundEffectInput" class="hidden-input" accept="audio/*" onchange="handleSoundEffectUpload(event)">
 
     <!-- Grid Canvas -->
     <canvas id="gridCanvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1500; display: none;"></canvas>
@@ -1119,7 +1121,7 @@
     <div id="weatherMenu" class="weather-menu"></div>
 
     <!-- Music Player Panel -->
-    <div id="musicPanel" style="display: none; position: fixed; right: 10px; top: 80px; width: 280px; max-height: 500px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); flex-direction: column;">
+    <div id="musicPanel" style="display: none; position: absolute; width: 280px; max-height: 500px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); flex-direction: column;" onmouseenter="keepMusicPanelOpen()" onmouseleave="hideMusicPanel()">
         <div style="font-size: 16px; font-weight: bold; color: var(--accent-color); margin-bottom: 12px; font-family: 'Georgia', serif; border-bottom: 1px solid var(--accent-color); padding-bottom: 8px; text-align: center;">
             🎵 Music Player
         </div>
@@ -1157,6 +1159,23 @@
                 </span>
             </div>
             <input type="range" id="musicVolumeSlider" min="0" max="100" value="25" oninput="handleVolumeChange(parseInt(this.value) / 100)" style="width: 100%; accent-color: var(--accent-color);">
+        </div>
+    </div>
+
+    <!-- Sound Effects Panel -->
+    <div id="soundEffectsPanel" style="display: none; position: absolute; width: 250px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8);" onmouseenter="keepSoundEffectsPanelOpen()" onmouseleave="hideSoundEffectsPanel()">
+        <div style="font-size: 14px; font-weight: bold; color: var(--accent-color); margin-bottom: 12px; font-family: 'Georgia', serif; border-bottom: 1px solid var(--accent-color); padding-bottom: 8px; text-align: center;">
+            🔊 Sound Effects
+        </div>
+        
+        <!-- Add Sound Button - Host Only -->
+        <button id="addSoundBtn" onclick="addSoundEffect()" style="margin-bottom: 12px; padding: 8px; background-color: #28a745; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: 'Arial', sans-serif; transition: background-color 0.2s; width: 100%;" onmouseenter="this.style.backgroundColor='#218838'" onmouseleave="this.style.backgroundColor='#28a745'">
+            + Add Sound (0/10)
+        </button>
+        
+        <!-- Sound Effects Grid -->
+        <div id="soundEffectsList" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <!-- Sound effect buttons will be inserted here dynamically -->
         </div>
     </div>
 
@@ -1739,6 +1758,16 @@
         let musicContextMenu = null;
         let audioElement = null; // Single audio element for playback
         let musicRepeat = true; // Loop tracks by default
+
+        // Sound Effects Variables
+        let soundEffects = []; // Max 10 sound effects
+        let soundEffectAudioElements = {}; // Map of sound ID to audio element
+        
+        // Panel timeout variables
+        let musicPanelTimeout = null;
+        let soundEffectsPanelTimeout = null;
+        let musicPanelVisible = false;
+        let soundEffectsPanelVisible = false;
 
         // ========================================
         // MULTIPLAYER FUNCTIONS (GLOBAL)
@@ -2419,6 +2448,25 @@
                     }
                     break;
                     
+                case 'SCENE_DELETE':
+                    // Player receives scene deletion from host
+                    if (message.data && message.data.index !== undefined) {
+                        const deletedBackdrop = backdrops[message.data.index];
+                        if (deletedBackdrop) {
+                            // If the deleted scene was visible, switch to another scene
+                            if (deletedBackdrop.visible && backdrops.length > 1) {
+                                const nextIndex = message.data.index + 1 < backdrops.length ? message.data.index + 1 : message.data.index - 1;
+                                if (nextIndex >= 0 && nextIndex < backdrops.length) {
+                                    switchToBackdrop(nextIndex);
+                                }
+                            }
+                            // Remove the scene
+                            backdrops.splice(message.data.index, 1);
+                            updateSceneBanner();
+                        }
+                    }
+                    break;
+                    
                 case 'KICKED':
                     // Player was kicked by host
                     isConnected = false;
@@ -2447,6 +2495,21 @@
                     // Host is playing a track - all players play it too
                     if (message.data && !isHost) {
                         playMusicTrack(message.data);
+                    }
+                    break;
+                    
+                case 'SOUND_EFFECTS_SYNC':
+                    // Receive sound effects list from host
+                    if (message.data && !isHost) {
+                        soundEffects = message.data;
+                        updateSoundEffectsPanel();
+                    }
+                    break;
+                    
+                case 'PLAY_SOUND_EFFECT':
+                    // Host played a sound effect - all players play it too
+                    if (message.data && message.data.soundId && !isHost) {
+                        playSoundEffect(message.data.soundId);
                     }
                     break;
                     
@@ -4700,8 +4763,434 @@
 
         function handleGridContextMenu(e) {
             const activeBackdrop = getActiveBackdrop();
-            if (activeBackdrop && activeBackdrop.grid.enabled) {
-                e.preventDefault();
+            if (!activeBackdrop || !activeBackdrop.grid.enabled) return;
+            
+            e.preventDefault();
+            
+            // Only host or offline can use context menus
+            if (isConnected && !isHost) return;
+            
+            // Check what was clicked on (in priority order)
+            const drawing = getDrawingAtPosition(e.clientX, e.clientY);
+            if (drawing) {
+                showDrawingContextMenu(e.clientX, e.clientY, drawing);
+                return;
+            }
+            
+            const textObj = getTextAtPosition(e.clientX, e.clientY);
+            if (textObj) {
+                showTextContextMenu(e.clientX, e.clientY, textObj);
+                return;
+            }
+            
+            const fog = getFogAtPosition(e.clientX, e.clientY);
+            if (fog) {
+                showFogContextMenu(e.clientX, e.clientY, fog);
+                return;
+            }
+            
+            // If nothing was clicked, show empty grid context menu
+            showEmptyGridContextMenu(e.clientX, e.clientY);
+        }
+
+        function showDrawingContextMenu(x, y, drawing) {
+            // Remove any existing context menus
+            const existingMenu = document.getElementById('drawingContextMenu');
+            if (existingMenu) existingMenu.remove();
+
+            const menu = document.createElement('div');
+            menu.id = 'drawingContextMenu';
+            menu.style.cssText = `
+                position: fixed;
+                left: ${x}px;
+                top: ${y}px;
+                background-color: #1a1a1a;
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                padding: 8px;
+                z-index: 10000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+                min-width: 150px;
+            `;
+
+            const createOption = (text, onClick) => {
+                const option = document.createElement('div');
+                option.style.cssText = `
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    color: #e0e0e0;
+                    font-family: Arial, sans-serif;
+                    font-size: 13px;
+                    border-radius: 4px;
+                    transition: background-color 0.2s;
+                `;
+                option.textContent = text;
+                option.onmouseenter = () => option.style.backgroundColor = '#2a2a2a';
+                option.onmouseleave = () => option.style.backgroundColor = 'transparent';
+                option.onclick = () => {
+                    menu.remove();
+                    onClick();
+                };
+                return option;
+            };
+
+            menu.appendChild(createOption('🗑️ Delete Drawing', () => {
+                const index = drawings.findIndex(d => d.id === drawing.id);
+                if (index !== -1) {
+                    drawings.splice(index, 1);
+                    renderDrawings();
+                    saveToLocalStorage();
+                    if (isHost && isConnected) {
+                        broadcastState('GRID_DRAWING_SYNC', drawings);
+                    }
+                }
+            }));
+
+            menu.appendChild(createOption('🎨 Change Color', () => {
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = drawing.color || '#ffffff';
+                colorInput.onchange = (e) => {
+                    drawing.color = e.target.value;
+                    renderDrawings();
+                    saveToLocalStorage();
+                    if (isHost && isConnected) {
+                        broadcastState('GRID_DRAWING_SYNC', drawings);
+                    }
+                };
+                colorInput.click();
+            }));
+
+            menu.appendChild(createOption('📋 Duplicate', () => {
+                const newDrawing = JSON.parse(JSON.stringify(drawing));
+                newDrawing.id = Date.now();
+                // Offset slightly
+                if (newDrawing.type === 'line' || newDrawing.type === 'arrow') {
+                    newDrawing.x1 += 20;
+                    newDrawing.y1 += 20;
+                    newDrawing.x2 += 20;
+                    newDrawing.y2 += 20;
+                } else if (newDrawing.type === 'polygon') {
+                    newDrawing.points = newDrawing.points.map(p => ({ x: p.x + 20, y: p.y + 20 }));
+                } else {
+                    newDrawing.x += 20;
+                    newDrawing.y += 20;
+                }
+                drawings.push(newDrawing);
+                renderDrawings();
+                saveToLocalStorage();
+                if (isHost && isConnected) {
+                    broadcastState('GRID_DRAWING_SYNC', drawings);
+                }
+            }));
+
+            menu.appendChild(createOption(drawing.locked ? '🔓 Unlock' : '🔒 Lock', () => {
+                drawing.locked = !drawing.locked;
+                renderDrawings();
+                saveToLocalStorage();
+                if (isHost && isConnected) {
+                    broadcastState('GRID_DRAWING_SYNC', drawings);
+                }
+            }));
+
+            document.body.appendChild(menu);
+
+            // Close menu when clicking elsewhere
+            setTimeout(() => {
+                document.addEventListener('click', function closeDrawingMenu(e) {
+                    if (!menu.contains(e.target)) {
+                        menu.remove();
+                        document.removeEventListener('click', closeDrawingMenu);
+                    }
+                });
+            }, 10);
+        }
+
+        function showTextContextMenu(x, y, textObj) {
+            // Remove any existing context menus
+            const existingMenu = document.getElementById('textContextMenu');
+            if (existingMenu) existingMenu.remove();
+
+            const menu = document.createElement('div');
+            menu.id = 'textContextMenu';
+            menu.style.cssText = `
+                position: fixed;
+                left: ${x}px;
+                top: ${y}px;
+                background-color: #1a1a1a;
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                padding: 8px;
+                z-index: 10000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+                min-width: 150px;
+            `;
+
+            const createOption = (text, onClick) => {
+                const option = document.createElement('div');
+                option.style.cssText = `
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    color: #e0e0e0;
+                    font-family: Arial, sans-serif;
+                    font-size: 13px;
+                    border-radius: 4px;
+                    transition: background-color 0.2s;
+                `;
+                option.textContent = text;
+                option.onmouseenter = () => option.style.backgroundColor = '#2a2a2a';
+                option.onmouseleave = () => option.style.backgroundColor = 'transparent';
+                option.onclick = () => {
+                    menu.remove();
+                    onClick();
+                };
+                return option;
+            };
+
+            menu.appendChild(createOption('✏️ Edit Text', () => {
+                const activeBackdrop = getActiveBackdrop();
+                if (!activeBackdrop) return;
+                editExistingText(textObj, x, y);
+            }));
+
+            menu.appendChild(createOption('🗑️ Delete Text', () => {
+                deleteTextObject(textObj.id);
+            }));
+
+            menu.appendChild(createOption('🎨 Change Color', () => {
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = textObj.color || '#ffffff';
+                colorInput.onchange = (e) => {
+                    textObj.color = e.target.value;
+                    renderTextObjects();
+                    saveToLocalStorage();
+                    if (isHost && isConnected) {
+                        broadcastState('GRID_TEXT_SYNC', textObjects);
+                    }
+                };
+                colorInput.click();
+            }));
+
+            menu.appendChild(createOption('📋 Duplicate', () => {
+                const newText = JSON.parse(JSON.stringify(textObj));
+                newText.id = Date.now();
+                newText.x += 20;
+                newText.y += 20;
+                textObjects.push(newText);
+                renderTextObjects();
+                saveToLocalStorage();
+                if (isHost && isConnected) {
+                    broadcastState('GRID_TEXT_SYNC', textObjects);
+                }
+            }));
+
+            menu.appendChild(createOption(textObj.locked ? '🔓 Unlock' : '🔒 Lock', () => {
+                textObj.locked = !textObj.locked;
+                renderTextObjects();
+                saveToLocalStorage();
+                if (isHost && isConnected) {
+                    broadcastState('GRID_TEXT_SYNC', textObjects);
+                }
+            }));
+
+            document.body.appendChild(menu);
+
+            // Close menu when clicking elsewhere
+            setTimeout(() => {
+                document.addEventListener('click', function closeTextMenu(e) {
+                    if (!menu.contains(e.target)) {
+                        menu.remove();
+                        document.removeEventListener('click', closeTextMenu);
+                    }
+                });
+            }, 10);
+        }
+
+        function showFogContextMenu(x, y, fog) {
+            // Remove any existing context menus
+            const existingMenu = document.getElementById('fogContextMenu');
+            if (existingMenu) existingMenu.remove();
+
+            const menu = document.createElement('div');
+            menu.id = 'fogContextMenu';
+            menu.style.cssText = `
+                position: fixed;
+                left: ${x}px;
+                top: ${y}px;
+                background-color: #1a1a1a;
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                padding: 8px;
+                z-index: 10000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+                min-width: 150px;
+            `;
+
+            const createOption = (text, onClick) => {
+                const option = document.createElement('div');
+                option.style.cssText = `
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    color: #e0e0e0;
+                    font-family: Arial, sans-serif;
+                    font-size: 13px;
+                    border-radius: 4px;
+                    transition: background-color 0.2s;
+                `;
+                option.textContent = text;
+                option.onmouseenter = () => option.style.backgroundColor = '#2a2a2a';
+                option.onmouseleave = () => option.style.backgroundColor = 'transparent';
+                option.onclick = () => {
+                    menu.remove();
+                    onClick();
+                };
+                return option;
+            };
+
+            menu.appendChild(createOption('🗑️ Delete Fog Area', () => {
+                const index = fogAreas.findIndex(f => f.id === fog.id);
+                if (index !== -1) {
+                    fogAreas.splice(index, 1);
+                    renderFogAreas();
+                    saveToLocalStorage();
+                    if (isHost && isConnected) {
+                        broadcastState('FOG_SYNC', fogAreas);
+                    }
+                }
+            }));
+
+            document.body.appendChild(menu);
+
+            // Close menu when clicking elsewhere
+            setTimeout(() => {
+                document.addEventListener('click', function closeFogMenu(e) {
+                    if (!menu.contains(e.target)) {
+                        menu.remove();
+                        document.removeEventListener('click', closeFogMenu);
+                    }
+                });
+            }, 10);
+        }
+
+        function showEmptyGridContextMenu(x, y) {
+            // Remove any existing context menus
+            const existingMenu = document.getElementById('emptyGridContextMenu');
+            if (existingMenu) existingMenu.remove();
+
+            const menu = document.createElement('div');
+            menu.id = 'emptyGridContextMenu';
+            menu.style.cssText = `
+                position: fixed;
+                left: ${x}px;
+                top: ${y}px;
+                background-color: #1a1a1a;
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                padding: 8px;
+                z-index: 10000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+                min-width: 150px;
+            `;
+
+            const createOption = (text, onClick, disabled = false) => {
+                const option = document.createElement('div');
+                option.style.cssText = `
+                    padding: 8px 12px;
+                    cursor: ${disabled ? 'not-allowed' : 'pointer'};
+                    color: ${disabled ? '#666' : '#e0e0e0'};
+                    font-family: Arial, sans-serif;
+                    font-size: 13px;
+                    border-radius: 4px;
+                    transition: background-color 0.2s;
+                `;
+                option.textContent = text;
+                if (!disabled) {
+                    option.onmouseenter = () => option.style.backgroundColor = '#2a2a2a';
+                    option.onmouseleave = () => option.style.backgroundColor = 'transparent';
+                    option.onclick = () => {
+                        menu.remove();
+                        onClick();
+                    };
+                }
+                return option;
+            };
+
+            // Count player tokens across ALL scenes
+            let playerTokenCount = 0;
+            backdrops.forEach(backdrop => {
+                if (backdrop.gridData && backdrop.gridData.tokens) {
+                    playerTokenCount += backdrop.gridData.tokens.filter(t => t.isPlayerToken).length;
+                }
+            });
+
+            menu.appendChild(createOption(
+                `📋 Paste Player Tokens (${playerTokenCount})`,
+                () => pastePlayerTokens(x, y),
+                playerTokenCount === 0
+            ));
+
+            document.body.appendChild(menu);
+
+            // Close menu when clicking elsewhere
+            setTimeout(() => {
+                document.addEventListener('click', function closeEmptyGridMenu(e) {
+                    if (!menu.contains(e.target)) {
+                        menu.remove();
+                        document.removeEventListener('click', closeEmptyGridMenu);
+                    }
+                });
+            }, 10);
+        }
+
+        function pastePlayerTokens(clientX, clientY) {
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop || !activeBackdrop.grid.enabled) return;
+
+            // Collect all player tokens from all scenes
+            const allPlayerTokens = [];
+            backdrops.forEach(backdrop => {
+                if (backdrop.gridData && backdrop.gridData.tokens) {
+                    backdrop.gridData.tokens.forEach(token => {
+                        if (token.isPlayerToken) {
+                            // Check if we already have this token (by src)
+                            if (!allPlayerTokens.some(t => t.src === token.src)) {
+                                allPlayerTokens.push(token);
+                            }
+                        }
+                    });
+                }
+            });
+
+            if (allPlayerTokens.length === 0) return;
+
+            // Transform click position to grid coordinates
+            const worldPoint = inverseTransformPoint(clientX, clientY, activeBackdrop.gridTransform);
+
+            // Paste each player token with spread
+            allPlayerTokens.forEach((playerToken, index) => {
+                // Check if this token already exists on current scene
+                const exists = tokens.some(t => t.src === playerToken.src && t.isPlayerToken);
+                if (exists) return; // Skip if already exists
+
+                // Create spread pattern
+                const spreadOffset = 30;
+                const offsetX = (Math.random() - 0.5) * spreadOffset * 2;
+                const offsetY = (Math.random() - 0.5) * spreadOffset * 2;
+
+                const newToken = JSON.parse(JSON.stringify(playerToken));
+                newToken.id = Date.now() + index; // Unique ID
+                newToken.x = worldPoint.x + offsetX - playerToken.size / 2;
+                newToken.y = worldPoint.y + offsetY - playerToken.size / 2;
+
+                tokens.push(newToken);
+            });
+
+            renderTokens();
+            saveToLocalStorage();
+
+            if (isHost && isConnected) {
+                broadcastState('TOKEN_SYNC', tokens);
             }
         }
 
@@ -4728,8 +5217,14 @@
                 const size = 50; // Base size
                 const centerClientX = window.innerWidth / 2;
                 const centerClientY = window.innerHeight / 2;
-                const gridCenterX = (centerClientX - activeBackdrop.gridTransform.panX) / activeBackdrop.gridTransform.zoom - size / 2;
-                const gridCenterY = (centerClientY - GRID_OFFSET_Y - activeBackdrop.gridTransform.panY) / activeBackdrop.gridTransform.zoom - size / 2;
+                
+                // Add random spread offset (±30 pixels) to prevent stacking
+                const spreadOffset = 30;
+                const offsetX = (Math.random() - 0.5) * spreadOffset * 2;
+                const offsetY = (Math.random() - 0.5) * spreadOffset * 2;
+                
+                const gridCenterX = (centerClientX - activeBackdrop.gridTransform.panX + offsetX) / activeBackdrop.gridTransform.zoom - size / 2;
+                const gridCenterY = (centerClientY - GRID_OFFSET_Y - activeBackdrop.gridTransform.panY + offsetY) / activeBackdrop.gridTransform.zoom - size / 2;
                 
                 const newToken = {
                     id: Date.now(),
@@ -4738,7 +5233,8 @@
                     y: gridCenterY,
                     size: size,
                     sizeMultiplier: 1,
-                    name: 'Token',
+                    name: '',  // Empty name by default
+                    showName: false,  // Don't show name by default
                     showMeasurement: false,
                     hidden: false,
                     locked: false,
@@ -4748,7 +5244,8 @@
                     conditionEmoji: null,
                     hpCounterEnabled: false,
                     hpCurrent: 10,
-                    hpMax: 10
+                    hpMax: 10,
+                    isPlayerToken: false
                 };
                 
                 tokens.push(newToken);
@@ -4926,34 +5423,36 @@
                         ctx.restore();
                     }
                     
-                    // Draw token name (overlapping bottom of token)
-                    ctx.save();
-                    ctx.font = `bold ${Math.max(10, transformedSize * 0.15)}px Arial`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    
-                    // Background - positioned near bottom of token
-                    const textMetrics = ctx.measureText(token.name);
-                    const textWidth = textMetrics.width + 8;
-                    const textHeight = Math.max(10, transformedSize * 0.15) + 4;
-                    const labelY = transformedY + transformedSize * 0.85; // 85% down the token
-                    
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                    ctx.fillRect(
-                        transformedX + transformedSize / 2 - textWidth / 2,
-                        labelY - textHeight / 2,
-                        textWidth,
-                        textHeight
-                    );
-                    
-                    // Text
-                    ctx.fillStyle = '#e0e0e0';
-                    ctx.fillText(
-                        token.name,
-                        transformedX + transformedSize / 2,
-                        labelY
-                    );
-                    ctx.restore();
+                    // Draw token name (overlapping bottom of token) - only if showName is true and name exists
+                    if (token.showName && token.name && token.name.trim() !== '') {
+                        ctx.save();
+                        ctx.font = `bold ${Math.max(10, transformedSize * 0.15)}px Arial`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        
+                        // Background - positioned near bottom of token
+                        const textMetrics = ctx.measureText(token.name);
+                        const textWidth = textMetrics.width + 8;
+                        const textHeight = Math.max(10, transformedSize * 0.15) + 4;
+                        const labelY = transformedY + transformedSize * 0.85; // 85% down the token
+                        
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                        ctx.fillRect(
+                            transformedX + transformedSize / 2 - textWidth / 2,
+                            labelY - textHeight / 2,
+                            textWidth,
+                            textHeight
+                        );
+                        
+                        // Text
+                        ctx.fillStyle = '#e0e0e0';
+                        ctx.fillText(
+                            token.name,
+                            transformedX + transformedSize / 2,
+                            labelY
+                        );
+                        ctx.restore();
+                    }
                     
                     // Draw red X if token is eliminated
                     if (token.eliminated) {
@@ -5082,14 +5581,33 @@
             }
         }
 
-        function renameToken(tokenId) {
+        async function renameToken(tokenId) {
             const token = tokens.find(t => t.id === tokenId);
             if (!token) return;
-            const newName = prompt('Enter token name:', token.name || 'Token');
-            if (newName !== null && newName.trim()) {
+            
+            const newName = await showCustomPrompt('Rename Token', 'Enter token name:', token.name || '');
+            if (newName !== null) {
                 token.name = newName.trim();
+                // Auto-enable name display if name is not empty
+                if (token.name) {
+                    token.showName = true;
+                }
                 renderTokens();
                 saveToLocalStorage();
+            }
+        }
+
+        function toggleTokenName(tokenId) {
+            const token = tokens.find(t => t.id === tokenId);
+            if (token) {
+                token.showName = !token.showName;
+                renderTokens();
+                saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
             }
         }
 
@@ -5144,7 +5662,6 @@
                 token.hpCounterEnabled = enabled;
                 if (enabled && !token.hpCurrent) {
                     token.hpCurrent = 10;
-                    token.hpMax = 10;
                 }
                 renderTokens();
                 saveToLocalStorage();
@@ -5159,7 +5676,7 @@
         function adjustTokenHP(tokenId, delta) {
             const token = tokens.find(t => t.id === tokenId);
             if (token && token.hpCounterEnabled) {
-                token.hpCurrent = Math.max(0, Math.min(token.hpMax, token.hpCurrent + delta));
+                token.hpCurrent = Math.max(0, token.hpCurrent + delta);
                 renderTokens();
                 saveToLocalStorage();
                 
@@ -5170,12 +5687,10 @@
             }
         }
 
-        function setTokenHP(tokenId, current, max) {
+        function setTokenHP(tokenId, current) {
             const token = tokens.find(t => t.id === tokenId);
             if (token) {
                 token.hpCurrent = Math.max(0, current);
-                token.hpMax = Math.max(1, max);
-                token.hpCurrent = Math.min(token.hpCurrent, token.hpMax);
                 renderTokens();
                 saveToLocalStorage();
                 
@@ -5259,6 +5774,20 @@
             }
         }
 
+        function togglePlayerToken(tokenId) {
+            const token = tokens.find(t => t.id === tokenId);
+            if (token) {
+                token.isPlayerToken = !token.isPlayerToken;
+                renderTokens();
+                saveToLocalStorage();
+                
+                // Broadcast token state to all players
+                if (isHost && isConnected) {
+                    broadcastState('TOKEN_SYNC', tokens);
+                }
+            }
+        }
+
         // HP Edit Dialog functions
         let currentHPEditTokenId = null;
 
@@ -5318,8 +5847,8 @@
             }
 
             if (!isNaN(hpValue)) {
-                // Clamp between 0 and max HP
-                token.hpCurrent = Math.max(0, Math.min(hpValue, token.hpMax));
+                // Clamp at 0 minimum (no maximum)
+                token.hpCurrent = Math.max(0, hpValue);
                 renderTokens();
                 saveToLocalStorage();
 
@@ -5553,6 +6082,17 @@
             });
             leftColumn.appendChild(renameBtn);
             
+            // Toggle Name Label button
+            const nameToggleBtn = createMenuButton(
+                token.showName ? '🏷️ Hide Name' : '🏷️ Show Name',
+                () => {
+                    toggleTokenName(tokenId);
+                    menu.style.display = 'none';
+                    setTimeout(() => showTokenContextMenu(event, tokenId), 10);
+                }
+            );
+            leftColumn.appendChild(nameToggleBtn);
+            
             // Toggle Measurement button
             const measureBtn = createMenuButton(
                 token.showMeasurement ? '📏 Hide Measurement' : '📏 Show Measurement',
@@ -5581,17 +6121,9 @@
             );
             leftColumn.appendChild(flipBtn);
             
-            // Rotation section
-            addSectionLabel(leftColumn, 'Rotation:');
-            
-            const rotateButtons = [
-                { label: '↻ 90°', value: 90 },
-                { label: '↻ 180°', value: 180 }
-            ];
-            rotateButtons.forEach(({ label, value }) => {
-                const btn = createMenuButton(label, () => rotateToken(tokenId, value));
-                leftColumn.appendChild(btn);
-            });
+            // 90 degree rotation button (directly under Flip)
+            const rotate90Btn = createMenuButton('↻ 90°', () => rotateToken(tokenId, 90));
+            leftColumn.appendChild(rotate90Btn);
             
             // Size section
             addSectionLabel(leftColumn, 'Size:');
@@ -5644,7 +6176,8 @@
             
             const conditionEmojis = [
                 null, '💀', '🔥', '⚡', '🩸', '🕷️',
-                '✨', '🛡️', '⚔️', '💪', '🌀', '💫'
+                '✨', '🛡️', '⚔️', '💪', '🌀', '💫',
+                '💧', '🎯', '❓', '👻'
             ];
             
             conditionEmojis.forEach(emoji => {
@@ -5672,32 +6205,19 @@
                 const hpControlsContainer = document.createElement('div');
                 hpControlsContainer.style.cssText = 'display: flex; flex-direction: column; gap: 4px; margin-top: 4px;';
                 
-                // HP adjustment buttons
-                const hpAdjustRow = document.createElement('div');
-                hpAdjustRow.style.cssText = 'display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px;';
-                
-                const hpMinusBtn = createSmallMenuButton('-5 HP', () => {
-                    adjustTokenHP(tokenId, -5);
-                    setTimeout(() => showTokenContextMenu(event, tokenId), 10);
-                });
-                const hpPlusBtn = createSmallMenuButton('+5 HP', () => {
-                    adjustTokenHP(tokenId, 5);
-                    setTimeout(() => showTokenContextMenu(event, tokenId), 10);
-                });
-                
-                hpAdjustRow.appendChild(hpMinusBtn);
-                hpAdjustRow.appendChild(hpPlusBtn);
-                hpControlsContainer.appendChild(hpAdjustRow);
-                
-                // HP input fields
+                // HP input field
                 const hpInputRow = document.createElement('div');
                 hpInputRow.style.cssText = 'display: flex; gap: 4px; align-items: center;';
+                
+                const hpLabel = document.createElement('span');
+                hpLabel.textContent = 'HP:';
+                hpLabel.style.cssText = 'color: #888; font-size: 12px;';
                 
                 const hpCurrentInput = document.createElement('input');
                 hpCurrentInput.type = 'number';
                 hpCurrentInput.value = token.hpCurrent;
                 hpCurrentInput.style.cssText = `
-                    width: 50px;
+                    width: 60px;
                     padding: 4px;
                     background-color: #2a2a2a;
                     color: #e0e0e0;
@@ -5707,24 +6227,14 @@
                     text-align: center;
                 `;
                 
-                const hpSlash = document.createElement('span');
-                hpSlash.textContent = '/';
-                hpSlash.style.cssText = 'color: #888;';
-                
-                const hpMaxInput = document.createElement('input');
-                hpMaxInput.type = 'number';
-                hpMaxInput.value = token.hpMax;
-                hpMaxInput.style.cssText = hpCurrentInput.style.cssText;
-                
                 const hpSetBtn = createSmallMenuButton('Set', () => {
-                    setTokenHP(tokenId, parseInt(hpCurrentInput.value) || 0, parseInt(hpMaxInput.value) || 1);
+                    setTokenHP(tokenId, parseInt(hpCurrentInput.value) || 0);
                     setTimeout(() => showTokenContextMenu(event, tokenId), 10);
                 });
                 hpSetBtn.style.flex = '1';
                 
+                hpInputRow.appendChild(hpLabel);
                 hpInputRow.appendChild(hpCurrentInput);
-                hpInputRow.appendChild(hpSlash);
-                hpInputRow.appendChild(hpMaxInput);
                 hpInputRow.appendChild(hpSetBtn);
                 hpControlsContainer.appendChild(hpInputRow);
                 
@@ -5741,6 +6251,18 @@
             );
             eliminateBtn.style.marginTop = '8px';
             rightColumn.appendChild(eliminateBtn);
+            
+            // Player Token checkbox
+            const playerTokenBtn = createMenuButton(
+                token.isPlayerToken ? '✅ Player Token' : '⬜ Player Token',
+                () => {
+                    togglePlayerToken(tokenId);
+                    menu.style.display = 'none';
+                    setTimeout(() => showTokenContextMenu(event, tokenId), 10);
+                }
+            );
+            playerTokenBtn.style.marginTop = '4px';
+            rightColumn.appendChild(playerTokenBtn);
             
             // Delete button
             const deleteBtn = document.createElement('button');
@@ -5760,8 +6282,9 @@
             `;
             deleteBtn.onmouseenter = () => { deleteBtn.style.backgroundColor = '#c82333'; };
             deleteBtn.onmouseleave = () => { deleteBtn.style.backgroundColor = '#dc3545'; };
-            deleteBtn.onclick = () => {
-                if (confirm('Delete this token?')) {
+            deleteBtn.onclick = async () => {
+                const shouldDelete = await showCustomConfirm('Delete Token', 'Are you sure you want to delete this token?', 'Delete');
+                if (shouldDelete) {
                     deleteToken(tokenId);
                     menu.style.display = 'none';
                 }
@@ -5955,8 +6478,14 @@
             const size = 50;
             const centerClientX = window.innerWidth / 2;
             const centerClientY = window.innerHeight / 2;
-            const gridCenterX = (centerClientX - activeBackdrop.gridTransform.panX) / activeBackdrop.gridTransform.zoom - size / 2;
-            const gridCenterY = (centerClientY - GRID_OFFSET_Y - activeBackdrop.gridTransform.panY) / activeBackdrop.gridTransform.zoom - size / 2;
+            
+            // Add random spread offset (±30 pixels) to prevent stacking
+            const spreadOffset = 30;
+            const offsetX = (Math.random() - 0.5) * spreadOffset * 2;
+            const offsetY = (Math.random() - 0.5) * spreadOffset * 2;
+            
+            const gridCenterX = (centerClientX - activeBackdrop.gridTransform.panX + offsetX) / activeBackdrop.gridTransform.zoom - size / 2;
+            const gridCenterY = (centerClientY - GRID_OFFSET_Y - activeBackdrop.gridTransform.panY + offsetY) / activeBackdrop.gridTransform.zoom - size / 2;
             
             const newToken = {
                 id: Date.now(),
@@ -5965,7 +6494,8 @@
                 y: gridCenterY,
                 size: size,
                 sizeMultiplier: 1,
-                name: 'Token',
+                name: '',  // Empty name by default
+                showName: false,  // Don't show name by default
                 showMeasurement: false,
                 hidden: false,
                 locked: false,
@@ -5974,7 +6504,8 @@
                 conditionEmoji: null,
                 hpCounterEnabled: false,
                 hpCurrent: 10,
-                hpMax: 10
+                hpMax: 10,
+                isPlayerToken: false
             };
             
             tokens.push(newToken);
@@ -6098,11 +6629,67 @@
             });
         }
 
+        // Save current grid and theatre data to backdrop
+        function saveSceneData(backdropIndex) {
+            if (!backdrops[backdropIndex]) return;
+            
+            // Save grid data (deep clone to avoid reference issues)
+            backdrops[backdropIndex].gridData = {
+                tokens: JSON.parse(JSON.stringify(tokens)),
+                gridImages: JSON.parse(JSON.stringify(gridImages)),
+                drawings: JSON.parse(JSON.stringify(drawings)),
+                textObjects: JSON.parse(JSON.stringify(textObjects)),
+                fogAreas: JSON.parse(JSON.stringify(fogAreas))
+            };
+            
+            // Save theatre data
+            backdrops[backdropIndex].theatreData = {
+                drawings: JSON.parse(JSON.stringify(theatreDrawings)),
+                textObjects: JSON.parse(JSON.stringify(theatreTextObjects))
+            };
+        }
+        
+        // Restore grid and theatre data from backdrop
+        function restoreSceneData(backdropIndex) {
+            if (!backdrops[backdropIndex]) return;
+            
+            const backdrop = backdrops[backdropIndex];
+            
+            // Restore grid data
+            if (backdrop.gridData) {
+                tokens = JSON.parse(JSON.stringify(backdrop.gridData.tokens || []));
+                gridImages = JSON.parse(JSON.stringify(backdrop.gridData.gridImages || []));
+                drawings = JSON.parse(JSON.stringify(backdrop.gridData.drawings || []));
+                textObjects = JSON.parse(JSON.stringify(backdrop.gridData.textObjects || []));
+                fogAreas = JSON.parse(JSON.stringify(backdrop.gridData.fogAreas || []));
+            } else {
+                // Initialize empty if no data exists
+                tokens = [];
+                gridImages = [];
+                drawings = [];
+                textObjects = [];
+                fogAreas = [];
+            }
+            
+            // Restore theatre data
+            if (backdrop.theatreData) {
+                theatreDrawings = JSON.parse(JSON.stringify(backdrop.theatreData.drawings || []));
+                theatreTextObjects = JSON.parse(JSON.stringify(backdrop.theatreData.textObjects || []));
+            } else {
+                theatreDrawings = [];
+                theatreTextObjects = [];
+            }
+        }
+        
+        // Handle player tokens when switching scenes
+
         function switchToBackdrop(index) {
             // Save avatar states for currently visible backdrop
             const currentBackdropIndex = backdrops.findIndex(b => b.visible);
             if (currentBackdropIndex !== -1) {
                 saveAvatarStates(currentBackdropIndex);
+                // Save grid and theatre data for current scene
+                saveSceneData(currentBackdropIndex);
             }
             
             // Hide all backdrops
@@ -6118,6 +6705,13 @@
                 
                 // Restore avatar states for this backdrop
                 restoreAvatarStates(index);
+                
+                // Restore grid and theatre data for new scene
+                restoreSceneData(index);
+                
+                // Render theatre mode elements
+                renderTheatreDrawings();
+                renderTheatreTextObjects();
                 
                 // Update grid state for new scene
                 const gridCanvas = document.getElementById('gridCanvas');
@@ -6228,8 +6822,29 @@
                 duplicateScene(sceneIndex);
             };
 
+            const deleteOption = document.createElement('div');
+            deleteOption.style.cssText = `
+                padding: 8px 12px;
+                cursor: pointer;
+                color: #ef4444;
+                font-family: Arial, sans-serif;
+                font-size: 13px;
+                border-radius: 4px;
+                transition: background-color 0.2s;
+                margin-top: 4px;
+                border-top: 1px solid #444;
+            `;
+            deleteOption.textContent = '🗑️ Delete Scene';
+            deleteOption.onmouseenter = () => deleteOption.style.backgroundColor = '#2a2a2a';
+            deleteOption.onmouseleave = () => deleteOption.style.backgroundColor = 'transparent';
+            deleteOption.onclick = () => {
+                menu.remove();
+                deleteScene(sceneIndex);
+            };
+
             menu.appendChild(renameOption);
             menu.appendChild(duplicateOption);
+            menu.appendChild(deleteOption);
             document.body.appendChild(menu);
 
             // Close menu when clicking elsewhere
@@ -6243,12 +6858,12 @@
             }, 0);
         }
 
-        function renameScene(sceneIndex) {
+        async function renameScene(sceneIndex) {
             const backdrop = backdrops[sceneIndex];
             if (!backdrop) return;
 
             const currentName = backdrop.name || `Scene ${sceneIndex + 1}`;
-            const newName = prompt('Enter new scene name:', currentName);
+            const newName = await showCustomPrompt('Rename Scene', 'Enter new scene name:', currentName);
 
             if (newName && newName.trim() !== '') {
                 backdrop.name = newName.trim();
@@ -6272,6 +6887,7 @@
             // Save current avatar states if this is the visible backdrop
             if (sourceBackdrop.visible) {
                 saveAvatarStates(sceneIndex);
+                saveSceneData(sceneIndex);
             }
 
             // Create a new backdrop with the same image and properties
@@ -6319,11 +6935,71 @@
                     rounded: state.rounded
                 }));
             }
+            
+            // Copy grid data (deep clone)
+            if (sourceBackdrop.gridData) {
+                newBackdropData.gridData = {
+                    tokens: JSON.parse(JSON.stringify(sourceBackdrop.gridData.tokens || [])),
+                    gridImages: JSON.parse(JSON.stringify(sourceBackdrop.gridData.gridImages || [])),
+                    drawings: JSON.parse(JSON.stringify(sourceBackdrop.gridData.drawings || [])),
+                    textObjects: JSON.parse(JSON.stringify(sourceBackdrop.gridData.textObjects || [])),
+                    fogAreas: JSON.parse(JSON.stringify(sourceBackdrop.gridData.fogAreas || []))
+                };
+            }
+            
+            // Copy theatre data (deep clone)
+            if (sourceBackdrop.theatreData) {
+                newBackdropData.theatreData = {
+                    drawings: JSON.parse(JSON.stringify(sourceBackdrop.theatreData.drawings || [])),
+                    textObjects: JSON.parse(JSON.stringify(sourceBackdrop.theatreData.textObjects || []))
+                };
+            }
 
             saveToLocalStorage();
             
             // Show a brief notification
             console.log(`Duplicated "${sourceBackdrop.name}" as "${newBackdropData.name}"`);
+        }
+
+        async function deleteScene(sceneIndex) {
+            const backdrop = backdrops[sceneIndex];
+            if (!backdrop) return;
+
+            // Prevent deleting the last remaining scene
+            if (backdrops.length === 1) {
+                alert('Cannot delete the last remaining scene.');
+                return;
+            }
+
+            const sceneName = backdrop.name || `Scene ${sceneIndex + 1}`;
+            const shouldDelete = await showCustomConfirm('Delete Scene', `Are you sure you want to delete "${sceneName}"?`, 'Delete');
+            
+            if (!shouldDelete) return;
+
+            // If this is the visible scene, switch to another one first
+            if (backdrop.visible) {
+                // Find the next available scene (prefer next, fallback to previous)
+                const nextIndex = sceneIndex + 1 < backdrops.length ? sceneIndex + 1 : sceneIndex - 1;
+                if (nextIndex >= 0 && nextIndex < backdrops.length) {
+                    switchToBackdrop(nextIndex);
+                }
+            }
+
+            // Remove the backdrop
+            backdrops.splice(sceneIndex, 1);
+            
+            // Update scene banner and save
+            updateSceneBanner();
+            saveToLocalStorage();
+            
+            // Broadcast scene deletion to players
+            if (isHost && isConnected) {
+                broadcastState('SCENE_DELETE', {
+                    index: sceneIndex
+                });
+            }
+
+            console.log(`Deleted scene: ${sceneName}`);
         }
 
         // Close backdrop library menu when clicking elsewhere
@@ -6596,17 +7272,254 @@
         }
 
         // Music Panel Toggle
-        function toggleMusicPanel() {
-            musicPanelVisible = !musicPanelVisible;
+        // Music Panel Functions
+        function showMusicPanel() {
             const panel = document.getElementById('musicPanel');
-            if (!panel) return;
+            const button = document.getElementById('musicButton');
+            if (!panel || !button) return;
             
-            if (musicPanelVisible) {
-                panel.style.display = 'flex';
-                updateMusicPanel();
-            } else {
-                panel.style.display = 'none';
+            clearMusicPanelTimeout();
+            
+            const buttonRect = button.getBoundingClientRect();
+            panel.style.left = buttonRect.left + 'px';
+            panel.style.top = (buttonRect.bottom + 10) + 'px';
+            panel.style.display = 'flex';
+            
+            updateMusicPanel();
+            musicPanelVisible = true;
+        }
+
+        function hideMusicPanel() {
+            musicPanelTimeout = setTimeout(() => {
+                const panel = document.getElementById('musicPanel');
+                if (panel) panel.style.display = 'none';
+                musicPanelVisible = false;
+            }, 300);
+        }
+
+        function keepMusicPanelOpen() {
+            clearMusicPanelTimeout();
+        }
+
+        function clearMusicPanelTimeout() {
+            if (musicPanelTimeout) {
+                clearTimeout(musicPanelTimeout);
+                musicPanelTimeout = null;
             }
+        }
+
+        // Sound Effects Panel Functions
+        function showSoundEffectsPanel() {
+            const panel = document.getElementById('soundEffectsPanel');
+            const button = document.getElementById('soundEffectsButton');
+            if (!panel || !button) return;
+            
+            clearSoundEffectsPanelTimeout();
+            
+            const buttonRect = button.getBoundingClientRect();
+            panel.style.left = buttonRect.left + 'px';
+            panel.style.top = (buttonRect.bottom + 10) + 'px';
+            panel.style.display = 'block';
+            
+            updateSoundEffectsPanel();
+            soundEffectsPanelVisible = true;
+        }
+
+        function hideSoundEffectsPanel() {
+            soundEffectsPanelTimeout = setTimeout(() => {
+                const panel = document.getElementById('soundEffectsPanel');
+                if (panel) panel.style.display = 'none';
+                soundEffectsPanelVisible = false;
+            }, 300);
+        }
+
+        function keepSoundEffectsPanelOpen() {
+            clearSoundEffectsPanelTimeout();
+        }
+
+        function clearSoundEffectsPanelTimeout() {
+            if (soundEffectsPanelTimeout) {
+                clearTimeout(soundEffectsPanelTimeout);
+                soundEffectsPanelTimeout = null;
+            }
+        }
+
+        async function addSoundEffect() {
+            // Only host or offline can add sounds
+            if (isConnected && !isHost) {
+                alert('Only the host can add sound effects.');
+                return;
+            }
+
+            if (soundEffects.length >= 10) {
+                alert('Maximum 10 sound effects reached.');
+                return;
+            }
+
+            const url = await showCustomPrompt('Add Sound Effect', 'Enter sound file URL (Dropbox, Google Drive, etc.):');
+            if (!url) return;
+
+            const name = await showCustomPrompt('Name Sound Effect', 'Enter a name for this sound:', 'Sound ' + (soundEffects.length + 1));
+            if (!name) return;
+
+            const convertedUrl = convertDropboxURL(url);
+
+            const newSound = {
+                id: Date.now(),
+                url: convertedUrl,
+                name: name
+            };
+
+            soundEffects.push(newSound);
+            updateSoundEffectsPanel();
+            saveToLocalStorage();
+
+            // Broadcast to players
+            if (isHost && isConnected) {
+                broadcastState('SOUND_EFFECTS_SYNC', soundEffects);
+            }
+        }
+
+        function playSoundEffect(soundId) {
+            const sound = soundEffects.find(s => s.id === soundId);
+            if (!sound) return;
+
+            // Create or reuse audio element for this sound
+            if (!soundEffectAudioElements[soundId]) {
+                const audio = new Audio(sound.url);
+                audio.volume = musicVolume; // Tied to music volume
+                soundEffectAudioElements[soundId] = audio;
+            }
+
+            const audio = soundEffectAudioElements[soundId];
+            audio.volume = musicVolume;
+            audio.currentTime = 0; // Reset to start
+            audio.play().catch(err => {
+                console.error('Failed to play sound effect:', err);
+            });
+
+            // Broadcast sound play to all players
+            if (isHost && isConnected) {
+                broadcastState('PLAY_SOUND_EFFECT', { soundId: soundId });
+            }
+        }
+
+        function deleteSoundEffect(soundId) {
+            const index = soundEffects.findIndex(s => s.id === soundId);
+            if (index !== -1) {
+                // Clean up audio element
+                if (soundEffectAudioElements[soundId]) {
+                    soundEffectAudioElements[soundId].pause();
+                    delete soundEffectAudioElements[soundId];
+                }
+
+                soundEffects.splice(index, 1);
+                updateSoundEffectsPanel();
+                saveToLocalStorage();
+
+                // Broadcast to players
+                if (isHost && isConnected) {
+                    broadcastState('SOUND_EFFECTS_SYNC', soundEffects);
+                }
+            }
+        }
+
+        function updateSoundEffectsPanel() {
+            const addBtn = document.getElementById('addSoundBtn');
+            const soundList = document.getElementById('soundEffectsList');
+            
+            if (!addBtn || !soundList) return;
+
+            // Update button text and visibility
+            addBtn.textContent = `+ Add Sound (${soundEffects.length}/10)`;
+            addBtn.style.display = (isConnected && !isHost) ? 'none' : 'block';
+            if (soundEffects.length >= 10) {
+                addBtn.disabled = true;
+                addBtn.style.opacity = '0.5';
+                addBtn.style.cursor = 'not-allowed';
+            } else {
+                addBtn.disabled = false;
+                addBtn.style.opacity = '1';
+                addBtn.style.cursor = 'pointer';
+            }
+
+            // Clear and render sound effects
+            soundList.innerHTML = '';
+
+            if (soundEffects.length === 0) {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.style.cssText = `
+                    grid-column: 1 / -1;
+                    color: #888;
+                    font-size: 12px;
+                    font-family: Arial, sans-serif;
+                    padding: 20px;
+                    text-align: center;
+                `;
+                emptyMsg.textContent = 'No sounds added yet';
+                soundList.appendChild(emptyMsg);
+            } else {
+                soundEffects.forEach(sound => {
+                    const soundBtn = document.createElement('button');
+                    soundBtn.style.cssText = `
+                        padding: 12px 8px;
+                        background-color: #2a2a2a;
+                        border: 1px solid #444;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        color: #e0e0e0;
+                        font-size: 11px;
+                        font-weight: bold;
+                        font-family: Arial, sans-serif;
+                        text-align: center;
+                        word-wrap: break-word;
+                        min-height: 50px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    `;
+                    soundBtn.textContent = sound.name;
+                    soundBtn.title = sound.name;
+
+                    soundBtn.onmouseenter = () => {
+                        soundBtn.style.backgroundColor = '#3a3a3a';
+                        soundBtn.style.borderColor = 'var(--accent-color)';
+                    };
+                    soundBtn.onmouseleave = () => {
+                        soundBtn.style.backgroundColor = '#2a2a2a';
+                        soundBtn.style.borderColor = '#444';
+                    };
+
+                    soundBtn.onclick = () => playSoundEffect(sound.id);
+
+                    // Right-click to delete (host only)
+                    soundBtn.oncontextmenu = (e) => {
+                        if (isHost || !isConnected) {
+                            e.preventDefault();
+                            if (confirm(`Delete sound effect "${sound.name}"?`)) {
+                                deleteSoundEffect(sound.id);
+                            }
+                        }
+                    };
+
+                    soundList.appendChild(soundBtn);
+                });
+            }
+        }
+
+        async function handleSoundEffectUpload(event) {
+            const file = event.target.files[0];
+            if (!file || !file.type.startsWith('audio/')) {
+                alert('Please select a valid audio file.');
+                return;
+            }
+
+            // For now, we'll require users to host their audio files externally
+            // This keeps the VTT lightweight and avoids embedding large audio files
+            alert('Please upload your sound file to a hosting service (Dropbox, Google Drive, etc.) and use the URL instead.');
+            
+            event.target.value = '';
         }
 
         // Weather Effects Functions
@@ -6722,7 +7635,7 @@
                         rotation: Math.random() * Math.PI * 2,
                         speedX: 0.1 + Math.random() * 0.3,
                         speedY: 0.05 + Math.random() * 0.15,
-                        opacity: 0.05 + Math.random() * 0.1
+                        opacity: 0.0625 + Math.random() * 0.125 // Increased by 25% from 0.05-0.15 to 0.0625-0.1875
                     });
                 } else if (effect === 'sand') {
                     particles.push({
@@ -7158,8 +8071,10 @@
             
             menu.innerHTML = '';
             menu.style.display = 'block';
-            menu.style.left = x + 'px';
-            menu.style.top = y + 'px';
+            
+            // Temporarily position to measure size
+            menu.style.left = '0px';
+            menu.style.top = '0px';
             
             // Header
             const header = document.createElement('div');
@@ -7280,6 +8195,35 @@
                 }
             };
             menu.appendChild(altImageBtn);
+            
+            // Position menu after all content is added (to get accurate dimensions)
+            // Ensure menu stays on screen
+            const menuRect = menu.getBoundingClientRect();
+            const menuWidth = menuRect.width;
+            const menuHeight = menuRect.height;
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            
+            // Calculate position
+            let finalX = x;
+            let finalY = y;
+            
+            // Adjust X if menu would go off right edge
+            if (finalX + menuWidth > windowWidth) {
+                finalX = windowWidth - menuWidth - 10;
+            }
+            
+            // Adjust Y if menu would go off bottom edge
+            if (finalY + menuHeight > windowHeight) {
+                finalY = windowHeight - menuHeight - 10;
+            }
+            
+            // Ensure menu doesn't go off left or top edges
+            if (finalX < 10) finalX = 10;
+            if (finalY < 10) finalY = 10;
+            
+            menu.style.left = finalX + 'px';
+            menu.style.top = finalY + 'px';
         }
         
         // ========================================
@@ -7392,6 +8336,21 @@
                 showAssignHotkeyPromptLocal(avatarId);
             };
             contextMenuElement.appendChild(assignHotkeyBtn);
+            
+            // Add Clear Hotkey button (only show if hotkey is assigned)
+            if (currentHotkey) {
+                const clearHotkeyBtn = document.createElement('button');
+                clearHotkeyBtn.textContent = '🗑️ Clear Hotkey';
+                clearHotkeyBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: #ef4444; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif; margin-bottom: 8px;';
+                clearHotkeyBtn.onmouseenter = () => { clearHotkeyBtn.style.backgroundColor = '#3a3a3a'; };
+                clearHotkeyBtn.onmouseleave = () => { clearHotkeyBtn.style.backgroundColor = '#2a2a2a'; };
+                clearHotkeyBtn.onclick = () => {
+                    delete localAvatarHotkeys[avatarId];
+                    saveToLocalStorage();
+                    contextMenuElement.style.display = 'none';
+                };
+                contextMenuElement.appendChild(clearHotkeyBtn);
+            }
         }
         
         /**
@@ -8371,7 +9330,20 @@
                     panX: 0,
                     panY: 0
                 },
-                avatarStates: [] // Store avatar positions/sizes for this backdrop
+                avatarStates: [], // Store avatar positions/sizes for this backdrop
+                // Per-scene grid data
+                gridData: {
+                    tokens: [],
+                    gridImages: [],
+                    drawings: [],
+                    textObjects: [],
+                    fogAreas: []
+                },
+                // Per-scene theatre data
+                theatreData: {
+                    drawings: [],
+                    textObjects: []
+                }
             };
             backdrops.push(backdropData);
             
@@ -8996,6 +9968,12 @@
                     gridImages.push(newImage);
                     renderGridImages();
                     saveToLocalStorage();
+                    
+                    // Force a re-render after a short delay to ensure controls are drawn
+                    // This fixes the issue where controls don't show on first image upload
+                    setTimeout(() => {
+                        renderGridImages();
+                    }, 100);
                 };
                 img.src = dataUrl;
                 
@@ -9084,8 +10062,9 @@
         }
 
         function drawImageControls(ctx, image, x, y, width, height, gridTransform) {
-            // Only show controls if user is host
-            if (!isHost) return;
+            // Only show controls if user is offline OR is the host
+            // Hide controls for connected non-host players
+            if (isConnected && !isHost) return;
             
             const buttonSize = 24;
             const padding = 4;
@@ -9288,9 +10267,9 @@
                 return;
             }
             
-            // Check if clicking on an image to drag (requires Shift key, host or offline)
+            // Check if clicking on an image to drag (no shift key needed for images)
             const imageId = getGridImageAtPosition(e.clientX, e.clientY);
-            if (imageId && e.shiftKey && (isHost || !isConnected)) { // Host or offline can drag with Shift key
+            if (imageId && (isHost || !isConnected)) { // Host or offline can drag
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -11057,8 +12036,11 @@
             // Get active backdrop
             const activeBackdrop = getActiveBackdrop();
             
-            // Show/hide tracker based on whether there are tokens in initiative AND grid is enabled
-            if (initiativeOrder.length === 0 || !activeBackdrop || !activeBackdrop.grid.enabled) {
+            // Filter out any tokens that don't exist on the current scene
+            const validTokenIds = initiativeOrder.filter(tokenId => tokens.find(t => t.id === tokenId));
+            
+            // Show/hide tracker based on whether there are VALID tokens in initiative AND grid is enabled
+            if (validTokenIds.length === 0 || !activeBackdrop || !activeBackdrop.grid.enabled) {
                 tracker.style.display = 'none';
                 return;
             }
@@ -11066,8 +12048,8 @@
             tracker.style.display = 'flex';
             tokensContainer.innerHTML = '';
             
-            // Render each token in initiative order
-            initiativeOrder.forEach((tokenId, index) => {
+            // Render each token in initiative order (only valid ones)
+            validTokenIds.forEach((tokenId, index) => {
                 const token = tokens.find(t => t.id === tokenId);
                 if (!token) return;
                 
@@ -11287,7 +12269,7 @@
                 removeTokenFromInitiative(tokenId);
             } else {
                 // Prompt for initiative roll
-                const initiativeRoll = prompt(`Enter initiative roll for ${tokenName}:`, '10');
+                const initiativeRoll = await showCustomPrompt('Add to Initiative', `Enter initiative roll for ${tokenName}:`, '10');
                 if (initiativeRoll === null) return; // User cancelled
                 
                 const initValue = parseInt(initiativeRoll) || 0;
@@ -11319,14 +12301,42 @@
         }
         
         // Initiative Hover Line Functions
+        // Initiative line animation
+        let initiativeLineAnimationId = null;
+        let initiativeLineOffset = 0;
+        let currentInitiativeTokenId = null;
+        let currentInitiativeTrackerElement = null;
+
         function drawInitiativeHoverLine(tokenId, trackerElement) {
+            // Store current token and element for animation
+            currentInitiativeTokenId = tokenId;
+            currentInitiativeTrackerElement = trackerElement;
+            
+            // Start animation if not already running
+            if (!initiativeLineAnimationId) {
+                animateInitiativeLine();
+            }
+        }
+        
+        function animateInitiativeLine() {
+            if (!currentInitiativeTokenId || !currentInitiativeTrackerElement) {
+                initiativeLineAnimationId = null;
+                return;
+            }
+            
             // Find the token on the grid
-            const token = tokens.find(t => t.id === tokenId);
-            if (!token) return;
+            const token = tokens.find(t => t.id === currentInitiativeTokenId);
+            if (!token) {
+                initiativeLineAnimationId = null;
+                return;
+            }
             
             // Get canvas and context
             const canvas = document.getElementById('initiativeHoverCanvas');
-            if (!canvas) return;
+            if (!canvas) {
+                initiativeLineAnimationId = null;
+                return;
+            }
             
             // Set canvas dimensions to match viewport (only if they differ)
             if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
@@ -11338,17 +12348,23 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             // Get tracker element position (center of token in initiative tracker)
-            const trackerRect = trackerElement.getBoundingClientRect();
+            const trackerRect = currentInitiativeTrackerElement.getBoundingClientRect();
             const trackerX = trackerRect.left + trackerRect.width / 2;
             const trackerY = trackerRect.bottom;
             
             // Get token position on grid (center of token on token canvas)
             const activeBackdrop = getActiveBackdrop();
-            if (!activeBackdrop || !activeBackdrop.grid.enabled) return;
+            if (!activeBackdrop || !activeBackdrop.grid.enabled) {
+                initiativeLineAnimationId = null;
+                return;
+            }
             
             // Calculate token position in world coordinates
             const tokenCanvas = document.getElementById('tokenCanvas');
-            if (!tokenCanvas) return;
+            if (!tokenCanvas) {
+                initiativeLineAnimationId = null;
+                return;
+            }
             
             // Transform token grid coordinates to screen coordinates
             const transform = activeBackdrop.gridTransform;
@@ -11378,13 +12394,22 @@
             const distance = Math.sqrt(dx * dx + dy * dy);
             const angle = Math.atan2(dy, dx);
             
-            // Draw alternating black and white dashes
+            // Animate the dash offset (slow flowing effect)
+            initiativeLineOffset += 0.5; // Pixels to move per frame
+            if (initiativeLineOffset >= 20) { // Reset after full pattern cycle (2 dashes)
+                initiativeLineOffset = 0;
+            }
+            
+            // Draw alternating black and white dashes with animated offset
             const dashLength = 10;
-            const numDashes = Math.floor(distance / dashLength);
+            const numDashes = Math.floor(distance / dashLength) + 2; // Extra dashes for smooth animation
             
             for (let i = 0; i < numDashes; i++) {
-                const startDist = i * dashLength;
-                const endDist = Math.min((i + 0.5) * dashLength, distance);
+                const startDist = i * dashLength - initiativeLineOffset;
+                const endDist = Math.min((i + 0.5) * dashLength - initiativeLineOffset, distance);
+                
+                // Skip dashes that are completely off-screen
+                if (endDist < 0 || startDist > distance) continue;
                 
                 if (i % 2 === 0) {
                     // White dash (semi-transparent)
@@ -11396,23 +12421,106 @@
                 
                 ctx.beginPath();
                 ctx.moveTo(
-                    trackerX + Math.cos(angle) * startDist,
-                    trackerY + Math.sin(angle) * startDist
+                    trackerX + Math.cos(angle) * Math.max(0, startDist),
+                    trackerY + Math.sin(angle) * Math.max(0, startDist)
                 );
                 ctx.lineTo(
-                    trackerX + Math.cos(angle) * endDist,
-                    trackerY + Math.sin(angle) * endDist
+                    trackerX + Math.cos(angle) * Math.min(endDist, distance),
+                    trackerY + Math.sin(angle) * Math.min(endDist, distance)
                 );
                 ctx.stroke();
             }
+            
+            // Continue animation
+            initiativeLineAnimationId = requestAnimationFrame(animateInitiativeLine);
         }
         
         function clearInitiativeHoverLine() {
+            // Stop animation
+            if (initiativeLineAnimationId) {
+                cancelAnimationFrame(initiativeLineAnimationId);
+                initiativeLineAnimationId = null;
+            }
+            
+            // Clear tracking variables
+            currentInitiativeTokenId = null;
+            currentInitiativeTrackerElement = null;
+            initiativeLineOffset = 0;
+            
             const canvas = document.getElementById('initiativeHoverCanvas');
             if (!canvas) return;
             
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Custom Dialog Functions
+        function showCustomPrompt(title, message, defaultValue = '') {
+            return new Promise((resolve) => {
+                const dialog = document.getElementById('customPromptDialog');
+                const titleEl = document.getElementById('customPromptTitle');
+                const messageEl = document.getElementById('customPromptMessage');
+                const input = document.getElementById('customPromptInput');
+                const confirmBtn = document.getElementById('customPromptConfirm');
+                const cancelBtn = document.getElementById('customPromptCancel');
+                
+                titleEl.textContent = title;
+                messageEl.textContent = message;
+                input.value = defaultValue;
+                dialog.style.display = 'flex';
+                
+                // Focus and select input
+                setTimeout(() => {
+                    input.focus();
+                    input.select();
+                }, 100);
+                
+                const cleanup = (value) => {
+                    dialog.style.display = 'none';
+                    confirmBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    input.onkeydown = null;
+                    resolve(value);
+                };
+                
+                confirmBtn.onclick = () => cleanup(input.value);
+                cancelBtn.onclick = () => cleanup(null);
+                
+                input.onkeydown = (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        cleanup(input.value);
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cleanup(null);
+                    }
+                };
+            });
+        }
+        
+        function showCustomConfirm(title, message, confirmText = 'Delete') {
+            return new Promise((resolve) => {
+                const dialog = document.getElementById('customConfirmDialog');
+                const titleEl = document.getElementById('customConfirmTitle');
+                const messageEl = document.getElementById('customConfirmMessage');
+                const confirmBtn = document.getElementById('customConfirmOK');
+                const cancelBtn = document.getElementById('customConfirmCancel');
+                
+                titleEl.textContent = title;
+                messageEl.textContent = message;
+                confirmBtn.textContent = confirmText;
+                dialog.style.display = 'flex';
+                
+                const cleanup = (value) => {
+                    dialog.style.display = 'none';
+                    confirmBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    resolve(value);
+                };
+                
+                confirmBtn.onclick = () => cleanup(true);
+                cancelBtn.onclick = () => cleanup(false);
+            });
         }
 
         // Handouts Functions
@@ -11706,6 +12814,7 @@
                     zIndex: a.element.style.zIndex,
                     name: a.name || 'Character',
                     flipped: a.flipped || false,
+                    rounded: a.rounded || false
                 })),
                 weatherEffect: currentWeatherEffect,
                 diceRollLog: diceRollLog,
@@ -11945,15 +13054,19 @@
                     }
                     updateGridButton();
                 }
+                
+                // Update scene banner to show loaded scene name
+                updateSceneBanner();
             }
         }
 
         // JSON Save/Load
         function saveToJSON() {
-            // Save avatar states for the currently visible backdrop
+            // Save avatar states AND scene data for the currently visible backdrop
             const currentBackdropIndex = backdrops.findIndex(b => b.visible);
             if (currentBackdropIndex !== -1) {
                 saveAvatarStates(currentBackdropIndex);
+                saveSceneData(currentBackdropIndex);
             }
             
             const state = {
@@ -11969,7 +13082,9 @@
                     name: b.name || `Scene ${backdrops.indexOf(b) + 1}`,
                     grid: b.grid || { enabled: false, size: GRID_CELL_SIZE, color: 'white', bgOpacity: 0.75 },
                     gridTransform: b.gridTransform || { zoom: 1.5, panX: 0, panY: 0 },
-                    avatarStates: b.avatarStates || []
+                    avatarStates: b.avatarStates || [],
+                    gridData: b.gridData || { tokens: [], gridImages: [], drawings: [], textObjects: [], fogAreas: [] },
+                    theatreData: b.theatreData || { drawings: [], textObjects: [] }
                 })),
                 avatars: avatars.map(a => ({
                     imageSrc: a.imageSrc,
@@ -11982,23 +13097,19 @@
                     zIndex: a.element.style.zIndex,
                     name: a.name || 'Character',
                     flipped: a.flipped || false,
+                    rounded: a.rounded || false
                 })),
                 weatherEffect: currentWeatherEffect,
                 diceRollLog: diceRollLog,
                 diceModifiers: diceModifiers,
                 characterSheets: characterSheets,
                 spotlightedAvatarId: spotlightedAvatarId,
-                tokens: tokens,
-                gridImages: gridImages,
-                drawings: drawings,
-                textObjects: textObjects,
-                theatreDrawings: theatreDrawings,
-                theatreTextObjects: theatreTextObjects,
-                fogAreas: fogAreas,
                 initiativeOrder: initiativeOrder,
                 initiativeValues: initiativeValues,
                 currentTurnIndex: currentTurnIndex,
-                localAvatarHotkeys: localAvatarHotkeys
+                localAvatarHotkeys: localAvatarHotkeys,
+                musicTracks: musicTracks,
+                soundEffects: soundEffects
             };
             
             const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -12021,6 +13132,13 @@
                 reader.onload = async function(e) {
                     try {
                         const state = JSON.parse(e.target.result);
+                        
+                        // Save current scene data before clearing
+                        const currentBackdropIndex = backdrops.findIndex(b => b.visible);
+                        if (currentBackdropIndex !== -1) {
+                            saveAvatarStates(currentBackdropIndex);
+                            saveSceneData(currentBackdropIndex);
+                        }
                         
                         // Clear existing
                         backdrops.forEach(b => b.element.remove());
@@ -12051,6 +13169,14 @@
                                 // Restore avatar states
                                 if (b.avatarStates) {
                                     backdropData.avatarStates = b.avatarStates;
+                                }
+                                // Restore per-scene grid data
+                                if (b.gridData) {
+                                    backdropData.gridData = b.gridData;
+                                }
+                                // Restore per-scene theatre data
+                                if (b.theatreData) {
+                                    backdropData.theatreData = b.theatreData;
                                 }
                             }
                         });
@@ -12199,6 +13325,24 @@
                             localAvatarHotkeys = state.localAvatarHotkeys;
                         }
                         
+                        // Restore music tracks
+                        if (state.musicTracks) {
+                            musicTracks = state.musicTracks;
+                            updateMusicPanel();
+                        }
+                        
+                        // Restore sound effects
+                        if (state.soundEffects) {
+                            soundEffects = state.soundEffects;
+                            updateSoundEffectsPanel();
+                        }
+                        
+                        // Restore per-scene data for the visible scene
+                        const visibleSceneIndex = backdrops.findIndex(b => b.visible);
+                        if (visibleSceneIndex !== -1) {
+                            restoreSceneData(visibleSceneIndex);
+                        }
+                        
                         // Restore grid for active scene
                         const activeBackdrop = getActiveBackdrop();
                         if (activeBackdrop && activeBackdrop.grid) {
@@ -12228,6 +13372,9 @@
                         renderTheatreDrawings();
                         renderTheatreTextObjects();
                         
+                        // Update scene banner to show loaded scene name
+                        updateSceneBanner();
+                        
                         saveToLocalStorage();
                     } catch (error) {
                         await customAlert('Error loading JSON file: ' + error.message);
@@ -12240,12 +13387,25 @@
         
         // ===== MUSIC PLAYER FUNCTIONS =====
         
+        // Helper function to convert Dropbox URLs
+        function convertDropboxURL(url) {
+            // Convert Dropbox links from dl=0 to dl=1 for direct playback
+            if (url.includes('dropbox.com') && url.includes('dl=0')) {
+                return url.replace('dl=0', 'dl=1');
+            }
+            // Also handle www.dropbox.com links
+            if (url.includes('www.dropbox.com/s/')) {
+                return url.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '');
+            }
+            return url;
+        }
+        
         // Add a music track
-        function addMusicTrack() {
-            const url = prompt('Enter music track URL (Dropbox, Google Drive, or direct link):');
+        async function addMusicTrack() {
+            const url = await showCustomPrompt('Add Music Track', 'Enter music track URL (Dropbox, Google Drive, or direct link):', '');
             if (!url || url.trim() === '') return;
             
-            const name = prompt('Enter track name:', 'Track ' + (musicTracks.length + 1));
+            const name = await showCustomPrompt('Track Name', 'Enter track name:', 'Track ' + (musicTracks.length + 1));
             if (!name || name.trim() === '') return;
             
             if (musicTracks.length >= 10) {
@@ -12253,10 +13413,13 @@
                 return;
             }
             
+            // Automatically convert Dropbox URLs to direct download links
+            const convertedURL = convertDropboxURL(url.trim());
+            
             const newTrack = {
                 id: Date.now(),
                 name: name.trim(),
-                url: url.trim()
+                url: convertedURL
             };
             
             musicTracks.push(newTrack);
@@ -12284,11 +13447,11 @@
         }
         
         // Rename a music track
-        function renameMusicTrack(trackId) {
+        async function renameMusicTrack(trackId) {
             const track = musicTracks.find(t => t.id === trackId);
             if (!track) return;
             
-            const newName = prompt('Enter new track name:', track.name);
+            const newName = await showCustomPrompt('Rename Track', 'Enter new track name:', track.name);
             if (!newName || newName.trim() === '') return;
             
             track.name = newName.trim();
@@ -12379,6 +13542,17 @@
             musicVolume = newVolume;
             if (audioElement) {
                 audioElement.volume = newVolume;
+            }
+            
+            // Update all sound effect audio elements
+            Object.values(soundEffectAudioElements).forEach(audio => {
+                audio.volume = newVolume;
+            });
+            
+            // Update the volume percentage display in real-time
+            const volumeValue = document.getElementById('musicVolumeValue');
+            if (volumeValue) {
+                volumeValue.textContent = Math.round(newVolume * 100) + '%';
             }
             
             // Save to localStorage
@@ -13920,6 +15094,15 @@
                     }, 150);
                 });
                 
+                // Handle Enter key to place text, Shift+Enter for new line
+                theatreTextInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        finishEditingTheatreText();
+                    }
+                    // Shift+Enter will naturally create a new line in the textarea
+                });
+                
                 theatreTextInput.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
                 });
@@ -13985,6 +15168,15 @@
                             finishEditingText();
                         }
                     }, 150);
+                });
+                
+                // Handle Enter key to place text, Shift+Enter for new line
+                textInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        finishEditingText();
+                    }
+                    // Shift+Enter will naturally create a new line in the textarea
                 });
                 
                 // Prevent blur when clicking inside the textarea
@@ -14054,6 +15246,40 @@
                     } else {
                         showTheatreTextMenu();
                     }
+                });
+            }
+            
+            // Setup music button hover behavior
+            const musicBtn = document.getElementById('musicButton');
+            if (musicBtn) {
+                musicBtn.addEventListener('mouseenter', () => {
+                    musicBtn.style.backgroundColor = '#3a3a3a';
+                    musicBtn.style.transform = 'translateY(-2px)';
+                    musicBtn.style.boxShadow = '0 4px 8px rgba(212, 165, 116, 0.4)';
+                    showMusicPanel();
+                });
+                musicBtn.addEventListener('mouseleave', () => {
+                    musicBtn.style.backgroundColor = '';
+                    musicBtn.style.transform = 'translateY(0)';
+                    musicBtn.style.boxShadow = '';
+                    hideMusicPanel();
+                });
+            }
+            
+            // Setup sound effects button hover behavior
+            const soundEffectsBtn = document.getElementById('soundEffectsButton');
+            if (soundEffectsBtn) {
+                soundEffectsBtn.addEventListener('mouseenter', () => {
+                    soundEffectsBtn.style.backgroundColor = '#3a3a3a';
+                    soundEffectsBtn.style.transform = 'translateY(-2px)';
+                    soundEffectsBtn.style.boxShadow = '0 4px 8px rgba(212, 165, 116, 0.4)';
+                    showSoundEffectsPanel();
+                });
+                soundEffectsBtn.addEventListener('mouseleave', () => {
+                    soundEffectsBtn.style.backgroundColor = '';
+                    soundEffectsBtn.style.transform = 'translateY(0)';
+                    soundEffectsBtn.style.boxShadow = '';
+                    hideSoundEffectsPanel();
                 });
             }
             
@@ -14304,6 +15530,30 @@
             }
         });
         
+        // Close music and sound effects panels when clicking outside
+        document.addEventListener('click', (e) => {
+            const musicPanel = document.getElementById('musicPanel');
+            const musicButton = document.getElementById('musicButton');
+            const soundPanel = document.getElementById('soundEffectsPanel');
+            const soundButton = document.getElementById('soundEffectsButton');
+            
+            // Close music panel if clicking outside of it and not on the button
+            if (musicPanel && musicPanelVisible && 
+                !musicPanel.contains(e.target) && 
+                !musicButton.contains(e.target)) {
+                musicPanelVisible = false;
+                musicPanel.style.display = 'none';
+            }
+            
+            // Close sound effects panel if clicking outside of it and not on the button
+            if (soundPanel && soundEffectsPanelVisible && 
+                !soundPanel.contains(e.target) && 
+                !soundButton.contains(e.target)) {
+                soundEffectsPanelVisible = false;
+                soundPanel.style.display = 'none';
+            }
+        });
+        
         // Cleanup audio when page unloads
         window.addEventListener('beforeunload', () => {
             if (audioElement) {
@@ -14312,6 +15562,46 @@
             }
         });
     </script>
+    <!-- Custom Popup Dialogs -->
+    <div id="customPromptDialog" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.8); z-index: 10000; align-items: center; justify-content: center;">
+        <div style="background-color: #1a1a1a; border: 3px solid var(--accent-color); border-radius: 12px; padding: 24px; min-width: 400px; max-width: 500px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9);">
+            <div id="customPromptTitle" style="color: var(--accent-color); font-size: 18px; font-weight: bold; font-family: Georgia, serif; margin-bottom: 16px; text-align: center; border-bottom: 2px solid var(--accent-color); padding-bottom: 8px;">
+                Enter Value
+            </div>
+            <div id="customPromptMessage" style="color: #e0e0e0; font-size: 14px; font-family: Arial, sans-serif; margin-bottom: 16px; text-align: center;">
+                Please enter a value:
+            </div>
+            <input type="text" id="customPromptInput" style="width: 100%; padding: 12px; background-color: #2a2a2a; color: #e0e0e0; border: 2px solid #444; border-radius: 6px; font-size: 14px; font-family: Arial, sans-serif; margin-bottom: 20px; box-sizing: border-box;" />
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button id="customPromptCancel" style="padding: 10px 24px; background-color: #444; color: #e0e0e0; border: 2px solid #666; border-radius: 6px; cursor: pointer; font-size: 14px; font-family: Arial, sans-serif; font-weight: bold; transition: all 0.2s;">
+                    Cancel
+                </button>
+                <button id="customPromptConfirm" style="padding: 10px 24px; background-color: var(--accent-color); color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 6px; cursor: pointer; font-size: 14px; font-family: Arial, sans-serif; font-weight: bold; transition: all 0.2s;">
+                    OK
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="customConfirmDialog" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.8); z-index: 10000; align-items: center; justify-content: center;">
+        <div style="background-color: #1a1a1a; border: 3px solid var(--accent-color); border-radius: 12px; padding: 24px; min-width: 400px; max-width: 500px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9);">
+            <div id="customConfirmTitle" style="color: var(--accent-color); font-size: 18px; font-weight: bold; font-family: Georgia, serif; margin-bottom: 16px; text-align: center; border-bottom: 2px solid var(--accent-color); padding-bottom: 8px;">
+                Confirm Action
+            </div>
+            <div id="customConfirmMessage" style="color: #e0e0e0; font-size: 14px; font-family: Arial, sans-serif; margin-bottom: 20px; text-align: center;">
+                Are you sure?
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button id="customConfirmCancel" style="padding: 10px 24px; background-color: #444; color: #e0e0e0; border: 2px solid #666; border-radius: 6px; cursor: pointer; font-size: 14px; font-family: Arial, sans-serif; font-weight: bold; transition: all 0.2s;">
+                    Cancel
+                </button>
+                <button id="customConfirmOK" style="padding: 10px 24px; background-color: #dc3545; color: #fff; border: 2px solid #b02a37; border-radius: 6px; cursor: pointer; font-size: 14px; font-family: Arial, sans-serif; font-weight: bold; transition: all 0.2s;">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
 
