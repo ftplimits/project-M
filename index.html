@@ -4,7 +4,6 @@
 
 <html lang="en">
 <head>
-    <link rel="icon" type="image/png" href="favicon.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monomyth VTT - Theatre of the Mind</title>
@@ -1547,6 +1546,9 @@
     </div>
 
     <!-- Dice Container -->
+    <div id="rollItButton" onclick="rollSelectedDice()" style="display: none; position: fixed; left: 150px; bottom: 125px; z-index: 2001; background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #fff; padding: 12px 24px; border-radius: 8px; border: 2px solid #fbbf24; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.6); cursor: pointer; font-weight: bold; font-size: 16px; font-family: Arial, sans-serif; transition: all 0.2s; user-select: none; text-align: center;" onmouseenter="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 16px rgba(217, 119, 6, 0.8)';" onmouseleave="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(217, 119, 6, 0.6)';">
+        🎲 ROLL IT!
+    </div>
     <div id="diceContainer" class="dice-container hidden"></div>
 
     <!-- Roll Log -->
@@ -1697,6 +1699,7 @@
         let newPresetFormula = '';
         let spinningPreset = null;
         let diceNotificationTimeout = null;
+        let selectedDice = []; // Queue of selected dice to roll
 
         // Dice definitions with images
         const dice = [
@@ -8722,11 +8725,12 @@
                 const img = document.createElement('img');
                 img.src = die.image;
                 img.alt = die.type;
+                img.id = `die-${die.type}`;  // Add ID for selection tracking
                 img.style.width = '60px';
                 img.style.height = '60px';
                 img.style.objectFit = 'contain';
                 img.style.cursor = 'pointer';
-                img.style.transition = 'transform 0.1s';
+                img.style.transition = 'transform 0.1s, filter 0.2s';
                 img.style.filter = 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))';
                 img.draggable = false;
                 
@@ -8734,7 +8738,12 @@
                 img.oncontextmenu = (e) => handleDieRightClick(e, die);
                 img.onwheel = (e) => handleDieWheel(e, die.type);
                 img.onmouseenter = () => { if (spinningDie !== die.type) img.style.transform = 'scale(1.1)'; };
-                img.onmouseleave = () => { if (spinningDie !== die.type) img.style.transform = 'scale(1)'; };
+                img.onmouseleave = () => { 
+                    if (spinningDie !== die.type) {
+                        const isSelected = selectedDice.some(d => d.type === die.type);
+                        img.style.transform = isSelected ? 'scale(1.1)' : 'scale(1)';
+                    }
+                };
                 
                 // Modifier display
                 const modifierEl = document.createElement('div');
@@ -8765,6 +8774,8 @@
                 container.classList.add('hidden');
                 toggle.classList.remove('open');
                 toggle.innerHTML = '<div style="font-size: 16px; color: #d97706; font-weight: bold;">🎲</div>';
+                // Clear selection when closing
+                clearDiceSelection();
             }
         }
 
@@ -8787,7 +8798,82 @@
         }
 
         function handleDieClick(die) {
-            rollDiceWithCount(die, 1);
+            // Toggle selection instead of immediately rolling
+            toggleDieSelection(die);
+        }
+        
+        function toggleDieSelection(die) {
+            const index = selectedDice.findIndex(d => d.type === die.type);
+            const img = document.getElementById(`die-${die.type}`);
+            
+            if (index !== -1) {
+                // Already selected - remove it
+                selectedDice.splice(index, 1);
+                img.style.filter = 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))';
+                img.style.transform = 'scale(1)';
+            } else {
+                // Not selected - add it
+                selectedDice.push(die);
+                img.style.filter = 'drop-shadow(0 0 16px rgba(217, 119, 6, 1)) drop-shadow(0 0 8px rgba(255, 165, 0, 0.8)) drop-shadow(0 4px 8px rgba(0,0,0,0.6))';
+                img.style.transform = 'scale(1.1)';
+            }
+            
+            updateRollItButton();
+        }
+        
+        function updateRollItButton() {
+            const button = document.getElementById('rollItButton');
+            if (selectedDice.length > 0) {
+                button.style.display = 'block';
+                // Update button text to show dice count
+                const diceText = selectedDice.map(d => d.type).join(' + ');
+                button.textContent = `🎲 ROLL: ${diceText}`;
+            } else {
+                button.style.display = 'none';
+            }
+        }
+        
+        function clearDiceSelection() {
+            selectedDice.forEach(die => {
+                const img = document.getElementById(`die-${die.type}`);
+                if (img) {
+                    img.style.filter = 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))';
+                    img.style.transform = 'scale(1)';
+                }
+            });
+            selectedDice = [];
+            updateRollItButton();
+        }
+        
+        function rollSelectedDice() {
+            if (selectedDice.length === 0) return;
+            
+            // Build formula from selected dice
+            const diceCounts = {};
+            selectedDice.forEach(die => {
+                diceCounts[die.type] = (diceCounts[die.type] || 0) + 1;
+            });
+            
+            const formulaParts = [];
+            Object.keys(diceCounts).forEach(dieType => {
+                const count = diceCounts[dieType];
+                formulaParts.push(`${count}${dieType}`);
+            });
+            
+            const formula = formulaParts.join('+');
+            
+            // Animate all selected dice types
+            Object.keys(diceCounts).forEach(dieType => {
+                animateDieSpin(dieType);
+            });
+            
+            // Roll the combined formula - pass null for presetName so formula displays naturally
+            rollDiceFormula(formula, null);
+            
+            // Clear selection after rolling
+            setTimeout(() => {
+                clearDiceSelection();
+            }, 500); // Wait for spin animation to finish
         }
 
         function handleDieRightClick(e, die) {
