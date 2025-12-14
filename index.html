@@ -72,6 +72,7 @@
             z-index: 2000;
             display: flex;
             gap: 10px;
+            align-items: stretch; /* Explicit - ensures all children stretch to same height */
         }
 
         .floating-btn {
@@ -690,7 +691,15 @@
         .theme-button-container {
             position: relative;
             display: flex;
+            align-items: stretch;
+            align-self: stretch; /* Match height of sibling flex items */
+        }
+        
+        .theme-button-container .floating-btn {
+            flex: 1;
+            display: flex;
             align-items: center;
+            justify-content: center;
         }
 
         .theme-dropdown {
@@ -1217,7 +1226,7 @@
     </div>
 
     <!-- Token Context Menu -->
-    <div id="tokenContextMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 8px; z-index: 3000; box-shadow: 0 4px 12px rgba(0,0,0,0.8); min-width: 440px;"></div>
+    <div id="tokenContextMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 8px; z-index: 3000; box-shadow: 0 4px 12px rgba(0,0,0,0.8); min-width: fit-content; max-width: 300px;"></div>
 
     <!-- Middle Mouse Pointer -->
     <div id="activePointer" style="display: none; position: fixed; pointer-events: none; z-index: 9999; transform: translate(-50%, 0%);">
@@ -1569,7 +1578,7 @@
     <div id="diceNotification" style="display: none;"></div>
 
     <!-- Avatar Context Menu -->
-    <div id="avatarContextMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 8px; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,0.8); min-width: 200px;"></div>
+    <div id="avatarContextMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 8px; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,0.8); min-width: fit-content; max-width: 220px;"></div>
 
     <!-- Dice Count Menu -->
     <div id="diceCountMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 8px; z-index: 3000; box-shadow: 0 4px 12px rgba(0,0,0,0.8);"></div>
@@ -2786,6 +2795,12 @@
                 avatars: avatars.map(a => ({
                     imageSrc: a.imageSrc,
                     alternateImageSrc: a.alternateImageSrc || null,
+                    // Percentage values for cross-resolution compatibility
+                    xPercent: a.xPercent,
+                    yPercent: a.yPercent,
+                    widthPercent: a.widthPercent,
+                    heightPercent: a.heightPercent,
+                    // Pixel values for backward compatibility
                     x: parseInt(a.element.style.left),
                     y: parseInt(a.element.style.top),
                     width: parseInt(a.element.style.width),
@@ -3185,14 +3200,31 @@
         }
         
         function syncAvatars(avatarData) {
-            // Sync avatar positions and properties from network with viewport scaling
+            // Sync avatar positions and properties from network
             avatarData.forEach(netAvatar => {
                 const localAvatar = avatars.find(a => a.imageSrc === netAvatar.imageSrc);
                 if (localAvatar) {
-                    localAvatar.element.style.left = Math.round(netAvatar.x * viewportScaleX) + 'px';
-                    localAvatar.element.style.top = Math.round(netAvatar.y * viewportScaleY) + 'px';
-                    localAvatar.element.style.width = Math.round(netAvatar.width * viewportScaleX) + 'px';
-                    localAvatar.element.style.height = Math.round(netAvatar.height * viewportScaleY) + 'px';
+                    // Use percentage values if available (new system), otherwise fall back to pixels with viewport scaling (old system)
+                    if (netAvatar.xPercent !== undefined && netAvatar.yPercent !== undefined) {
+                        const pixels = percentToPixels(netAvatar.xPercent, netAvatar.yPercent, netAvatar.widthPercent, netAvatar.heightPercent);
+                        localAvatar.element.style.left = Math.round(pixels.x) + 'px';
+                        localAvatar.element.style.top = Math.round(pixels.y) + 'px';
+                        localAvatar.element.style.width = Math.round(pixels.width) + 'px';
+                        localAvatar.element.style.height = Math.round(pixels.height) + 'px';
+                        
+                        // Update stored percentage values
+                        localAvatar.xPercent = netAvatar.xPercent;
+                        localAvatar.yPercent = netAvatar.yPercent;
+                        localAvatar.widthPercent = netAvatar.widthPercent;
+                        localAvatar.heightPercent = netAvatar.heightPercent;
+                    } else {
+                        // Backward compatibility: use viewport scaling for pixel values
+                        localAvatar.element.style.left = Math.round(netAvatar.x * viewportScaleX) + 'px';
+                        localAvatar.element.style.top = Math.round(netAvatar.y * viewportScaleY) + 'px';
+                        localAvatar.element.style.width = Math.round(netAvatar.width * viewportScaleX) + 'px';
+                        localAvatar.element.style.height = Math.round(netAvatar.height * viewportScaleY) + 'px';
+                    }
+                    
                     localAvatar.element.style.zIndex = netAvatar.zIndex;
                     localAvatar.name = netAvatar.name;
                     localAvatar.flipped = netAvatar.flipped;
@@ -3760,6 +3792,157 @@
         
         // Global avatar automation setting
         let disableAvatarAutomations = false;
+
+        // ===== COORDINATE CONVERSION HELPERS =====
+        // Convert pixel coordinates to percentages relative to visible backdrop
+        function pixelsToPercent(pixelX, pixelY, pixelWidth = null, pixelHeight = null) {
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop) {
+                // Fallback to window dimensions if no backdrop
+                return {
+                    x: pixelX / window.innerWidth,
+                    y: pixelY / window.innerHeight,
+                    width: pixelWidth ? pixelWidth / window.innerWidth : null,
+                    height: pixelHeight ? pixelHeight / window.innerHeight : null
+                };
+            }
+            
+            const backdropWidth = parseInt(activeBackdrop.element.style.width);
+            const backdropHeight = parseInt(activeBackdrop.element.style.height);
+            
+            return {
+                x: pixelX / backdropWidth,
+                y: pixelY / backdropHeight,
+                width: pixelWidth ? pixelWidth / backdropWidth : null,
+                height: pixelHeight ? pixelHeight / backdropHeight : null
+            };
+        }
+        
+        // Convert percentages to pixel coordinates relative to visible backdrop
+        function percentToPixels(percentX, percentY, percentWidth = null, percentHeight = null) {
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop) {
+                // Fallback to window dimensions if no backdrop
+                return {
+                    x: percentX * window.innerWidth,
+                    y: percentY * window.innerHeight,
+                    width: percentWidth ? percentWidth * window.innerWidth : null,
+                    height: percentHeight ? percentHeight * window.innerHeight : null
+                };
+            }
+            
+            const backdropWidth = parseInt(activeBackdrop.element.style.width);
+            const backdropHeight = parseInt(activeBackdrop.element.style.height);
+            
+            return {
+                x: percentX * backdropWidth,
+                y: percentY * backdropHeight,
+                width: percentWidth ? percentWidth * backdropWidth : null,
+                height: percentHeight ? percentHeight * backdropHeight : null
+            };
+        }
+        
+        // Check if value appears to be a percentage (0-1 range) vs pixel value
+        function isPercentageValue(value) {
+            return value >= 0 && value <= 1;
+        }
+        
+        // Convert theatre drawing to percentage coordinates
+        function theatreDrawingToPercent(drawing) {
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop) return drawing;
+            
+            const backdropWidth = parseInt(activeBackdrop.element.style.width);
+            const backdropHeight = parseInt(activeBackdrop.element.style.height);
+            
+            const result = { ...drawing };
+            
+            if (drawing.points && Array.isArray(drawing.points)) {
+                // Freehand/polygon with points array
+                result.pointsPercent = drawing.points.map(p => ({
+                    x: p.x / backdropWidth,
+                    y: p.y / backdropHeight
+                }));
+            }
+            
+            if (drawing.x1 !== undefined) {
+                // Shape with x1, y1, x2, y2
+                result.x1Percent = drawing.x1 / backdropWidth;
+                result.y1Percent = drawing.y1 / backdropHeight;
+                result.x2Percent = drawing.x2 / backdropWidth;
+                result.y2Percent = drawing.y2 / backdropHeight;
+            }
+            
+            return result;
+        }
+        
+        // Convert theatre drawing from percentage to pixel coordinates
+        function theatreDrawingToPixels(drawing) {
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop) return drawing;
+            
+            const backdropWidth = parseInt(activeBackdrop.element.style.width);
+            const backdropHeight = parseInt(activeBackdrop.element.style.height);
+            
+            const result = { ...drawing };
+            
+            // Use percentage values if available, otherwise fall back to pixel values
+            if (drawing.pointsPercent && Array.isArray(drawing.pointsPercent)) {
+                result.points = drawing.pointsPercent.map(p => ({
+                    x: p.x * backdropWidth,
+                    y: p.y * backdropHeight
+                }));
+            }
+            
+            if (drawing.x1Percent !== undefined) {
+                result.x1 = drawing.x1Percent * backdropWidth;
+                result.y1 = drawing.y1Percent * backdropHeight;
+                result.x2 = drawing.x2Percent * backdropWidth;
+                result.y2 = drawing.y2Percent * backdropHeight;
+            }
+            
+            return result;
+        }
+        
+        // Convert theatre text to percentage coordinates
+        function theatreTextToPercent(textObj) {
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop) return textObj;
+            
+            const backdropWidth = parseInt(activeBackdrop.element.style.width);
+            const backdropHeight = parseInt(activeBackdrop.element.style.height);
+            
+            return {
+                ...textObj,
+                xPercent: textObj.x / backdropWidth,
+                yPercent: textObj.y / backdropHeight,
+                fontSizePercent: textObj.fontSize / backdropHeight // Font size relative to height
+            };
+        }
+        
+        // Convert theatre text from percentage to pixel coordinates
+        function theatreTextToPixels(textObj) {
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop) return textObj;
+            
+            const backdropWidth = parseInt(activeBackdrop.element.style.width);
+            const backdropHeight = parseInt(activeBackdrop.element.style.height);
+            
+            const result = { ...textObj };
+            
+            // Use percentage values if available, otherwise fall back to pixel values
+            if (textObj.xPercent !== undefined) {
+                result.x = textObj.xPercent * backdropWidth;
+            }
+            if (textObj.yPercent !== undefined) {
+                result.y = textObj.yPercent * backdropHeight;
+            }
+            if (textObj.fontSizePercent !== undefined) {
+                result.fontSize = textObj.fontSizePercent * backdropHeight;
+            }
+            
+            return result;
+        }
 
         // Utility function to downscale images for performance
         /**
@@ -5056,21 +5239,30 @@
             menu.appendChild(createOption('📋 Duplicate', () => {
                 const newDrawing = JSON.parse(JSON.stringify(drawing));
                 newDrawing.id = Date.now();
-                // Offset slightly
-                if (newDrawing.type === 'line') {
-                    newDrawing.x1 += 20;
-                    newDrawing.y1 += 20;
-                    newDrawing.x2 += 20;
-                    newDrawing.y2 += 20;
-                } else if (newDrawing.type === 'freehand' || newDrawing.type === 'polygon') {
-                    newDrawing.points = newDrawing.points.map(p => ({ x: p.x + 20, y: p.y + 20 }));
+                
+                // Convert to pixels, offset, then convert back to percentages
+                const pixelDrawing = theatreDrawingToPixels(newDrawing);
+                
+                // Offset slightly in pixels
+                if (pixelDrawing.type === 'line') {
+                    pixelDrawing.x1 += 20;
+                    pixelDrawing.y1 += 20;
+                    pixelDrawing.x2 += 20;
+                    pixelDrawing.y2 += 20;
+                } else if (pixelDrawing.type === 'freehand' || pixelDrawing.type === 'polygon') {
+                    if (pixelDrawing.points) {
+                        pixelDrawing.points = pixelDrawing.points.map(p => ({ x: p.x + 20, y: p.y + 20 }));
+                    }
                 } else {
-                    newDrawing.x1 += 20;
-                    newDrawing.y1 += 20;
-                    newDrawing.x2 += 20;
-                    newDrawing.y2 += 20;
+                    pixelDrawing.x1 += 20;
+                    pixelDrawing.y1 += 20;
+                    pixelDrawing.x2 += 20;
+                    pixelDrawing.y2 += 20;
                 }
-                theatreDrawings.push(newDrawing);
+                
+                // Convert back to percentages
+                const percentDrawing = theatreDrawingToPercent(pixelDrawing);
+                theatreDrawings.push(percentDrawing);
                 renderTheatreDrawings();
                 saveToLocalStorage();
                 if (isHost && isConnected) {
@@ -5235,12 +5427,15 @@
 
             menu.appendChild(createOption('✏️ Edit Text', () => {
                 // Trigger double-click editing behavior
+                // Convert to pixels for display
+                const pixelText = theatreTextToPixels(textObj);
+                
                 const theatreTextInput = document.getElementById('theatreTextInput');
                 theatreTextInput.value = textObj.text;
                 theatreTextInput.style.display = 'block';
                 theatreTextInput.style.left = x + 'px';
                 theatreTextInput.style.top = y + 'px';
-                theatreTextInput.style.fontSize = textObj.fontSize + 'px';
+                theatreTextInput.style.fontSize = pixelText.fontSize + 'px';
                 theatreTextInput.style.fontFamily = textObj.fontFamily;
                 theatreTextInput.style.color = textObj.color;
                 theatreTextInput.style.fontWeight = textObj.bold ? 'bold' : 'normal';
@@ -5249,8 +5444,8 @@
                 
                 editingTheatreText = {
                     id: textObj.id,
-                    x: textObj.x,
-                    y: textObj.y,
+                    x: pixelText.x,
+                    y: pixelText.y,
                     isEditing: true
                 };
                 
@@ -5288,9 +5483,15 @@
             menu.appendChild(createOption('📋 Duplicate', () => {
                 const newText = JSON.parse(JSON.stringify(textObj));
                 newText.id = Date.now();
-                newText.x += 20;
-                newText.y += 20;
-                theatreTextObjects.push(newText);
+                
+                // Convert to pixels, offset, then convert back to percentages
+                const pixelText = theatreTextToPixels(newText);
+                pixelText.x += 20;
+                pixelText.y += 20;
+                
+                // Convert back to percentages
+                const percentText = theatreTextToPercent(pixelText);
+                theatreTextObjects.push(percentText);
                 renderTheatreTextObjects();
                 saveToLocalStorage();
                 if (isHost && isConnected) {
@@ -7363,7 +7564,7 @@
         function parseDiceFormula(formula) {
             formula = formula.replace(/\s+/g, '');
             const dicePattern = /(\d+)d(\d+)(?:kh(\d+)|kl(\d+))?/gi;
-            const modifierPattern = /([+-]\d+)/g;
+            const modifierPattern = /([+-]\d+)(?!d)/g; // Negative lookahead: don't match if followed by 'd'
             const diceGroups = [];
             let match;
             
@@ -9960,13 +10161,19 @@
                 imageSrc: imageSrc,
                 alternateImageSrc: null, // For alternate image feature
                 isShowingAlternate: false, // Track if alternate is currently displayed
+                // Store positions as percentages of backdrop for cross-resolution compatibility
+                xPercent: isPercentageValue(x) ? x : pixelsToPercent(x, y).x,
+                yPercent: isPercentageValue(y) ? y : pixelsToPercent(x, y).y,
+                widthPercent: 300 / (getActiveBackdrop() ? parseInt(getActiveBackdrop().element.style.width) : window.innerWidth),
+                heightPercent: 300 / (getActiveBackdrop() ? parseInt(getActiveBackdrop().element.style.height) : window.innerHeight),
+                // Deprecated pixel values (kept for backward compatibility)
                 x: x,
                 y: y,
+                width: 300,
+                height: 300,
                 locked: false,
                 zIndex: avatar.style.zIndex,
                 name: name,
-                width: 300,
-                height: 300,
                 flipped: flipped,
                 aboveGrid: aboveGrid,
                 rounded: false
@@ -10033,6 +10240,31 @@
         // Mouse Up Handler
         document.addEventListener('mouseup', () => {
             if (draggedElement || resizingElement) {
+                // Update percentage values in avatarData from element positions
+                if ((draggedElement && draggedElement.classList.contains('avatar')) || 
+                    (resizingElement && resizingElement.classList.contains('avatar'))) {
+                    const avatarElement = draggedElement || resizingElement;
+                    const avatarData = avatars.find(a => a.element === avatarElement);
+                    if (avatarData) {
+                        const pixelX = parseInt(avatarElement.style.left);
+                        const pixelY = parseInt(avatarElement.style.top);
+                        const pixelWidth = parseInt(avatarElement.style.width);
+                        const pixelHeight = parseInt(avatarElement.style.height);
+                        
+                        const converted = pixelsToPercent(pixelX, pixelY, pixelWidth, pixelHeight);
+                        avatarData.xPercent = converted.x;
+                        avatarData.yPercent = converted.y;
+                        avatarData.widthPercent = converted.width;
+                        avatarData.heightPercent = converted.height;
+                        
+                        // Update deprecated pixel values for backward compatibility
+                        avatarData.x = pixelX;
+                        avatarData.y = pixelY;
+                        avatarData.width = pixelWidth;
+                        avatarData.height = pixelHeight;
+                    }
+                }
+                
                 saveToLocalStorage();
                 
                 // Broadcast avatar updates if it's an avatar that was moved/resized
@@ -10041,6 +10273,12 @@
                     if (isHost && isConnected) {
                         const avatarState = avatars.map(a => ({
                             imageSrc: a.imageSrc,
+                            // Send percentage values for cross-resolution compatibility
+                            xPercent: a.xPercent,
+                            yPercent: a.yPercent,
+                            widthPercent: a.widthPercent,
+                            heightPercent: a.heightPercent,
+                            // Also send pixel values for backward compatibility
                             x: parseInt(a.element.style.left),
                             y: parseInt(a.element.style.top),
                             width: parseInt(a.element.style.width),
@@ -11902,7 +12140,10 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             // Draw all completed theatre drawings
-            theatreDrawings.forEach(drawing => {
+            theatreDrawings.forEach(storedDrawing => {
+                // Convert from percentages to pixels for rendering
+                const drawing = theatreDrawingToPixels(storedDrawing);
+                
                 ctx.strokeStyle = drawing.borderColor;
                 ctx.fillStyle = drawing.fillColor;
                 ctx.lineWidth = drawing.lineWidth;
@@ -11910,7 +12151,7 @@
                 ctx.lineJoin = 'round';
                 
                 if (drawing.type === 'freehand') {
-                    if (drawing.points.length < 2) return;
+                    if (!drawing.points || drawing.points.length < 2) return;
                     ctx.beginPath();
                     ctx.moveTo(drawing.points[0].x, drawing.points[0].y);
                     for (let i = 1; i < drawing.points.length; i++) {
@@ -11965,7 +12206,7 @@
                     ctx.stroke();
                 }
                 else if (drawing.type === 'polygon') {
-                    if (drawing.points.length < 3) return;
+                    if (!drawing.points || drawing.points.length < 3) return;
                     ctx.beginPath();
                     ctx.moveTo(drawing.points[0].x, drawing.points[0].y);
                     for (let i = 1; i < drawing.points.length; i++) {
@@ -12070,7 +12311,16 @@
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            theatreTextObjects.forEach(textObj => {
+            theatreTextObjects.forEach(storedTextObj => {
+                // Convert from percentages to pixels for rendering
+                const textObj = theatreTextToPixels(storedTextObj);
+                
+                // If this object is being dragged, use temporary coordinates
+                if (storedTextObj === draggedTheatreText && storedTextObj._tempX !== undefined) {
+                    textObj.x = storedTextObj._tempX;
+                    textObj.y = storedTextObj._tempY;
+                }
+                
                 ctx.fillStyle = textObj.color;
                 ctx.font = `${textObj.italic ? 'italic ' : ''}${textObj.bold ? 'bold ' : ''}${textObj.fontSize}px ${textObj.fontFamily}`;
                 ctx.textBaseline = 'top';
@@ -12107,8 +12357,8 @@
                         textObj.text = newText;
                     }
                 } else {
-                    // Creating new text
-                    theatreTextObjects.push({
+                    // Creating new text - convert to percentages
+                    const textObj = {
                         id: Date.now() + Math.random(),
                         text: newText,
                         x: editingTheatreText.x,
@@ -12119,7 +12369,9 @@
                         bold: theatreTextSettings.bold,
                         italic: theatreTextSettings.italic,
                         underline: theatreTextSettings.underline
-                    });
+                    };
+                    const textWithPercent = theatreTextToPercent(textObj);
+                    theatreTextObjects.push(textWithPercent);
                 }
             }
             
@@ -12140,15 +12392,19 @@
         function getTheatreDrawingAtPosition(x, y) {
             // Check in reverse order (top to bottom)
             for (let i = theatreDrawings.length - 1; i >= 0; i--) {
-                const drawing = theatreDrawings[i];
+                const storedDrawing = theatreDrawings[i];
+                // Convert to pixels for hit detection
+                const drawing = theatreDrawingToPixels(storedDrawing);
                 
                 if (drawing.type === 'freehand' || drawing.type === 'polygon') {
                     // Check if click is near any point in the path
                     const hitDistance = drawing.lineWidth + 5;
-                    for (const point of drawing.points) {
-                        const dist = Math.sqrt(Math.pow(point.x - x, 2) + Math.pow(point.y - y, 2));
-                        if (dist < hitDistance) {
-                            return drawing;
+                    if (drawing.points) {
+                        for (const point of drawing.points) {
+                            const dist = Math.sqrt(Math.pow(point.x - x, 2) + Math.pow(point.y - y, 2));
+                            if (dist < hitDistance) {
+                                return storedDrawing; // Return stored version with percentages
+                            }
                         }
                     }
                 } else {
@@ -12161,7 +12417,7 @@
                     const padding = 10;
                     if (x >= minX - padding && x <= maxX + padding && 
                         y >= minY - padding && y <= maxY + padding) {
-                        return drawing;
+                        return storedDrawing; // Return stored version with percentages
                     }
                 }
             }
@@ -12172,7 +12428,9 @@
         function getTheatreTextAtPosition(x, y) {
             // Check in reverse order (top to bottom)
             for (let i = theatreTextObjects.length - 1; i >= 0; i--) {
-                const textObj = theatreTextObjects[i];
+                const storedTextObj = theatreTextObjects[i];
+                // Convert to pixels for hit detection
+                const textObj = theatreTextToPixels(storedTextObj);
                 
                 // Create a temporary canvas to measure text
                 const tempCanvas = document.createElement('canvas');
@@ -12195,7 +12453,7 @@
                 // Check if click is within text bounds
                 if (x >= textObj.x && x <= textObj.x + maxWidth &&
                     y >= textObj.y && y <= textObj.y + totalHeight) {
-                    return textObj;
+                    return storedTextObj; // Return stored version with percentages
                 }
             }
             return null;
@@ -13250,6 +13508,12 @@
                 avatars: avatars.map(a => ({
                     imageSrc: a.imageSrc,
                     alternateImageSrc: a.alternateImageSrc || null,
+                    // Percentage values for cross-resolution compatibility
+                    xPercent: a.xPercent,
+                    yPercent: a.yPercent,
+                    widthPercent: a.widthPercent,
+                    heightPercent: a.heightPercent,
+                    // Pixel values for backward compatibility
                     x: parseInt(a.element.style.left),
                     y: parseInt(a.element.style.top),
                     width: parseInt(a.element.style.width),
@@ -13334,9 +13598,31 @@
                         if (zIndex < 500 || zIndex >= 1000) zIndex = 500;
                     }
                     
-                    const avatar = createAvatar(a.imageSrc, a.x, a.y, zIndex, a.name || 'Character', a.flipped || false, a.aboveGrid || false);
-                    if (a.width) avatar.style.width = a.width + 'px';
-                    if (a.height) avatar.style.height = a.height + 'px';
+                    // Use percentage values if available (new system), otherwise use pixels (old system)
+                    let x, y;
+                    if (a.xPercent !== undefined && a.yPercent !== undefined) {
+                        // Convert percentages to pixels for current backdrop
+                        const pixels = percentToPixels(a.xPercent, a.yPercent);
+                        x = pixels.x;
+                        y = pixels.y;
+                    } else {
+                        // Backward compatibility: use pixel values directly
+                        x = a.x;
+                        y = a.y;
+                    }
+                    
+                    const avatar = createAvatar(a.imageSrc, x, y, zIndex, a.name || 'Character', a.flipped || false, a.aboveGrid || false);
+                    
+                    // Apply width/height
+                    if (a.widthPercent !== undefined && a.heightPercent !== undefined) {
+                        const pixels = percentToPixels(0, 0, a.widthPercent, a.heightPercent);
+                        avatar.style.width = pixels.width + 'px';
+                        avatar.style.height = pixels.height + 'px';
+                    } else if (a.width && a.height) {
+                        avatar.style.width = a.width + 'px';
+                        avatar.style.height = a.height + 'px';
+                    }
+                    
                     if (a.locked) {
                         avatar.classList.add('locked');
                         const avatarData = avatars.find(av => av.element === avatar);
@@ -13539,6 +13825,12 @@
                 avatars: avatars.map(a => ({
                     imageSrc: a.imageSrc,
                     alternateImageSrc: a.alternateImageSrc || null,
+                    // Percentage values for cross-resolution compatibility
+                    xPercent: a.xPercent,
+                    yPercent: a.yPercent,
+                    widthPercent: a.widthPercent,
+                    heightPercent: a.heightPercent,
+                    // Pixel values for backward compatibility
                     x: parseInt(a.element.style.left),
                     y: parseInt(a.element.style.top),
                     width: parseInt(a.element.style.width),
@@ -14623,10 +14915,16 @@
                         }
                     }
                 } else if (draggedTheatreText) {
-                    // Handle theatre text dragging
-                    draggedTheatreText.x = e.clientX - theatreTextDragOffset.x;
-                    draggedTheatreText.y = e.clientY - theatreTextDragOffset.y;
-                    renderTheatreTextObjects();
+                    // Handle theatre text dragging - use temporary coordinates
+                    draggedTheatreText._tempX = e.clientX - theatreTextDragOffset.x;
+                    draggedTheatreText._tempY = e.clientY - theatreTextDragOffset.y;
+                    
+                    // Only render occasionally during drag to improve performance
+                    if (!window.theatreTextDragThrottle) {
+                        renderTheatreTextObjects();
+                        window.theatreTextDragThrottle = true;
+                        setTimeout(() => { window.theatreTextDragThrottle = false; }, 16); // ~60fps
+                    }
                 } else if (isFogging) {
                     handleFogMouseMove(e);
                 } else if (isTheatreDrawing || draggedTheatreDrawing) {
@@ -14655,7 +14953,13 @@
                             draggedTheatreDrawing.x2 = draggedTheatreDrawing.originalX2 + dx;
                             draggedTheatreDrawing.y2 = draggedTheatreDrawing.originalY2 + dy;
                         }
-                        renderTheatreDrawings();
+                        
+                        // Throttle rendering during drag
+                        if (!window.theatreDrawDragThrottle) {
+                            renderTheatreDrawings();
+                            window.theatreDrawDragThrottle = true;
+                            setTimeout(() => { window.theatreDrawDragThrottle = false; }, 16); // ~60fps
+                        }
                     }
                 } else if (isDrawing || draggedDrawing) {
                     handleDrawingMouseMove(e);
@@ -14768,11 +15072,20 @@
                                 if ((isHost || !isConnected) && e.shiftKey) { // Host or offline can drag theatre text with shift
                                     e.preventDefault();
                                     e.stopPropagation();
+                                    
+                                    // Store reference to the object being dragged
                                     draggedTheatreText = clickedText;
+                                    
+                                    // Convert to pixels for drag offset calculation
+                                    const pixelText = theatreTextToPixels(clickedText);
                                     theatreTextDragOffset = {
-                                        x: e.clientX - clickedText.x,
-                                        y: e.clientY - clickedText.y
+                                        x: e.clientX - pixelText.x,
+                                        y: e.clientY - pixelText.y
                                     };
+                                    
+                                    // Store initial pixel position (don't mutate the stored object!)
+                                    draggedTheatreText._tempX = pixelText.x;
+                                    draggedTheatreText._tempY = pixelText.y;
                                 }
                                 return;
                             }
@@ -14785,17 +15098,30 @@
                             e.stopPropagation();
                             draggedTheatreDrawing = clickedDrawing;
                             
-                            // Store original positions for dragging
+                            // Convert to pixels for dragging
+                            const pixelDrawing = theatreDrawingToPixels(clickedDrawing);
+                            
+                            // Initialize pixel values and store original positions for dragging
                             if (clickedDrawing.type === 'freehand' || clickedDrawing.type === 'polygon') {
-                                clickedDrawing.points.forEach(point => {
-                                    point.originalX = point.x;
-                                    point.originalY = point.y;
-                                });
+                                // Initialize points array if needed
+                                if (pixelDrawing.points) {
+                                    clickedDrawing.points = pixelDrawing.points.map(p => ({
+                                        x: p.x,
+                                        y: p.y,
+                                        originalX: p.x,
+                                        originalY: p.y
+                                    }));
+                                }
                             } else {
-                                clickedDrawing.originalX1 = clickedDrawing.x1;
-                                clickedDrawing.originalY1 = clickedDrawing.y1;
-                                clickedDrawing.originalX2 = clickedDrawing.x2;
-                                clickedDrawing.originalY2 = clickedDrawing.y2;
+                                // Initialize shape coordinates
+                                clickedDrawing.x1 = pixelDrawing.x1;
+                                clickedDrawing.y1 = pixelDrawing.y1;
+                                clickedDrawing.x2 = pixelDrawing.x2;
+                                clickedDrawing.y2 = pixelDrawing.y2;
+                                clickedDrawing.originalX1 = pixelDrawing.x1;
+                                clickedDrawing.originalY1 = pixelDrawing.y1;
+                                clickedDrawing.originalX2 = pixelDrawing.x2;
+                                clickedDrawing.originalY2 = pixelDrawing.y2;
                             }
                             
                             theatreDrawDragOffset = {
@@ -14898,18 +15224,26 @@
                 if (e.button === 2) {
                     if (currentTheatreDrawTool === 'polygon' && theatrePolygonPoints.length > 2) {
                         e.preventDefault();
-                        // Finish polygon
-                        theatreDrawings.push({
+                        // Finish polygon - convert to percentages
+                        const drawing = {
                             type: 'polygon',
                             points: [...theatrePolygonPoints],
                             borderColor: theatreDrawSettings.borderColor,
                             fillColor: theatreDrawSettings.fillColor,
                             filled: theatreDrawSettings.filled,
-                            lineWidth: theatreDrawSettings.lineWidth
-                        });
+                            lineWidth: theatreDrawSettings.lineWidth,
+                            id: Date.now()
+                        };
+                        const drawingWithPercent = theatreDrawingToPercent(drawing);
+                        theatreDrawings.push(drawingWithPercent);
                         theatrePolygonPoints = [];
                         renderTheatreDrawings();
                         saveToLocalStorage();
+                        
+                        // Broadcast theatre drawings to players
+                        if (isHost && isConnected) {
+                            broadcastState('THEATRE_DRAWING_SYNC', theatreDrawings);
+                        }
                         return;
                     } else if (currentTheatreDrawTool) {
                         e.preventDefault();
@@ -14944,8 +15278,27 @@
                 
                 // Handle theatre text dragging end
                 if (draggedTheatreText) {
+                    // Convert the temporary pixel position to percentages
+                    if (draggedTheatreText._tempX !== undefined) {
+                        const tempPixelObj = {
+                            ...draggedTheatreText,
+                            x: draggedTheatreText._tempX,
+                            y: draggedTheatreText._tempY
+                        };
+                        const converted = theatreTextToPercent(tempPixelObj);
+                        draggedTheatreText.xPercent = converted.xPercent;
+                        draggedTheatreText.yPercent = converted.yPercent;
+                        
+                        // Clean up temporary coordinates
+                        delete draggedTheatreText._tempX;
+                        delete draggedTheatreText._tempY;
+                    }
+                    
                     draggedTheatreText = null;
                     theatreTextDragOffset = { x: 0, y: 0 };
+                    
+                    // Final render to ensure correct position
+                    renderTheatreTextObjects();
                     saveToLocalStorage();
                     
                     // Broadcast theatre text position updates to players
@@ -14959,9 +15312,11 @@
                     if (currentTheatreDrawTool === 'polygon') {
                         // Polygon tool continues until right-click or Esc
                     } else {
-                        // Finish current drawing
+                        // Finish current drawing - convert to percentages
                         if (currentTheatreDrawing) {
-                            theatreDrawings.push(currentTheatreDrawing);
+                            currentTheatreDrawing.id = Date.now();
+                            const drawingWithPercent = theatreDrawingToPercent(currentTheatreDrawing);
+                            theatreDrawings.push(drawingWithPercent);
                             currentTheatreDrawing = null;
                         }
                         isTheatreDrawing = false;
@@ -14976,8 +15331,23 @@
                 }
                 
                 if (draggedTheatreDrawing) {
+                    // Convert the new pixel positions to percentages
+                    const converted = theatreDrawingToPercent(draggedTheatreDrawing);
+                    if (converted.pointsPercent) {
+                        draggedTheatreDrawing.pointsPercent = converted.pointsPercent;
+                    }
+                    if (converted.x1Percent !== undefined) {
+                        draggedTheatreDrawing.x1Percent = converted.x1Percent;
+                        draggedTheatreDrawing.y1Percent = converted.y1Percent;
+                        draggedTheatreDrawing.x2Percent = converted.x2Percent;
+                        draggedTheatreDrawing.y2Percent = converted.y2Percent;
+                    }
+                    
                     draggedTheatreDrawing = null;
                     theatreDrawDragOffset = { x: 0, y: 0 };
+                    
+                    // Final render to ensure correct position
+                    renderTheatreDrawings();
                     saveToLocalStorage();
                     
                     // Broadcast theatre drawing position updates to players
@@ -15083,13 +15453,16 @@
                         e.preventDefault();
                         e.stopPropagation();
                         
+                        // Convert to pixels for display
+                        const pixelText = theatreTextToPixels(clickedText);
+                        
                         // Show text input for editing
                         const theatreTextInput = document.getElementById('theatreTextInput');
                         theatreTextInput.value = clickedText.text;
                         theatreTextInput.style.display = 'block';
                         theatreTextInput.style.left = e.clientX + 'px';
                         theatreTextInput.style.top = e.clientY + 'px';
-                        theatreTextInput.style.fontSize = clickedText.fontSize + 'px';
+                        theatreTextInput.style.fontSize = pixelText.fontSize + 'px';
                         theatreTextInput.style.fontFamily = clickedText.fontFamily;
                         theatreTextInput.style.color = clickedText.color;
                         theatreTextInput.style.fontWeight = clickedText.bold ? 'bold' : 'normal';
@@ -15098,8 +15471,8 @@
                         
                         editingTheatreText = {
                             id: clickedText.id,
-                            x: clickedText.x,
-                            y: clickedText.y,
+                            x: pixelText.x,
+                            y: pixelText.y,
                             isEditing: true
                         };
                         
