@@ -7,8 +7,7 @@
     <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/ftplimits/project-M/main/favicon.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monomyth VTT - Theatre of the Mind</title>
-    <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/favicon.png">
+    <title>Monomyth VTT - Theatre of the Mind</title>    
     <style>
         :root {
             --accent-color: #d4a574;
@@ -68,7 +67,8 @@
         .floating-controls {
             position: fixed;
             top: 20px;
-            left: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 2000;
             display: flex;
             gap: 10px;
@@ -2797,6 +2797,7 @@
                     aboveGrid: a.aboveGrid,
                     rounded: a.rounded
                 })),
+                disableAvatarAutomations: disableAvatarAutomations,
                 weatherEffect: currentWeatherEffect,
                 players: players,
                 
@@ -2947,6 +2948,11 @@
             // Apply weather
             if (state.weatherEffect) {
                 setWeatherEffect(state.weatherEffect);
+            }
+            
+            // Apply global avatar automations setting
+            if (state.disableAvatarAutomations !== undefined) {
+                disableAvatarAutomations = state.disableAvatarAutomations;
             }
             
             // Update player list
@@ -3614,9 +3620,17 @@
         let zonesMode = false;
         let isPanning = false;
         let panStart = { x: 0, y: 0 };
+        let rightClickStart = { x: 0, y: 0 }; // Track initial right-click position
         let gridMenuVisible = false;
         const GRID_CELLS_TOTAL = 100; // 100x100 grid
         const GRID_CELL_SIZE = 50; // 50px per cell
+        
+        // Smooth zoom animation variables
+        let targetZoom = 1;
+        let zoomAnimationFrame = null;
+        let lastZoomMouseX = 0;
+        let lastZoomMouseY = 0;
+        const ZOOM_SMOOTHING = 0.2; // Higher = faster, lower = smoother (0.1-0.3 is good range)
 
         // Token system variables
         let tokens = [];
@@ -3743,6 +3757,9 @@
         // Recent avatars (track last 5 uploaded)
         let recentAvatars = [];
         const MAX_RECENT_AVATARS = 5;
+        
+        // Global avatar automation setting
+        let disableAvatarAutomations = false;
 
         // Utility function to downscale images for performance
         /**
@@ -4269,6 +4286,12 @@
             if (!activeBackdrop) return;
             
             activeBackdrop.grid.enabled = !activeBackdrop.grid.enabled;
+            
+            // Initialize targetZoom to current zoom when grid is enabled
+            if (activeBackdrop.grid.enabled) {
+                targetZoom = activeBackdrop.gridTransform.zoom;
+            }
+            
             const gridCanvas = document.getElementById('gridCanvas');
             const overlayCanvas = document.getElementById('gridOverlayCanvas');
             const tokenCanvas = document.getElementById('tokenCanvas');
@@ -4540,6 +4563,11 @@
             const activeBackdrop = getActiveBackdrop();
             if (!activeBackdrop || !activeBackdrop.grid.enabled) return;
             
+            // Ensure targetZoom is synced with actual zoom (safety initialization)
+            if (targetZoom === 1 && activeBackdrop.gridTransform.zoom !== 1) {
+                targetZoom = activeBackdrop.gridTransform.zoom;
+            }
+            
             const canvas = document.getElementById('gridCanvas');
             const overlayCanvas = document.getElementById('gridOverlayCanvas');
             if (!canvas || !overlayCanvas) return;
@@ -4685,34 +4713,65 @@
             
             // Get mouse position relative to the canvas
             const rect = canvas.getBoundingClientRect();
-            const mouseScreenX = e.clientX - rect.left;
-            const mouseScreenY = e.clientY - rect.top;
+            lastZoomMouseX = e.clientX - rect.left;
+            lastZoomMouseY = e.clientY - rect.top;
             
             const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
             const wheelSpeed = 0.004;
             const zoomFactor = Math.exp(-delta * wheelSpeed);
             
+            // Update target zoom (clamped)
+            targetZoom = Math.max(0.1, Math.min(5, targetZoom * zoomFactor));
+            
+            // Start animation if not already running
+            if (!zoomAnimationFrame) {
+                animateZoom();
+            }
+        }
+        
+        function animateZoom() {
+            const activeBackdrop = getActiveBackdrop();
+            if (!activeBackdrop || !activeBackdrop.grid.enabled) {
+                zoomAnimationFrame = null;
+                return;
+            }
+            
             const gridTransform = activeBackdrop.gridTransform;
-            const startZoom = gridTransform.zoom;
-            const startPanX = gridTransform.panX;
-            const startPanY = gridTransform.panY;
+            const currentZoom = gridTransform.zoom;
             
-            // Mouse position in world space BEFORE zoom
-            const mouseWorldX = (mouseScreenX - startPanX) / startZoom;
-            const mouseWorldY = (mouseScreenY - startPanY) / startZoom;
+            // Calculate zoom difference
+            const zoomDiff = targetZoom - currentZoom;
             
-            const targetZoom = Math.max(0.1, Math.min(5, startZoom * zoomFactor));
+            // If we're very close to target, snap to it and stop animating
+            if (Math.abs(zoomDiff) < 0.001) {
+                gridTransform.zoom = targetZoom;
+                renderGrid();
+                renderTokens();
+                renderGridImages();
+                renderDrawings();
+                renderTextObjects();
+                renderFogAreas();
+                zoomAnimationFrame = null;
+                return;
+            }
+            
+            // Simple lerp interpolation (no velocity, no bounce)
+            const newZoom = currentZoom + (zoomDiff * ZOOM_SMOOTHING);
+            
+            // Mouse position in world space BEFORE zoom change
+            const mouseWorldX = (lastZoomMouseX - gridTransform.panX) / currentZoom;
+            const mouseWorldY = (lastZoomMouseY - gridTransform.panY) / currentZoom;
             
             // Calculate new pan to keep mouse position stable in world space
-            let newPanX = mouseScreenX - mouseWorldX * targetZoom;
-            let newPanY = mouseScreenY - mouseWorldY * targetZoom;
+            let newPanX = lastZoomMouseX - mouseWorldX * newZoom;
+            let newPanY = lastZoomMouseY - mouseWorldY * newZoom;
             
             // Clamp pan to grid bounds
-            const clamped = clampPanToGridBounds(newPanX, newPanY, targetZoom);
+            const clamped = clampPanToGridBounds(newPanX, newPanY, newZoom);
             
-            activeBackdrop.gridTransform.zoom = targetZoom;
-            activeBackdrop.gridTransform.panX = clamped.panX;
-            activeBackdrop.gridTransform.panY = clamped.panY;
+            gridTransform.zoom = newZoom;
+            gridTransform.panX = clamped.panX;
+            gridTransform.panY = clamped.panY;
             
             renderGrid();
             renderTokens();
@@ -4720,7 +4779,9 @@
             renderDrawings();
             renderTextObjects();
             renderFogAreas();
-            saveToLocalStorage();
+            
+            // Continue animation
+            zoomAnimationFrame = requestAnimationFrame(animateZoom);
         }
 
         function handleGridMouseDown(e) {
@@ -4732,6 +4793,7 @@
                 isPanning = true;
                 const gridTransform = activeBackdrop.gridTransform;
                 panStart = { x: e.clientX - gridTransform.panX, y: e.clientY - gridTransform.panY };
+                rightClickStart = { x: e.clientX, y: e.clientY }; // Store initial position
             }
         }
 
@@ -4774,6 +4836,17 @@
             
             // Only host or offline can use context menus
             if (isConnected && !isHost) return;
+            
+            // Check if mouse moved more than 5px from initial right-click position
+            // If so, user was panning, so don't show context menu
+            const deltaX = Math.abs(e.clientX - rightClickStart.x);
+            const deltaY = Math.abs(e.clientY - rightClickStart.y);
+            const MOVEMENT_THRESHOLD = 5; // pixels
+            
+            if (deltaX > MOVEMENT_THRESHOLD || deltaY > MOVEMENT_THRESHOLD) {
+                // User was panning, don't show menu
+                return;
+            }
             
             // Check what was clicked on (in priority order)
             const drawing = getDrawingAtPosition(e.clientX, e.clientY);
@@ -4911,6 +4984,113 @@
             }, 10);
         }
 
+        function showTheatreDrawingContextMenu(x, y, drawing) {
+            // Remove any existing context menus
+            const existingMenu = document.getElementById('theatreDrawingContextMenu');
+            if (existingMenu) existingMenu.remove();
+
+            const menu = document.createElement('div');
+            menu.id = 'theatreDrawingContextMenu';
+            menu.style.cssText = `
+                position: fixed;
+                left: ${x}px;
+                top: ${y}px;
+                background-color: #1a1a1a;
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                padding: 8px;
+                z-index: 10000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+                min-width: 150px;
+            `;
+
+            const createOption = (text, onClick) => {
+                const option = document.createElement('div');
+                option.style.cssText = `
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    color: #e0e0e0;
+                    font-family: Arial, sans-serif;
+                    font-size: 13px;
+                    border-radius: 4px;
+                    transition: background-color 0.2s;
+                `;
+                option.textContent = text;
+                option.onmouseenter = () => option.style.backgroundColor = '#2a2a2a';
+                option.onmouseleave = () => option.style.backgroundColor = 'transparent';
+                option.onclick = () => {
+                    menu.remove();
+                    onClick();
+                };
+                return option;
+            };
+
+            menu.appendChild(createOption('🗑️ Delete Drawing', () => {
+                const index = theatreDrawings.findIndex(d => d.id === drawing.id);
+                if (index !== -1) {
+                    theatreDrawings.splice(index, 1);
+                    renderTheatreDrawings();
+                    saveToLocalStorage();
+                    if (isHost && isConnected) {
+                        broadcastState('THEATRE_DRAWING_SYNC', theatreDrawings);
+                    }
+                }
+            }));
+
+            menu.appendChild(createOption('🎨 Change Color', () => {
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = drawing.borderColor || '#ffffff';
+                colorInput.onchange = (e) => {
+                    drawing.borderColor = e.target.value;
+                    drawing.fillColor = e.target.value;
+                    renderTheatreDrawings();
+                    saveToLocalStorage();
+                    if (isHost && isConnected) {
+                        broadcastState('THEATRE_DRAWING_SYNC', theatreDrawings);
+                    }
+                };
+                colorInput.click();
+            }));
+
+            menu.appendChild(createOption('📋 Duplicate', () => {
+                const newDrawing = JSON.parse(JSON.stringify(drawing));
+                newDrawing.id = Date.now();
+                // Offset slightly
+                if (newDrawing.type === 'line') {
+                    newDrawing.x1 += 20;
+                    newDrawing.y1 += 20;
+                    newDrawing.x2 += 20;
+                    newDrawing.y2 += 20;
+                } else if (newDrawing.type === 'freehand' || newDrawing.type === 'polygon') {
+                    newDrawing.points = newDrawing.points.map(p => ({ x: p.x + 20, y: p.y + 20 }));
+                } else {
+                    newDrawing.x1 += 20;
+                    newDrawing.y1 += 20;
+                    newDrawing.x2 += 20;
+                    newDrawing.y2 += 20;
+                }
+                theatreDrawings.push(newDrawing);
+                renderTheatreDrawings();
+                saveToLocalStorage();
+                if (isHost && isConnected) {
+                    broadcastState('THEATRE_DRAWING_SYNC', theatreDrawings);
+                }
+            }));
+
+            document.body.appendChild(menu);
+
+            // Close menu when clicking elsewhere
+            setTimeout(() => {
+                document.addEventListener('click', function closeTheatreDrawingMenu(e) {
+                    if (!menu.contains(e.target)) {
+                        menu.remove();
+                        document.removeEventListener('click', closeTheatreDrawingMenu);
+                    }
+                });
+            }, 10);
+        }
+
         function showTextContextMenu(x, y, textObj) {
             // Remove any existing context menus
             const existingMenu = document.getElementById('textContextMenu');
@@ -5007,6 +5187,125 @@
                     if (!menu.contains(e.target)) {
                         menu.remove();
                         document.removeEventListener('click', closeTextMenu);
+                    }
+                });
+            }, 10);
+        }
+
+        function showTheatreTextContextMenu(x, y, textObj) {
+            // Remove any existing context menus
+            const existingMenu = document.getElementById('theatreTextContextMenu');
+            if (existingMenu) existingMenu.remove();
+
+            const menu = document.createElement('div');
+            menu.id = 'theatreTextContextMenu';
+            menu.style.cssText = `
+                position: fixed;
+                left: ${x}px;
+                top: ${y}px;
+                background-color: #1a1a1a;
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                padding: 8px;
+                z-index: 10000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+                min-width: 150px;
+            `;
+
+            const createOption = (text, onClick) => {
+                const option = document.createElement('div');
+                option.style.cssText = `
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    color: #e0e0e0;
+                    font-family: Arial, sans-serif;
+                    font-size: 13px;
+                    border-radius: 4px;
+                    transition: background-color 0.2s;
+                `;
+                option.textContent = text;
+                option.onmouseenter = () => option.style.backgroundColor = '#2a2a2a';
+                option.onmouseleave = () => option.style.backgroundColor = 'transparent';
+                option.onclick = () => {
+                    menu.remove();
+                    onClick();
+                };
+                return option;
+            };
+
+            menu.appendChild(createOption('✏️ Edit Text', () => {
+                // Trigger double-click editing behavior
+                const theatreTextInput = document.getElementById('theatreTextInput');
+                theatreTextInput.value = textObj.text;
+                theatreTextInput.style.display = 'block';
+                theatreTextInput.style.left = x + 'px';
+                theatreTextInput.style.top = y + 'px';
+                theatreTextInput.style.fontSize = textObj.fontSize + 'px';
+                theatreTextInput.style.fontFamily = textObj.fontFamily;
+                theatreTextInput.style.color = textObj.color;
+                theatreTextInput.style.fontWeight = textObj.bold ? 'bold' : 'normal';
+                theatreTextInput.style.fontStyle = textObj.italic ? 'italic' : 'normal';
+                theatreTextInput.style.textDecoration = textObj.underline ? 'underline' : 'none';
+                
+                editingTheatreText = {
+                    id: textObj.id,
+                    x: textObj.x,
+                    y: textObj.y,
+                    isEditing: true
+                };
+                
+                theatreTextInput.focus();
+                theatreTextInput.select();
+            }));
+
+            menu.appendChild(createOption('🗑️ Delete Text', () => {
+                const index = theatreTextObjects.findIndex(t => t.id === textObj.id);
+                if (index !== -1) {
+                    theatreTextObjects.splice(index, 1);
+                    renderTheatreTextObjects();
+                    saveToLocalStorage();
+                    if (isHost && isConnected) {
+                        broadcastState('THEATRE_TEXT_SYNC', theatreTextObjects);
+                    }
+                }
+            }));
+
+            menu.appendChild(createOption('🎨 Change Color', () => {
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = textObj.color || '#ffffff';
+                colorInput.onchange = (e) => {
+                    textObj.color = e.target.value;
+                    renderTheatreTextObjects();
+                    saveToLocalStorage();
+                    if (isHost && isConnected) {
+                        broadcastState('THEATRE_TEXT_SYNC', theatreTextObjects);
+                    }
+                };
+                colorInput.click();
+            }));
+
+            menu.appendChild(createOption('📋 Duplicate', () => {
+                const newText = JSON.parse(JSON.stringify(textObj));
+                newText.id = Date.now();
+                newText.x += 20;
+                newText.y += 20;
+                theatreTextObjects.push(newText);
+                renderTheatreTextObjects();
+                saveToLocalStorage();
+                if (isHost && isConnected) {
+                    broadcastState('THEATRE_TEXT_SYNC', theatreTextObjects);
+                }
+            }));
+
+            document.body.appendChild(menu);
+
+            // Close menu when clicking elsewhere
+            setTimeout(() => {
+                document.addEventListener('click', function closeTheatreTextMenu(e) {
+                    if (!menu.contains(e.target)) {
+                        menu.remove();
+                        document.removeEventListener('click', closeTheatreTextMenu);
                     }
                 });
             }, 10);
@@ -7490,6 +7789,7 @@
                     soundBtn.onmouseenter = () => {
                         soundBtn.style.backgroundColor = '#3a3a3a';
                         soundBtn.style.borderColor = 'var(--accent-color)';
+                        clearSoundEffectsPanelTimeout(); // Keep panel open while hovering buttons
                     };
                     soundBtn.onmouseleave = () => {
                         soundBtn.style.backgroundColor = '#2a2a2a';
@@ -7502,6 +7802,8 @@
                     soundBtn.oncontextmenu = (e) => {
                         if (isHost || !isConnected) {
                             e.preventDefault();
+                            // Keep panel open during confirm dialog
+                            clearSoundEffectsPanelTimeout();
                             if (confirm(`Delete sound effect "${sound.name}"?`)) {
                                 deleteSoundEffect(sound.id);
                             }
@@ -9616,6 +9918,39 @@
             avatar.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 showAvatarContextMenu(e.clientX, e.clientY, avatar);
+            });
+
+            // Double-click to flip avatar
+            avatar.addEventListener('dblclick', (e) => {
+                if (e.target.closest('.avatar-controls') || e.target.closest('.avatar-resize-handle') || e.target.closest('.avatar-name')) return;
+                
+                const avatarData = avatars.find(a => a.element === avatar);
+                if (!avatarData) return;
+                
+                // Flip the avatar
+                avatarData.flipped = !avatarData.flipped;
+                if (avatarData.flipped) {
+                    avatar.classList.add('flipped');
+                } else {
+                    avatar.classList.remove('flipped');
+                }
+                saveToLocalStorage();
+                
+                // Broadcast flip to all players
+                if (isHost && isConnected) {
+                    const avatarState = avatars.map(a => ({
+                        imageSrc: a.imageSrc,
+                        x: parseInt(a.element.style.left),
+                        y: parseInt(a.element.style.top),
+                        width: parseInt(a.element.style.width),
+                        height: parseInt(a.element.style.height),
+                        zIndex: a.element.style.zIndex,
+                        name: a.name,
+                        flipped: a.flipped,
+                        locked: a.locked
+                    }));
+                    broadcastState('AVATAR_UPDATE', avatarState);
+                }
             });
 
             stage.appendChild(avatar);
@@ -12837,8 +13172,29 @@
             const content = menu.querySelector('.recent-avatars-content');
             content.innerHTML = '';
             
+            // Add header with automation toggle
+            const header = document.createElement('div');
+            header.style.cssText = 'border-bottom: 1px solid var(--accent-color); padding-bottom: 8px; margin-bottom: 8px;';
+            
+            const automationsBtn = document.createElement('button');
+            automationsBtn.textContent = disableAvatarAutomations ? '✓ Automations Disabled' : '🤖 Disable Automations';
+            automationsBtn.style.cssText = 'width: 100%; padding: 6px; background-color: #2a2a2a; color: ' + (disableAvatarAutomations ? '#f87171' : '#e0e0e0') + '; border: 1px solid var(--accent-color); border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif;';
+            automationsBtn.onmouseenter = () => { automationsBtn.style.backgroundColor = '#3a3a3a'; };
+            automationsBtn.onmouseleave = () => { automationsBtn.style.backgroundColor = '#2a2a2a'; };
+            automationsBtn.onclick = () => {
+                disableAvatarAutomations = !disableAvatarAutomations;
+                saveToLocalStorage();
+                // Refresh menu to update button text
+                showRecentAvatarsMenu(e);
+            };
+            header.appendChild(automationsBtn);
+            content.appendChild(header);
+            
             if (recentAvatars.length === 0) {
-                content.innerHTML = '<div style="color: #888; font-size: 12px; padding: 10px; text-align: center;">No recent avatars</div>';
+                const emptyDiv = document.createElement('div');
+                emptyDiv.style.cssText = 'color: #888; font-size: 12px; padding: 10px; text-align: center;';
+                emptyDiv.textContent = 'No recent avatars';
+                content.appendChild(emptyDiv);
             } else {
                 recentAvatars.forEach(src => {
                     const avatarDiv = document.createElement('div');
@@ -12904,6 +13260,7 @@
                     flipped: a.flipped || false,
                     rounded: a.rounded || false
                 })),
+                disableAvatarAutomations: disableAvatarAutomations,
                 weatherEffect: currentWeatherEffect,
                 diceRollLog: diceRollLog,
                 diceModifiers: diceModifiers,
@@ -13028,6 +13385,11 @@
                 // Restore weather effect
                 if (state.weatherEffect) {
                     setWeatherEffect(state.weatherEffect);
+                }
+                
+                // Restore global avatar automations setting
+                if (state.disableAvatarAutomations !== undefined) {
+                    disableAvatarAutomations = state.disableAvatarAutomations;
                 }
                 
                 // Restore dice roll log
@@ -13187,6 +13549,7 @@
                     flipped: a.flipped || false,
                     rounded: a.rounded || false
                 })),
+                disableAvatarAutomations: disableAvatarAutomations,
                 weatherEffect: currentWeatherEffect,
                 diceRollLog: diceRollLog,
                 diceModifiers: diceModifiers,
@@ -13333,6 +13696,11 @@
                             setWeatherEffect(state.weatherEffect);
                         } else {
                             setWeatherEffect(null);
+                        }
+                        
+                        // Restore global avatar automations setting
+                        if (state.disableAvatarAutomations !== undefined) {
+                            disableAvatarAutomations = state.disableAvatarAutomations;
                         }
                         
                         // Restore dice roll log
@@ -13765,7 +14133,7 @@
         // Update music panel UI
         function updateMusicPanel() {
             const panel = document.getElementById('musicPanel');
-            if (!panel || !musicPanelVisible) return;
+            if (!panel) return;
             
             // Update Add Track button visibility and text
             const addTrackBtn = document.getElementById('addTrackBtn');
@@ -13810,6 +14178,7 @@
                     `;
                     
                     trackDiv.onmouseenter = () => {
+                        clearMusicPanelTimeout(); // Keep panel open while hovering tracks
                         if (currentTrackId !== track.id) {
                             trackDiv.style.backgroundColor = '#3a3a3a';
                             trackDiv.style.borderColor = 'var(--accent-color)';
@@ -13890,6 +14259,9 @@
         function showMusicContextMenu() {
             if (!musicContextMenu) return;
             
+            // Keep the music panel open while context menu is visible
+            clearMusicPanelTimeout();
+            
             // Remove any existing menu
             const existingMenu = document.getElementById('musicContextMenuPopup');
             if (existingMenu) existingMenu.remove();
@@ -13911,6 +14283,12 @@
                 const menu = document.getElementById('musicContextMenuPopup');
                 if (menu) menu.remove();
             };
+            
+            // Keep music panel open when hovering over backdrop/menu
+            backdrop.onmouseenter = () => {
+                clearMusicPanelTimeout();
+            };
+            
             document.body.appendChild(backdrop);
             
             // Create menu
@@ -13928,6 +14306,11 @@
                 min-width: 180px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.8);
             `;
+            
+            // Keep panel open when hovering menu
+            menu.onmouseenter = () => {
+                clearMusicPanelTimeout();
+            };
             
             // Set as default button
             const setDefaultBtn = document.createElement('button');
@@ -14652,6 +15035,35 @@
                 
                 if (hasAllowedClass) {
                     return; // Allow default context menu
+                }
+                
+                // Check if we're in theatre mode (not on grid)
+                const gridCanvas = document.getElementById('gridCanvas');
+                const activeBackdrop = getActiveBackdrop();
+                const isGridActive = activeBackdrop && activeBackdrop.grid.enabled && gridCanvas.style.display !== 'none';
+                
+                if (!isGridActive) {
+                    // Only host or offline can use context menus
+                    if (isConnected && !isHost) {
+                        e.preventDefault();
+                        return false;
+                    }
+                    
+                    // Check for theatre drawings
+                    const clickedDrawing = getTheatreDrawingAtPosition(e.clientX, e.clientY);
+                    if (clickedDrawing) {
+                        e.preventDefault();
+                        showTheatreDrawingContextMenu(e.clientX, e.clientY, clickedDrawing);
+                        return false;
+                    }
+                    
+                    // Check for theatre text
+                    const clickedText = getTheatreTextAtPosition(e.clientX, e.clientY);
+                    if (clickedText) {
+                        e.preventDefault();
+                        showTheatreTextContextMenu(e.clientX, e.clientY, clickedText);
+                        return false;
+                    }
                 }
                 
                 // Suppress context menu everywhere else (stage, background, canvas areas)
