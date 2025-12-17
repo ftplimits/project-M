@@ -1096,7 +1096,7 @@
     <canvas id="gridCanvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1500; display: none;"></canvas>
 
     <!-- Token Canvas -->
-    <canvas id="tokenCanvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1600; display: none;"></canvas>
+    <canvas id="tokenCanvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1520; display: none;"></canvas>
 
     <!-- Grid Overlay Canvas (dark background) - below grid images -->
     <canvas id="gridOverlayCanvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1400; display: none; pointer-events: none;"></canvas>
@@ -1132,7 +1132,7 @@
     <div id="weatherMenu" class="weather-menu"></div>
 
     <!-- Music Player Panel -->
-    <div id="musicPanel" style="display: none; position: absolute; width: 280px; max-height: 500px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); flex-direction: column;" onmouseenter="keepMusicPanelOpen()" onmouseleave="hideMusicPanel()">
+    <div id="musicPanel" style="display: none; position: absolute; width: 280px; max-height: 500px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); flex-direction: column;" onmouseenter="keepMusicPanelOpen()" onmouseleave="hideMusicPanel()" oncontextmenu="event.preventDefault(); event.stopPropagation();">
         <div style="font-size: 16px; font-weight: bold; color: var(--accent-color); margin-bottom: 12px; font-family: 'Georgia', serif; border-bottom: 1px solid var(--accent-color); padding-bottom: 8px; text-align: center;">
             🎵 Music Player
         </div>
@@ -1174,7 +1174,7 @@
     </div>
 
     <!-- Sound Effects Panel -->
-    <div id="soundEffectsPanel" style="display: none; position: absolute; width: 250px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8);" onmouseenter="keepSoundEffectsPanelOpen()" onmouseleave="hideSoundEffectsPanel()">
+    <div id="soundEffectsPanel" style="display: none; position: absolute; width: 250px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8);" onmouseenter="keepSoundEffectsPanelOpen()" onmouseleave="hideSoundEffectsPanel()" oncontextmenu="event.preventDefault(); event.stopPropagation();">
         <div style="font-size: 14px; font-weight: bold; color: var(--accent-color); margin-bottom: 12px; font-family: 'Georgia', serif; border-bottom: 1px solid var(--accent-color); padding-bottom: 8px; text-align: center;">
             🔊 Sound Effects
         </div>
@@ -1971,6 +1971,7 @@
                 updateAvatarControlsVisibility();
                 updateMusicPanel();
                 updatePlayerVolumeDisplay();
+                updateInitiativeButtonVisibility();
                 
                 // Copy link to clipboard and show success notification
                 const shareLink = `${window.location.origin}${window.location.pathname}?room=${id}`;
@@ -2117,6 +2118,7 @@
                     players = [];
                     updateMultiplayerMenu();
                     updateCreateSessionButton();
+                    updateInitiativeButtonVisibility();
                     customAlert('Disconnected from host');
                 });
                 
@@ -2166,6 +2168,7 @@
                     updateSceneBanner();
                     updateMusicPanel();
                     updatePlayerVolumeDisplay();
+                    updateInitiativeButtonVisibility();
                     
                     // Hide loading notification and show success
                     hideLoadingNotification();
@@ -2187,6 +2190,7 @@
                     }
                     isConnected = false;
                     updateCreateSessionButton();
+                    updateInitiativeButtonVisibility();
                     break;
                     
                 case 'FULL_STATE':
@@ -3639,6 +3643,7 @@
             updateCreateSessionButton();
             updateMusicPanel();
             updatePlayerVolumeDisplay();
+            updateInitiativeButtonVisibility();
             document.getElementById('multiplayerMenu').style.display = 'none';
         }
         
@@ -3761,9 +3766,11 @@
         let fogAreas = [];
         let currentFogTool = null;
         let isFogging = false;
+        let draggedFog = null;
         let fogStartPoint = null;
         let currentFog = null;
         let fogPolygonPoints = [];
+        let fogDragOffset = { x: 0, y: 0 };
         let fogMenuVisible = false;
         let fogMenuTimeout = null;
 
@@ -4484,7 +4491,6 @@
             const fogCanvas = document.getElementById('fogCanvas');
             const gridImageBelowCanvas = document.getElementById('gridImageBelowCanvas');
             const gridImageAboveCanvas = document.getElementById('gridImageAboveCanvas');
-            const initiativeTracker = document.getElementById('initiativeTracker');
             
             gridCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             overlayCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
@@ -4495,10 +4501,7 @@
             gridImageBelowCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             gridImageAboveCanvas.style.display = activeBackdrop.grid.enabled ? 'block' : 'none';
             
-            // Hide initiative tracker when grid is disabled
-            if (initiativeTracker) {
-                initiativeTracker.style.display = activeBackdrop.grid.enabled ? (initiativeOrder.length > 0 ? 'flex' : 'none') : 'none';
-            }
+            // Initiative tracker persists regardless of grid state
             
             // Only show toolbar for host or if not connected (solo play)
             if (gridToolbar) {
@@ -6165,23 +6168,9 @@
             const token = tokens.find(t => t.id === tokenId);
             if (token) {
                 token.hpCounterEnabled = enabled;
-                if (enabled && !token.hpCurrent) {
+                if (enabled && token.hpCurrent === undefined) {
                     token.hpCurrent = 10;
                 }
-                renderTokens();
-                saveToLocalStorage();
-                
-                // Broadcast token state to all players
-                if (isHost && isConnected) {
-                    broadcastState('TOKEN_SYNC', tokens);
-                }
-            }
-        }
-
-        function adjustTokenHP(tokenId, delta) {
-            const token = tokens.find(t => t.id === tokenId);
-            if (token && token.hpCounterEnabled) {
-                token.hpCurrent = Math.max(0, token.hpCurrent + delta);
                 renderTokens();
                 saveToLocalStorage();
                 
@@ -6195,7 +6184,7 @@
         function setTokenHP(tokenId, current) {
             const token = tokens.find(t => t.id === tokenId);
             if (token) {
-                token.hpCurrent = Math.max(0, current);
+                token.hpCurrent = current;
                 renderTokens();
                 saveToLocalStorage();
                 
@@ -6352,8 +6341,8 @@
             }
 
             if (!isNaN(hpValue)) {
-                // Clamp at 0 minimum (no maximum)
-                token.hpCurrent = Math.max(0, hpValue);
+                // Allow negative HP
+                token.hpCurrent = hpValue;
                 renderTokens();
                 saveToLocalStorage();
 
@@ -6719,7 +6708,7 @@
                 hpLabel.style.cssText = 'color: #888; font-size: 12px;';
                 
                 const hpCurrentInput = document.createElement('input');
-                hpCurrentInput.type = 'number';
+                hpCurrentInput.type = 'text';
                 hpCurrentInput.value = token.hpCurrent;
                 hpCurrentInput.style.cssText = `
                     width: 60px;
@@ -6733,8 +6722,11 @@
                 `;
                 
                 const hpSetBtn = createSmallMenuButton('Set', () => {
-                    setTokenHP(tokenId, parseInt(hpCurrentInput.value) || 0);
-                    setTimeout(() => showTokenContextMenu(event, tokenId), 10);
+                    const value = parseInt(hpCurrentInput.value);
+                    if (!isNaN(value)) {
+                        setTokenHP(tokenId, value);
+                        setTimeout(() => showTokenContextMenu(event, tokenId), 10);
+                    }
                 });
                 hpSetBtn.style.flex = '1';
                 
@@ -7244,6 +7236,12 @@
                 }
                 
                 updateGridButton();
+                
+                // Update initiative tracker to show tokens on this scene
+                renderInitiativeTracker();
+                
+                // Clean up any phantom tokens from initiative
+                cleanupInitiativeOrder();
             }
 
             saveToLocalStorage();
@@ -8003,6 +8001,7 @@
                     soundBtn.oncontextmenu = (e) => {
                         if (isHost || !isConnected) {
                             e.preventDefault();
+                            e.stopPropagation();
                             // Keep panel open during confirm dialog
                             clearSoundEffectsPanelTimeout();
                             if (confirm(`Delete sound effect "${sound.name}"?`)) {
@@ -9359,12 +9358,23 @@
             });
             
             const formulaParts = [];
+            let totalModifier = 0;
+            
             Object.keys(diceCounts).forEach(dieType => {
                 const count = diceCounts[dieType];
                 formulaParts.push(`${count}${dieType}`);
+                
+                // Add the wheel modifier for this die type to the total
+                const wheelMod = diceModifiers[dieType] || 0;
+                totalModifier += wheelMod;
             });
             
-            const formula = formulaParts.join('+');
+            let formula = formulaParts.join('+');
+            
+            // Append the total modifier to the formula if non-zero
+            if (totalModifier !== 0) {
+                formula += (totalModifier > 0 ? '+' : '') + totalModifier;
+            }
             
             // Animate all selected dice types
             Object.keys(diceCounts).forEach(dieType => {
@@ -9752,6 +9762,25 @@
             if (file) {
                 compressImage(file, 'backdrop').then(compressedDataUrl => {
                     createBackdrop(compressedDataUrl, 0, 0, 800, 600, null, true, true);
+                    
+                    // Clear global arrays for the new scene (it starts fresh)
+                    tokens = [];
+                    gridImages = [];
+                    drawings = [];
+                    textObjects = [];
+                    fogAreas = [];
+                    theatreDrawings = [];
+                    theatreTextObjects = [];
+                    
+                    // Render empty state
+                    renderTokens();
+                    renderGridImages();
+                    renderDrawings();
+                    renderTextObjects();
+                    renderFogAreas();
+                    renderTheatreDrawings();
+                    renderTheatreTextObjects();
+                    
                     updateSceneBanner();
                     saveToLocalStorage();
                     
@@ -9805,6 +9834,13 @@
             
             // Handle visibility - only hide other backdrops if hideOthers is true (for new uploads)
             if (hideOthers && visible) {
+                // Save the current visible backdrop's data before hiding it
+                const currentBackdropIndex = backdrops.findIndex(b => b.visible);
+                if (currentBackdropIndex !== -1) {
+                    saveAvatarStates(currentBackdropIndex);
+                    saveSceneData(currentBackdropIndex);
+                }
+                
                 backdrops.forEach(b => {
                     b.element.style.display = 'none';
                     b.visible = false;
@@ -10962,7 +10998,7 @@
                 
                 // Scale based on drag distance
                 const scaleFactor = 1 + (delta / 200);
-                scalingImage.scale = Math.max(0.1, Math.min(5, imageScaleStart.originalScale * scaleFactor));
+                scalingImage.scale = Math.max(0.1, Math.min(10, imageScaleStart.originalScale * scaleFactor));
                 
                 renderGridImages();
                 return;
@@ -12463,8 +12499,8 @@
         function handleFogMouseDown(e) {
             if (e.button !== 0) return;
             
-            // Shift + Click = Toggle fog visibility (works anytime)
-            if (e.shiftKey) {
+            // Ctrl + Click = Toggle fog visibility (works anytime)
+            if (e.ctrlKey || e.metaKey) {
                 const fog = getFogAtPosition(e.clientX, e.clientY);
                 if (fog) {
                     e.preventDefault();
@@ -12477,6 +12513,28 @@
                     if (isHost && isConnected) {
                         broadcastState('FOG_SYNC', fogAreas);
                     }
+                }
+                return;
+            }
+            
+            // Shift + Click = Drag fog shape (works anytime)
+            if (e.shiftKey) {
+                const fog = getFogAtPosition(e.clientX, e.clientY);
+                if (fog) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    draggedFog = fog;
+                    
+                    const activeBackdrop = getActiveBackdrop();
+                    if (!activeBackdrop) return;
+                    
+                    const worldPoint = inverseTransformPoint(e.clientX, e.clientY, activeBackdrop.gridTransform);
+                    
+                    // Store the offset from the first point of the fog shape
+                    fogDragOffset = {
+                        x: worldPoint.x - fog.points[0].x,
+                        y: worldPoint.y - fog.points[0].y
+                    };
                 }
                 return;
             }
@@ -12560,6 +12618,28 @@
         }
         
         function handleFogMouseMove(e) {
+            // Handle fog dragging
+            if (draggedFog) {
+                e.preventDefault();
+                const activeBackdrop = getActiveBackdrop();
+                if (!activeBackdrop) return;
+                
+                const worldPoint = inverseTransformPoint(e.clientX, e.clientY, activeBackdrop.gridTransform);
+                
+                // Calculate delta from original first point
+                const deltaX = worldPoint.x - fogDragOffset.x - draggedFog.points[0].x;
+                const deltaY = worldPoint.y - fogDragOffset.y - draggedFog.points[0].y;
+                
+                // Move all points by the delta
+                draggedFog.points = draggedFog.points.map(p => ({
+                    x: p.x + deltaX,
+                    y: p.y + deltaY
+                }));
+                
+                renderFogAreas();
+                return;
+            }
+            
             if (!isFogging || !currentFog) return;
             
             const activeBackdrop = getActiveBackdrop();
@@ -12579,6 +12659,19 @@
         
         function handleFogMouseUp(e) {
             if (e.button !== 0) return;
+            
+            // Handle end of fog dragging
+            if (draggedFog) {
+                draggedFog = null;
+                fogDragOffset = { x: 0, y: 0 };
+                saveToLocalStorage();
+                
+                // Broadcast fog to players
+                if (isHost && isConnected) {
+                    broadcastState('FOG_SYNC', fogAreas);
+                }
+                return;
+            }
             
             if (currentFogTool === 'square' && isFogging && currentFog) {
                 // Finish square
@@ -12714,14 +12807,43 @@
             
             if (!tracker || !tokensContainer) return;
             
+            // UPDATE BUTTON VISIBILITY FIRST - BEFORE ANY EARLY RETURNS!
+            const prevTurnBtn = document.getElementById('prevTurnBtn');
+            const nextTurnBtn = document.getElementById('nextTurnBtn');
+            const shouldShow = !isConnected || isHost;
+            
+            if (prevTurnBtn) {
+                if (shouldShow) {
+                    prevTurnBtn.style.display = 'flex';
+                    prevTurnBtn.style.visibility = 'visible';
+                    prevTurnBtn.style.pointerEvents = 'auto';
+                } else {
+                    prevTurnBtn.style.display = 'none';
+                    prevTurnBtn.style.visibility = 'hidden';
+                    prevTurnBtn.style.pointerEvents = 'none';
+                }
+            }
+            if (nextTurnBtn) {
+                if (shouldShow) {
+                    nextTurnBtn.style.display = 'flex';
+                    nextTurnBtn.style.visibility = 'visible';
+                    nextTurnBtn.style.pointerEvents = 'auto';
+                } else {
+                    nextTurnBtn.style.display = 'none';
+                    nextTurnBtn.style.visibility = 'hidden';
+                    nextTurnBtn.style.pointerEvents = 'none';
+                }
+            }
+            
             // Get active backdrop
             const activeBackdrop = getActiveBackdrop();
             
             // Filter out any tokens that don't exist on the current scene
             const validTokenIds = initiativeOrder.filter(tokenId => tokens.find(t => t.id === tokenId));
             
-            // Show/hide tracker based on whether there are VALID tokens in initiative AND grid is enabled
-            if (validTokenIds.length === 0 || !activeBackdrop || !activeBackdrop.grid.enabled) {
+            // Show tracker if there are ANY tokens in initiative (across all scenes)
+            // Hide only if the global initiativeOrder is empty
+            if (initiativeOrder.length === 0) {
                 tracker.style.display = 'none';
                 return;
             }
@@ -12729,12 +12851,28 @@
             tracker.style.display = 'flex';
             tokensContainer.innerHTML = '';
             
-            // Render each token in initiative order (only valid ones)
+            // If no valid tokens on THIS scene, show empty tracker with message
+            if (validTokenIds.length === 0) {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.style.cssText = `
+                    padding: 10px 20px;
+                    color: #888;
+                    font-size: 12px;
+                    font-style: italic;
+                `;
+                emptyMsg.textContent = 'No initiative tokens on this scene';
+                tokensContainer.appendChild(emptyMsg);
+                return;
+            }
+            
+            // Render each token in initiative order (only valid ones on current scene)
             validTokenIds.forEach((tokenId, index) => {
                 const token = tokens.find(t => t.id === tokenId);
                 if (!token) return;
                 
-                const isCurrentTurn = index === currentTurnIndex;
+                // Check if this token is the current turn based on global initiative order
+                const globalIndex = initiativeOrder.indexOf(tokenId);
+                const isCurrentTurn = globalIndex === currentTurnIndex;
                 
                 // Create token container
                 const tokenDiv = document.createElement('div');
@@ -12853,7 +12991,30 @@
         // Next turn
         function nextTurn() {
             if (initiativeOrder.length === 0) return;
-            currentTurnIndex = (currentTurnIndex + 1) % initiativeOrder.length;
+            
+            // Filter to get only valid token IDs (tokens that actually exist)
+            const validTokenIds = initiativeOrder.filter(tokenId => tokens.find(t => t.id === tokenId));
+            
+            if (validTokenIds.length === 0) {
+                // No valid tokens - clear initiative
+                initiativeOrder = [];
+                currentTurnIndex = 0;
+                renderInitiativeTracker();
+                saveToLocalStorage();
+                return;
+            }
+            
+            // Find the current valid token index
+            const currentTokenId = initiativeOrder[currentTurnIndex];
+            let currentValidIndex = validTokenIds.indexOf(currentTokenId);
+            
+            // Move to next valid token
+            currentValidIndex = (currentValidIndex + 1) % validTokenIds.length;
+            const nextTokenId = validTokenIds[currentValidIndex];
+            
+            // Update currentTurnIndex to point to the next valid token in the full array
+            currentTurnIndex = initiativeOrder.indexOf(nextTokenId);
+            
             renderInitiativeTracker();
             saveToLocalStorage();
             
@@ -12870,7 +13031,30 @@
         // Previous turn
         function previousTurn() {
             if (initiativeOrder.length === 0) return;
-            currentTurnIndex = (currentTurnIndex - 1 + initiativeOrder.length) % initiativeOrder.length;
+            
+            // Filter to get only valid token IDs (tokens that actually exist)
+            const validTokenIds = initiativeOrder.filter(tokenId => tokens.find(t => t.id === tokenId));
+            
+            if (validTokenIds.length === 0) {
+                // No valid tokens - clear initiative
+                initiativeOrder = [];
+                currentTurnIndex = 0;
+                renderInitiativeTracker();
+                saveToLocalStorage();
+                return;
+            }
+            
+            // Find the current valid token index
+            const currentTokenId = initiativeOrder[currentTurnIndex];
+            let currentValidIndex = validTokenIds.indexOf(currentTokenId);
+            
+            // Move to previous valid token
+            currentValidIndex = (currentValidIndex - 1 + validTokenIds.length) % validTokenIds.length;
+            const prevTokenId = validTokenIds[currentValidIndex];
+            
+            // Update currentTurnIndex to point to the previous valid token in the full array
+            currentTurnIndex = initiativeOrder.indexOf(prevTokenId);
+            
             renderInitiativeTracker();
             saveToLocalStorage();
             
@@ -12881,6 +13065,59 @@
                     initiativeValues: initiativeValues,
                     currentTurnIndex: currentTurnIndex
                 });
+            }
+        }
+        
+        // Clean up initiative order by removing phantom/deleted tokens
+        function cleanupInitiativeOrder() {
+            const oldLength = initiativeOrder.length;
+            initiativeOrder = initiativeOrder.filter(tokenId => tokens.find(t => t.id === tokenId));
+            
+            // Reset turn index if needed
+            if (currentTurnIndex >= initiativeOrder.length) {
+                currentTurnIndex = 0;
+            }
+            
+            // Re-render if anything changed
+            if (oldLength !== initiativeOrder.length) {
+                renderInitiativeTracker();
+                saveToLocalStorage();
+            }
+        }
+        
+        // Update initiative button visibility based on host/player status
+        function updateInitiativeButtonVisibility() {
+            const prevTurnBtn = document.getElementById('prevTurnBtn');
+            const nextTurnBtn = document.getElementById('nextTurnBtn');
+            
+            // Show buttons for host or solo play, hide for connected players
+            const shouldShow = !isConnected || isHost;
+            
+            if (prevTurnBtn) {
+                if (shouldShow) {
+                    prevTurnBtn.style.display = 'flex';
+                    prevTurnBtn.style.visibility = 'visible';
+                    prevTurnBtn.style.pointerEvents = 'auto';
+                    prevTurnBtn.style.opacity = '1';
+                } else {
+                    prevTurnBtn.style.display = 'none';
+                    prevTurnBtn.style.visibility = 'hidden';
+                    prevTurnBtn.style.pointerEvents = 'none';
+                    prevTurnBtn.style.opacity = '0';
+                }
+            }
+            if (nextTurnBtn) {
+                if (shouldShow) {
+                    nextTurnBtn.style.display = 'flex';
+                    nextTurnBtn.style.visibility = 'visible';
+                    nextTurnBtn.style.pointerEvents = 'auto';
+                    nextTurnBtn.style.opacity = '1';
+                } else {
+                    nextTurnBtn.style.display = 'none';
+                    nextTurnBtn.style.visibility = 'hidden';
+                    nextTurnBtn.style.pointerEvents = 'none';
+                    nextTurnBtn.style.opacity = '0';
+                }
             }
         }
         
@@ -14009,9 +14246,11 @@
                             });
                         }
                         
-                        // Restore character sheets
+                        // Restore character sheets (or clear if not in JSON)
                         if (state.characterSheets) {
                             characterSheets = state.characterSheets;
+                        } else {
+                            characterSheets = [];
                         }
                         
                         // Restore spotlight
@@ -14057,15 +14296,21 @@
                             fogAreas = state.fogAreas;
                         }
                         
-                        // Restore initiative tracker
+                        // Restore initiative tracker (or clear if not in JSON)
                         if (state.initiativeOrder) {
                             initiativeOrder = state.initiativeOrder;
+                        } else {
+                            initiativeOrder = [];
                         }
                         if (state.initiativeValues) {
                             initiativeValues = state.initiativeValues;
+                        } else {
+                            initiativeValues = {};
                         }
                         if (state.currentTurnIndex !== undefined) {
                             currentTurnIndex = state.currentTurnIndex;
+                        } else {
+                            currentTurnIndex = 0;
                         }
                         
                         // Restore local avatar hotkeys
@@ -14119,6 +14364,9 @@
                         // Always render theatre elements (they're independent of grid)
                         renderTheatreDrawings();
                         renderTheatreTextObjects();
+                        
+                        // Clean up any phantom tokens from initiative tracker
+                        cleanupInitiativeOrder();
                         
                         // Update scene banner to show loaded scene name
                         updateSceneBanner();
@@ -14488,6 +14736,7 @@
                     trackDiv.oncontextmenu = (e) => {
                         if (isHost || !isConnected) {
                             e.preventDefault();
+                            e.stopPropagation();
                             musicContextMenu = { x: e.clientX, y: e.clientY, trackId: track.id };
                             showMusicContextMenu();
                         }
@@ -14774,22 +15023,14 @@
                             } else if (currentFogTool) {
                                 // Fog tool mode - create, delete, or toggle fog
                                 handleFogMouseDown(e);
-                            } else if (e.shiftKey) {
-                                // Shift + Click on fog to toggle visibility (works without fog tool active)
+                            } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                                // Shift = drag fog, Ctrl = toggle fog visibility (works without fog tool active)
                                 const fog = getFogAtPosition(e.clientX, e.clientY);
                                 if (fog) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    fog.hidden = !fog.hidden;
-                                    renderFogAreas();
-                                    saveToLocalStorage();
-                                    
-                                    // Broadcast fog to players
-                                    if (isHost && isConnected) {
-                                        broadcastState('FOG_SYNC', fogAreas);
-                                    }
-                                } else {
-                                    // Check for text dragging first (when no tool is active)
+                                    // Let handleFogMouseDown handle it
+                                    handleFogMouseDown(e);
+                                } else if (e.shiftKey) {
+                                    // No fog found, check for text dragging
                                     const textObj = getTextAtPosition(e.clientX, e.clientY);
                                     if (textObj && (isHost || !isConnected)) { // Host or offline can drag text
                                         e.preventDefault();
@@ -14925,7 +15166,7 @@
                         window.theatreTextDragThrottle = true;
                         setTimeout(() => { window.theatreTextDragThrottle = false; }, 16); // ~60fps
                     }
-                } else if (isFogging) {
+                } else if (isFogging || draggedFog) {
                     handleFogMouseMove(e);
                 } else if (isTheatreDrawing || draggedTheatreDrawing) {
                     // Handle theatre drawing
@@ -16031,6 +16272,11 @@
                 });
             }
             
+            // Call initially to set correct visibility
+            if (typeof updateInitiativeButtonVisibility === 'function') {
+                updateInitiativeButtonVisibility();
+            }
+            
             // Setup text input handlers
             const textInput = document.getElementById('textInput');
             if (textInput) {
@@ -16257,12 +16503,8 @@
                 });
                 renderTextObjects();
                 
-                // Scale theatre text objects
-                theatreTextObjects.forEach(textObj => {
-                    textObj.x = Math.round(textObj.x * scaleX);
-                    textObj.y = Math.round(textObj.y * scaleY);
-                    textObj.fontSize = Math.round(textObj.fontSize * Math.min(scaleX, scaleY));
-                });
+                // Theatre text objects use percentage-based positioning
+                // Just re-render them - they'll automatically adapt to new backdrop size
                 renderTheatreTextObjects();
                 
                 // Scale drawings
@@ -16294,33 +16536,8 @@
                 });
                 renderDrawings();
                 
-                // Scale theatre drawings
-                theatreDrawings.forEach(drawing => {
-                    if (drawing.type === 'line') {
-                        drawing.x1 = Math.round(drawing.x1 * scaleX);
-                        drawing.y1 = Math.round(drawing.y1 * scaleY);
-                        drawing.x2 = Math.round(drawing.x2 * scaleX);
-                        drawing.y2 = Math.round(drawing.y2 * scaleY);
-                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
-                    } else if (drawing.type === 'circle') {
-                        drawing.x = Math.round(drawing.x * scaleX);
-                        drawing.y = Math.round(drawing.y * scaleY);
-                        drawing.radius = Math.round(drawing.radius * Math.min(scaleX, scaleY));
-                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
-                    } else if (drawing.type === 'rectangle') {
-                        drawing.x = Math.round(drawing.x * scaleX);
-                        drawing.y = Math.round(drawing.y * scaleY);
-                        drawing.width = Math.round(drawing.width * scaleX);
-                        drawing.height = Math.round(drawing.height * scaleY);
-                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
-                    } else if (drawing.type === 'polygon') {
-                        drawing.points = drawing.points.map(p => ({
-                            x: Math.round(p.x * scaleX),
-                            y: Math.round(p.y * scaleY)
-                        }));
-                        drawing.lineWidth = Math.round(drawing.lineWidth * Math.min(scaleX, scaleY));
-                    }
-                });
+                // Theatre drawings use percentage-based positioning
+                // Just re-render them - they'll automatically adapt to new backdrop size
                 renderTheatreDrawings();
                 
                 // Scale tokens
