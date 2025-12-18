@@ -5796,8 +5796,13 @@
             const gridTransform = activeBackdrop.gridTransform;
             
             tokens.forEach(token => {
+                // Skip hidden tokens for non-hosts (players shouldn't see them at all)
+                if (token.hidden && !isHost) {
+                    return;
+                }
+                
                 if (token.hidden) {
-                    // Hidden tokens get red tint
+                    // Hidden tokens get red tint (host only sees this)
                     ctx.globalAlpha = 0.5;
                 } else if (token.locked) {
                     // Locked tokens are dimmed
