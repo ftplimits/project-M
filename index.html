@@ -1058,6 +1058,7 @@
         <button class="floating-btn" onclick="uploadHandout()" oncontextmenu="showRecentHandoutsMenu(event)">Handouts</button>
         <button class="floating-btn" onclick="toggleWeatherMenu(event)" oncontextmenu="return false">Weather</button>
         <button class="floating-btn" id="gridButton" onclick="toggleGrid()" oncontextmenu="showGridMenu(event)">Grid</button>
+        <button class="floating-btn" id="countersButton" onclick="toggleCounters()">Counters</button>
         <button class="floating-btn" id="theatreDrawButton">Draw</button>
         <button class="floating-btn" id="theatreTextButton">Text</button>
         <button class="floating-btn" id="musicButton" title="Music Player">🎵</button>
@@ -1187,6 +1188,30 @@
         <!-- Sound Effects Grid -->
         <div id="soundEffectsList" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
             <!-- Sound effect buttons will be inserted here dynamically -->
+        </div>
+    </div>
+
+    <!-- Counters Panel -->
+    <div id="countersPanel" style="display: none; position: fixed; width: 320px; min-height: 150px; z-index: 2500; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); left: 50%; top: 50%; transform: translate(-50%, -50%);" oncontextmenu="showCountersContextMenu(event)">
+        <!-- Title Bar (draggable) -->
+        <div id="countersPanelHeader" style="font-size: 14px; font-weight: bold; color: var(--accent-color); margin-bottom: 12px; font-family: 'Georgia', serif; border-bottom: 1px solid var(--accent-color); padding-bottom: 8px; text-align: center; cursor: move; user-select: none;">
+            📊 Counters
+        </div>
+        
+        <!-- Counters List -->
+        <div id="countersList" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Counter entries will be inserted here dynamically -->
+        </div>
+        
+        <!-- Resize Handle -->
+        <div id="countersResizeHandle" style="position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--accent-color) 50%); border-radius: 0 0 6px 0;"></div>
+    </div>
+
+    <!-- Counter Color Picker Menu -->
+    <div id="counterColorMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-color); border-radius: 8px; padding: 12px; z-index: 3500; box-shadow: 0 4px 12px rgba(0,0,0,0.8);">
+        <div style="font-size: 12px; font-weight: bold; color: var(--accent-color); margin-bottom: 8px; text-align: center;">Choose Color</div>
+        <div id="counterColorGrid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+            <!-- Color swatches will be generated here -->
         </div>
     </div>
 
@@ -1777,6 +1802,13 @@
         // Sound Effects Variables
         let soundEffects = []; // Max 10 sound effects
         let soundEffectAudioElements = {}; // Map of sound ID to audio element
+        
+        // Counters state
+        let counters = []; // Max 5 counters
+        let countersPanelVisible = false;
+        let countersPanelPosition = { x: null, y: null }; // Will be centered initially
+        let countersPanelSize = { width: 320, height: null }; // Height auto-adjusts
+        let activeCounterForColor = null; // Track which counter is having its color changed
         
         // Panel timeout variables
         let musicPanelTimeout = null;
@@ -2524,6 +2556,14 @@
                     }
                     break;
                     
+                case 'COUNTERS_SYNC':
+                    // Receive counters list from host
+                    if (message.data && !isHost) {
+                        counters = message.data;
+                        updateCountersDisplay();
+                    }
+                    break;
+                    
                 case 'PLAY_SOUND_EFFECT':
                     // Host played a sound effect - all players play it too
                     if (message.data && message.data.soundId && !isHost) {
@@ -2841,6 +2881,8 @@
                 },
                 characterSheets: characterSheets,
                 musicTracks: musicTracks, // Just URLs - lightweight
+                soundEffects: soundEffects,
+                counters: counters,
                 defaultTrackId: defaultTrackId,
                 currentTrackId: currentTrackId,
                 hostViewport: hostViewport,
@@ -8033,6 +8075,470 @@
             
             event.target.value = '';
         }
+
+        // ===== COUNTERS FUNCTIONS =====
+        
+        const COUNTER_COLORS = [
+            '#ffffff', // White
+            '#d4a574', // Gold (accent)
+            '#ff6b6b', // Red
+            '#4ecdc4', // Cyan
+            '#95e1d3', // Mint
+            '#f38181', // Pink
+            '#ffd93d', // Yellow
+            '#a8dadc', // Light Blue
+            '#c7b8ea'  // Purple
+        ];
+        
+        function toggleCounters() {
+            const panel = document.getElementById('countersPanel');
+            if (!panel) return;
+            
+            countersPanelVisible = !countersPanelVisible;
+            
+            if (countersPanelVisible) {
+                // Initialize with one counter if empty
+                if (counters.length === 0) {
+                    counters.push({
+                        id: Date.now(),
+                        label: 'Counter',
+                        value: 0,
+                        color: '#ffffff'
+                    });
+                }
+                
+                // Position panel (centered if no saved position)
+                if (countersPanelPosition.x === null || countersPanelPosition.y === null) {
+                    panel.style.left = '50%';
+                    panel.style.top = '50%';
+                    panel.style.transform = 'translate(-50%, -50%)';
+                } else {
+                    panel.style.left = countersPanelPosition.x + 'px';
+                    panel.style.top = countersPanelPosition.y + 'px';
+                    panel.style.transform = 'none';
+                }
+                
+                if (countersPanelSize.width) {
+                    panel.style.width = countersPanelSize.width + 'px';
+                }
+                
+                panel.style.display = 'block';
+                updateCountersDisplay();
+            } else {
+                panel.style.display = 'none';
+            }
+            
+            saveToLocalStorage();
+        }
+        
+        function addCounter() {
+            if (counters.length >= 5) {
+                alert('Maximum 5 counters reached.');
+                return;
+            }
+            
+            counters.push({
+                id: Date.now(),
+                label: 'Counter',
+                value: 0,
+                color: '#ffffff'
+            });
+            
+            updateCountersDisplay();
+            saveToLocalStorage();
+            
+            // Broadcast to players
+            if (isHost && isConnected) {
+                broadcastState('COUNTERS_SYNC', counters);
+            }
+        }
+        
+        function removeCounter(counterId) {
+            const index = counters.findIndex(c => c.id === counterId);
+            if (index !== -1) {
+                counters.splice(index, 1);
+                updateCountersDisplay();
+                saveToLocalStorage();
+                
+                // Broadcast to players
+                if (isHost && isConnected) {
+                    broadcastState('COUNTERS_SYNC', counters);
+                }
+            }
+        }
+        
+        function updateCounterLabel(counterId, newLabel) {
+            const counter = counters.find(c => c.id === counterId);
+            if (counter) {
+                counter.label = newLabel || 'Counter';
+                saveToLocalStorage();
+                
+                // Broadcast to players
+                if (isHost && isConnected) {
+                    broadcastState('COUNTERS_SYNC', counters);
+                }
+            }
+        }
+        
+        function updateCounterValue(counterId, delta) {
+            const counter = counters.find(c => c.id === counterId);
+            if (counter) {
+                counter.value = Math.max(-100, Math.min(100, counter.value + delta));
+                updateCountersDisplay();
+                saveToLocalStorage();
+                
+                // Broadcast to players
+                if (isHost && isConnected) {
+                    broadcastState('COUNTERS_SYNC', counters);
+                }
+            }
+        }
+        
+        function setCounterValue(counterId, newValue) {
+            const counter = counters.find(c => c.id === counterId);
+            if (counter) {
+                const val = parseInt(newValue);
+                if (!isNaN(val)) {
+                    counter.value = Math.max(-100, Math.min(100, val));
+                    updateCountersDisplay();
+                    saveToLocalStorage();
+                    
+                    // Broadcast to players
+                    if (isHost && isConnected) {
+                        broadcastState('COUNTERS_SYNC', counters);
+                    }
+                }
+            }
+        }
+        
+        function showCounterColorMenu(event, counterId) {
+            event.preventDefault();
+            event.stopPropagation();
+            
+            const menu = document.getElementById('counterColorMenu');
+            const grid = document.getElementById('counterColorGrid');
+            if (!menu || !grid) return;
+            
+            activeCounterForColor = counterId;
+            
+            // Build color grid
+            grid.innerHTML = '';
+            COUNTER_COLORS.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.style.cssText = `
+                    width: 32px;
+                    height: 32px;
+                    background-color: ${color};
+                    border: 2px solid #444;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    transition: transform 0.2s, border-color 0.2s;
+                `;
+                swatch.onmouseenter = () => {
+                    swatch.style.transform = 'scale(1.1)';
+                    swatch.style.borderColor = 'var(--accent-color)';
+                };
+                swatch.onmouseleave = () => {
+                    swatch.style.transform = 'scale(1)';
+                    swatch.style.borderColor = '#444';
+                };
+                swatch.onclick = () => setCounterColor(counterId, color);
+                grid.appendChild(swatch);
+            });
+            
+            menu.style.left = event.clientX + 'px';
+            menu.style.top = event.clientY + 'px';
+            menu.style.display = 'block';
+        }
+        
+        function setCounterColor(counterId, color) {
+            const counter = counters.find(c => c.id === counterId);
+            if (counter) {
+                counter.color = color;
+                updateCountersDisplay();
+                saveToLocalStorage();
+                
+                // Broadcast to players
+                if (isHost && isConnected) {
+                    broadcastState('COUNTERS_SYNC', counters);
+                }
+            }
+            
+            // Hide color menu
+            const menu = document.getElementById('counterColorMenu');
+            if (menu) menu.style.display = 'none';
+            activeCounterForColor = null;
+        }
+        
+        function showCountersContextMenu(event) {
+            event.preventDefault();
+            
+            // Only host or offline can add counters
+            if (isConnected && !isHost) return;
+            
+            // Create simple context menu
+            const existingMenu = document.getElementById('countersAddMenu');
+            if (existingMenu) existingMenu.remove();
+            
+            const menu = document.createElement('div');
+            menu.id = 'countersAddMenu';
+            menu.style.cssText = `
+                position: fixed;
+                background-color: #1a1a1a;
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                padding: 4px;
+                z-index: 3500;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+            `;
+            
+            const addOption = document.createElement('div');
+            addOption.textContent = '+ Counter';
+            addOption.style.cssText = `
+                padding: 8px 16px;
+                color: #e0e0e0;
+                cursor: pointer;
+                font-size: 14px;
+                font-family: Arial, sans-serif;
+                border-radius: 4px;
+                transition: background-color 0.2s;
+            `;
+            addOption.onmouseenter = () => addOption.style.backgroundColor = '#2a2a2a';
+            addOption.onmouseleave = () => addOption.style.backgroundColor = 'transparent';
+            addOption.onclick = () => {
+                addCounter();
+                menu.remove();
+            };
+            
+            menu.appendChild(addOption);
+            menu.style.left = event.clientX + 'px';
+            menu.style.top = event.clientY + 'px';
+            document.body.appendChild(menu);
+            
+            // Close menu on click outside
+            setTimeout(() => {
+                document.addEventListener('click', function closeMenu(e) {
+                    if (!menu.contains(e.target)) {
+                        menu.remove();
+                        document.removeEventListener('click', closeMenu);
+                    }
+                });
+            }, 10);
+        }
+        
+        function updateCountersDisplay() {
+            const list = document.getElementById('countersList');
+            if (!list) return;
+            
+            list.innerHTML = '';
+            
+            counters.forEach(counter => {
+                const entry = document.createElement('div');
+                entry.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 8px;
+                    background-color: #2a2a2a;
+                    border-radius: 6px;
+                    border: 1px solid #444;
+                `;
+                
+                // Label (editable, with right-click for color)
+                const label = document.createElement('input');
+                label.type = 'text';
+                label.value = counter.label;
+                label.style.cssText = `
+                    flex: 1;
+                    background-color: transparent;
+                    border: none;
+                    color: ${counter.color};
+                    font-size: 14px;
+                    font-weight: bold;
+                    font-family: Arial, sans-serif;
+                    padding: 4px;
+                    outline: none;
+                `;
+                label.onblur = () => updateCounterLabel(counter.id, label.value);
+                label.onkeydown = (e) => {
+                    if (e.key === 'Enter') label.blur();
+                };
+                label.oncontextmenu = (e) => showCounterColorMenu(e, counter.id);
+                
+                // Minus button
+                const minusBtn = document.createElement('button');
+                minusBtn.textContent = '−';
+                minusBtn.style.cssText = `
+                    width: 28px;
+                    height: 28px;
+                    background-color: #dc2626;
+                    color: #fff;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 18px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                `;
+                minusBtn.onmouseenter = () => minusBtn.style.backgroundColor = '#b91c1c';
+                minusBtn.onmouseleave = () => minusBtn.style.backgroundColor = '#dc2626';
+                minusBtn.onclick = () => updateCounterValue(counter.id, -1);
+                
+                // Value (editable)
+                const value = document.createElement('input');
+                value.type = 'number';
+                value.value = counter.value;
+                value.min = -100;
+                value.max = 100;
+                value.style.cssText = `
+                    width: 50px;
+                    text-align: center;
+                    background-color: #1a1a1a;
+                    border: 1px solid #666;
+                    border-radius: 4px;
+                    color: #e0e0e0;
+                    font-size: 16px;
+                    font-weight: bold;
+                    padding: 4px;
+                    font-family: Arial, sans-serif;
+                `;
+                value.onblur = () => setCounterValue(counter.id, value.value);
+                value.onkeydown = (e) => {
+                    if (e.key === 'Enter') value.blur();
+                };
+                
+                // Plus button
+                const plusBtn = document.createElement('button');
+                plusBtn.textContent = '+';
+                plusBtn.style.cssText = `
+                    width: 28px;
+                    height: 28px;
+                    background-color: #16a34a;
+                    color: #fff;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 18px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                `;
+                plusBtn.onmouseenter = () => plusBtn.style.backgroundColor = '#15803d';
+                plusBtn.onmouseleave = () => plusBtn.style.backgroundColor = '#16a34a';
+                plusBtn.onclick = () => updateCounterValue(counter.id, 1);
+                
+                // Delete button (X)
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '✕';
+                deleteBtn.style.cssText = `
+                    width: 28px;
+                    height: 28px;
+                    background-color: #666;
+                    color: #fff;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 16px;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                `;
+                deleteBtn.onmouseenter = () => deleteBtn.style.backgroundColor = '#888';
+                deleteBtn.onmouseleave = () => deleteBtn.style.backgroundColor = '#666';
+                deleteBtn.onclick = () => removeCounter(counter.id);
+                
+                entry.appendChild(label);
+                entry.appendChild(minusBtn);
+                entry.appendChild(value);
+                entry.appendChild(plusBtn);
+                entry.appendChild(deleteBtn);
+                
+                list.appendChild(entry);
+            });
+        }
+        
+        // Make counters panel draggable and resizable
+        (function initCountersPanelInteractions() {
+            let isDragging = false;
+            let isResizing = false;
+            let dragStartX, dragStartY, panelStartX, panelStartY;
+            let resizeStartX, resizeStartY, resizeStartWidth, resizeStartHeight;
+            
+            const panel = document.getElementById('countersPanel');
+            const header = document.getElementById('countersPanelHeader');
+            const resizeHandle = document.getElementById('countersResizeHandle');
+            
+            if (!panel || !header || !resizeHandle) return;
+            
+            // Dragging
+            header.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                dragStartX = e.clientX;
+                dragStartY = e.clientY;
+                
+                const rect = panel.getBoundingClientRect();
+                panelStartX = rect.left;
+                panelStartY = rect.top;
+                
+                panel.style.transform = 'none';
+            });
+            
+            // Resizing
+            resizeHandle.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                isResizing = true;
+                resizeStartX = e.clientX;
+                resizeStartY = e.clientY;
+                resizeStartWidth = panel.offsetWidth;
+                resizeStartHeight = panel.offsetHeight;
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const deltaX = e.clientX - dragStartX;
+                    const deltaY = e.clientY - dragStartY;
+                    
+                    const newX = panelStartX + deltaX;
+                    const newY = panelStartY + deltaY;
+                    
+                    panel.style.left = newX + 'px';
+                    panel.style.top = newY + 'px';
+                } else if (isResizing) {
+                    const deltaX = e.clientX - resizeStartX;
+                    const deltaY = e.clientY - resizeStartY;
+                    
+                    const newWidth = Math.max(250, resizeStartWidth + deltaX);
+                    const newHeight = Math.max(150, resizeStartHeight + deltaY);
+                    
+                    panel.style.width = newWidth + 'px';
+                    panel.style.height = newHeight + 'px';
+                }
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    // Save position
+                    const rect = panel.getBoundingClientRect();
+                    countersPanelPosition.x = rect.left;
+                    countersPanelPosition.y = rect.top;
+                    saveToLocalStorage();
+                }
+                if (isResizing) {
+                    // Save size
+                    countersPanelSize.width = panel.offsetWidth;
+                    countersPanelSize.height = panel.offsetHeight;
+                    saveToLocalStorage();
+                }
+                isDragging = false;
+                isResizing = false;
+            });
+        })();
+        
+        // Close color menu on click outside
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('counterColorMenu');
+            if (menu && !menu.contains(e.target)) {
+                menu.style.display = 'none';
+                activeCounterForColor = null;
+            }
+        });
 
         // Weather Effects Functions
         function toggleWeatherMenu(event) {
@@ -13816,7 +14322,11 @@
                 currentTurnIndex: currentTurnIndex,
                 localAvatarHotkeys: localAvatarHotkeys,
                 musicTracks: musicTracks,
-                defaultTrackId: defaultTrackId
+                defaultTrackId: defaultTrackId,
+                counters: counters,
+                countersPanelVisible: countersPanelVisible,
+                countersPanelPosition: countersPanelPosition,
+                countersPanelSize: countersPanelSize
             };
             
             try {
@@ -14045,6 +14555,35 @@
                     defaultTrackId = state.defaultTrackId;
                 }
                 
+                // Restore counters
+                if (state.counters) {
+                    counters = state.counters;
+                }
+                if (state.countersPanelVisible !== undefined) {
+                    countersPanelVisible = state.countersPanelVisible;
+                }
+                if (state.countersPanelPosition) {
+                    countersPanelPosition = state.countersPanelPosition;
+                }
+                if (state.countersPanelSize) {
+                    countersPanelSize = state.countersPanelSize;
+                }
+                if (countersPanelVisible) {
+                    const panel = document.getElementById('countersPanel');
+                    if (panel) {
+                        panel.style.display = 'block';
+                        if (countersPanelPosition.x !== null) {
+                            panel.style.left = countersPanelPosition.x + 'px';
+                            panel.style.top = countersPanelPosition.y + 'px';
+                            panel.style.transform = 'none';
+                        }
+                        if (countersPanelSize.width) {
+                            panel.style.width = countersPanelSize.width + 'px';
+                        }
+                        updateCountersDisplay();
+                    }
+                }
+                
                 // Restore grid for active scene
                 const activeBackdrop = getActiveBackdrop();
                 if (activeBackdrop && activeBackdrop.grid) {
@@ -14131,7 +14670,8 @@
                 currentTurnIndex: currentTurnIndex,
                 localAvatarHotkeys: localAvatarHotkeys,
                 musicTracks: musicTracks,
-                soundEffects: soundEffects
+                soundEffects: soundEffects,
+                counters: counters
             };
             
             const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -14375,6 +14915,12 @@
                         if (state.soundEffects) {
                             soundEffects = state.soundEffects;
                             updateSoundEffectsPanel();
+                        }
+                        
+                        // Restore counters
+                        if (state.counters) {
+                            counters = state.counters;
+                            updateCountersDisplay();
                         }
                         
                         // Restore per-scene data for the visible scene
