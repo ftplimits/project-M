@@ -2148,6 +2148,13 @@
                     isConnected = false;
                     connections = [];
                     players = [];
+                    
+                    // SECURITY: Clear game data when disconnected from host
+                    if (!isHost) {
+                        localStorage.removeItem('monomythVTT');
+                        console.log('Game state cleared on disconnect (player security)');
+                    }
+                    
                     updateMultiplayerMenu();
                     updateCreateSessionButton();
                     updateInitiativeButtonVisibility();
@@ -3709,7 +3716,7 @@
                 updateMusicPanel();
                 
                 // Clear localStorage game data (keep preferences)
-                localStorage.removeItem('monomyth_vtt_data');
+                localStorage.removeItem('monomythVTT');
                 
                 console.log('Game state cleared on disconnect (player security)');
             }
@@ -11751,7 +11758,7 @@
         function transformPoint(point, gridTransform) {
             return {
                 x: point.x * gridTransform.zoom + gridTransform.panX,
-                y: point.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y
+                y: point.y * gridTransform.zoom + gridTransform.panY
             };
         }
         
@@ -11759,7 +11766,7 @@
         function inverseTransformPoint(clientX, clientY, gridTransform) {
             return {
                 x: (clientX - gridTransform.panX) / gridTransform.zoom,
-                y: (clientY - GRID_OFFSET_Y - gridTransform.panY) / gridTransform.zoom
+                y: (clientY - gridTransform.panY) / gridTransform.zoom
             };
         }
         
@@ -12209,7 +12216,7 @@
             ctx.save();
             
             const transformedX = textObj.x * gridTransform.zoom + gridTransform.panX;
-            const transformedY = textObj.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+            const transformedY = textObj.y * gridTransform.zoom + gridTransform.panY;
             
             ctx.fillStyle = textObj.color;
             
@@ -12254,7 +12261,7 @@
             textInput.value = '';
             textInput.style.display = 'block';
             textInput.style.left = clientX + 'px';
-            textInput.style.top = (clientY - GRID_OFFSET_Y) + 'px';
+            textInput.style.top = clientY + 'px';
             textInput.style.fontSize = textSettings.fontSize + 'px';
             textInput.style.fontFamily = textSettings.fontFamily;
             textInput.style.color = textSettings.color;
@@ -12284,7 +12291,7 @@
             textInput.value = textObj.text;
             textInput.style.display = 'block';
             textInput.style.left = clientX + 'px';
-            textInput.style.top = (clientY - GRID_OFFSET_Y) + 'px';
+            textInput.style.top = clientY + 'px';
             textInput.style.fontSize = textObj.fontSize + 'px';
             textInput.style.fontFamily = textObj.fontFamily;
             textInput.style.color = textObj.color;
@@ -17308,6 +17315,12 @@
             if (audioElement) {
                 audioElement.pause();
                 audioElement.src = '';
+            }
+            
+            // SECURITY: Clear game data if player closes browser while connected
+            // Host keeps their data (it's their campaign)
+            if (isConnected && !isHost) {
+                localStorage.removeItem('monomythVTT');
             }
         });
     </script>
