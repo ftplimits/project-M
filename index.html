@@ -10650,8 +10650,9 @@
                     // Place at center of view
                     const centerClientX = window.innerWidth / 2;
                     const centerClientY = window.innerHeight / 2;
-                    const gridCenterX = (centerClientX - activeBackdrop.gridTransform.panX) / activeBackdrop.gridTransform.zoom - width / 2;
-                    const gridCenterY = (centerClientY - GRID_OFFSET_Y - activeBackdrop.gridTransform.panY) / activeBackdrop.gridTransform.zoom - height / 2;
+                    // Round world coordinates to prevent sliding during zoom
+                    const gridCenterX = Math.round((centerClientX - activeBackdrop.gridTransform.panX) / activeBackdrop.gridTransform.zoom - width / 2);
+                    const gridCenterY = Math.round((centerClientY - GRID_OFFSET_Y - activeBackdrop.gridTransform.panY) / activeBackdrop.gridTransform.zoom - height / 2);
                     
                     const newImage = {
                         id: Date.now(),
@@ -11019,8 +11020,9 @@
                 if (!activeBackdrop) return;
                 
                 const gridTransform = activeBackdrop.gridTransform;
-                const newX = (e.clientX - imageDragOffset.x - gridTransform.panX) / gridTransform.zoom;
-                const newY = (e.clientY - imageDragOffset.y - GRID_OFFSET_Y - gridTransform.panY) / gridTransform.zoom;
+                // Round world coordinates to prevent sliding during zoom
+                const newX = Math.round((e.clientX - imageDragOffset.x - gridTransform.panX) / gridTransform.zoom);
+                const newY = Math.round((e.clientY - imageDragOffset.y - GRID_OFFSET_Y - gridTransform.panY) / gridTransform.zoom);
                 
                 draggedImage.x = newX;
                 draggedImage.y = newY;
