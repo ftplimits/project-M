@@ -3650,7 +3650,7 @@
         // End of multiplayer functions
 
         // Spotlight feature
-        let spotlightedAvatarId = null;
+        let spotlightedAvatarIds = [];
 
         // Grid system variables
         let gridColor = 'white';
@@ -10050,9 +10050,10 @@
                 e.stopPropagation();
                 const avatarIndex = avatars.findIndex(a => a.element === avatar);
                 
-                // Clear spotlight if this avatar is spotlighted
-                if (spotlightedAvatarId === avatarIndex) {
-                    spotlightedAvatarId = null;
+                // Remove from spotlight array if this avatar is spotlighted
+                const spotlightIndex = spotlightedAvatarIds.indexOf(avatarIndex);
+                if (spotlightIndex !== -1) {
+                    spotlightedAvatarIds.splice(spotlightIndex, 1);
                     updateSpotlightOverlay();
                 }
                 
@@ -10120,7 +10121,13 @@
                     const avatarData = avatars.find(a => a.element === avatar);
                     if (avatarData) {
                         const avatarId = avatars.indexOf(avatarData);
-                        spotlightedAvatarId = (spotlightedAvatarId === avatarId) ? null : avatarId;
+                        // Toggle: add if not in array, remove if already in array
+                        const index = spotlightedAvatarIds.indexOf(avatarId);
+                        if (index === -1) {
+                            spotlightedAvatarIds.push(avatarId);
+                        } else {
+                            spotlightedAvatarIds.splice(index, 1);
+                        }
                         updateSpotlightOverlay();
                     }
                     return;
@@ -10231,9 +10238,9 @@
                 draggedElement.style.top = (e.clientY - offsetY) + 'px';
                 
                 // Update spotlight if this avatar is spotlighted
-                if (draggedElement.classList.contains('avatar') && spotlightedAvatarId !== null) {
+                if (draggedElement.classList.contains('avatar') && spotlightedAvatarIds.length > 0) {
                     const draggedIndex = avatars.findIndex(a => a.element === draggedElement);
-                    if (draggedIndex === spotlightedAvatarId) {
+                    if (spotlightedAvatarIds.includes(draggedIndex)) {
                         updateSpotlightOverlay();
                     }
                 }
@@ -10253,9 +10260,9 @@
                 offsetY = e.clientY;
                 
                 // Update spotlight if this avatar is spotlighted
-                if (resizingElement.classList.contains('avatar') && spotlightedAvatarId !== null) {
+                if (resizingElement.classList.contains('avatar') && spotlightedAvatarIds.length > 0) {
                     const resizingIndex = avatars.findIndex(a => a.element === resizingElement);
-                    if (resizingIndex === spotlightedAvatarId) {
+                    if (spotlightedAvatarIds.includes(resizingIndex)) {
                         updateSpotlightOverlay();
                     }
                 }
@@ -10576,8 +10583,8 @@
         function updateSpotlightOverlay() {
             let overlay = document.getElementById('spotlightOverlay');
             
-            if (spotlightedAvatarId === null) {
-                // Remove spotlight
+            if (spotlightedAvatarIds.length === 0) {
+                // Remove spotlight when no avatars are spotlighted
                 if (overlay) overlay.remove();
                 return;
             }
@@ -10586,32 +10593,45 @@
             if (!overlay) {
                 overlay = document.createElement('div');
                 overlay.id = 'spotlightOverlay';
-                overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1400; pointer-events: none;';
+                overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1400; pointer-events: none; background: rgba(0, 0, 0, 0.7);';
                 document.body.appendChild(overlay);
             }
             
-            // Get the spotlighted avatar
-            const avatarData = avatars[spotlightedAvatarId];
-            if (!avatarData || !avatarData.element) {
+            // Build multiple radial gradients for mask-image
+            const gradients = [];
+            
+            spotlightedAvatarIds.forEach(avatarId => {
+                const avatarData = avatars[avatarId];
+                if (!avatarData || !avatarData.element) return;
+                
+                // Get avatar's screen position
+                const avatarRect = avatarData.element.getBoundingClientRect();
+                const avatarWidth = avatarData.element.offsetWidth || 300;
+                const avatarImageHeight = avatarWidth * 1.25; // Avatar image portion (not including name banner)
+                
+                // Center spotlight on avatar image (not the name banner)
+                const spotlightX = avatarRect.left + (avatarWidth / 2);
+                const spotlightY = avatarRect.top + (avatarImageHeight / 2);
+                
+                // Add radial gradient for this avatar (inverted - transparent in center, opaque outside)
+                gradients.push(`radial-gradient(circle 240px at ${spotlightX}px ${spotlightY}px, transparent 40%, black 100%)`);
+            });
+            
+            // Clean up invalid avatar IDs
+            spotlightedAvatarIds = spotlightedAvatarIds.filter(id => avatars[id] && avatars[id].element);
+            
+            if (gradients.length === 0) {
+                // All avatars were invalid, remove overlay
                 if (overlay) overlay.remove();
-                spotlightedAvatarId = null;
                 return;
             }
             
-            // Get avatar's screen position
-            const avatarRect = avatarData.element.getBoundingClientRect();
-            const avatarWidth = avatarData.element.offsetWidth || 300;
-            const avatarImageHeight = avatarWidth * 1.25; // Avatar image portion (not including name banner)
-            
-            // Center spotlight on avatar image (not the name banner)
-            const spotlightX = avatarRect.left + (avatarWidth / 2);
-            const spotlightY = avatarRect.top + (avatarImageHeight / 2);
-            
-            // Update gradient
-            overlay.style.background = `radial-gradient(circle 240px at ${spotlightX}px ${spotlightY}px, 
-                rgba(0, 0, 0, 0) 0%, 
-                rgba(0, 0, 0, 0) 40%,
-                rgba(0, 0, 0, 0.7) 100%)`;
+            // Apply mask-image with all gradients
+            // Using mask-composite to combine multiple spotlights (intersection makes them additive)
+            overlay.style.maskImage = gradients.join(', ');
+            overlay.style.webkitMaskImage = gradients.join(', ');
+            overlay.style.maskComposite = 'intersect';
+            overlay.style.webkitMaskComposite = 'source-in';
         }
 
         // ===== GRID IMAGES FUNCTIONS =====
@@ -13783,7 +13803,7 @@
                 diceRollLog: diceRollLog,
                 diceModifiers: diceModifiers,
                 characterSheets: characterSheets,
-                spotlightedAvatarId: spotlightedAvatarId,
+                spotlightedAvatarIds: spotlightedAvatarIds,
                 tokens: tokens,
                 gridImages: gridImages,
                 drawings: drawings,
@@ -13951,12 +13971,17 @@
                     characterSheets = state.characterSheets;
                 }
                 
-                // Restore spotlight
-                if (state.spotlightedAvatarId !== undefined) {
-                    spotlightedAvatarId = state.spotlightedAvatarId;
-                    if (spotlightedAvatarId !== null) {
+                // Restore spotlight (with backward compatibility)
+                if (state.spotlightedAvatarIds !== undefined) {
+                    // New format: array of IDs
+                    spotlightedAvatarIds = state.spotlightedAvatarIds;
+                    if (spotlightedAvatarIds.length > 0) {
                         updateSpotlightOverlay();
                     }
+                } else if (state.spotlightedAvatarId !== undefined && state.spotlightedAvatarId !== null) {
+                    // Old format: single ID - convert to array
+                    spotlightedAvatarIds = [state.spotlightedAvatarId];
+                    updateSpotlightOverlay();
                 }
                 
                 // Restore tokens
@@ -14100,7 +14125,7 @@
                 diceRollLog: diceRollLog,
                 diceModifiers: diceModifiers,
                 characterSheets: characterSheets,
-                spotlightedAvatarId: spotlightedAvatarId,
+                spotlightedAvatarIds: spotlightedAvatarIds,
                 initiativeOrder: initiativeOrder,
                 initiativeValues: initiativeValues,
                 currentTurnIndex: currentTurnIndex,
@@ -14270,12 +14295,17 @@
                             characterSheets = [];
                         }
                         
-                        // Restore spotlight
-                        if (state.spotlightedAvatarId !== undefined) {
-                            spotlightedAvatarId = state.spotlightedAvatarId;
-                            if (spotlightedAvatarId !== null) {
+                        // Restore spotlight (with backward compatibility)
+                        if (state.spotlightedAvatarIds !== undefined) {
+                            // New format: array of IDs
+                            spotlightedAvatarIds = state.spotlightedAvatarIds;
+                            if (spotlightedAvatarIds.length > 0) {
                                 updateSpotlightOverlay();
                             }
+                        } else if (state.spotlightedAvatarId !== undefined && state.spotlightedAvatarId !== null) {
+                            // Old format: single ID - convert to array
+                            spotlightedAvatarIds = [state.spotlightedAvatarId];
+                            updateSpotlightOverlay();
                         }
                         
                         // Restore tokens
@@ -16607,7 +16637,7 @@
                 renderGridImages();
                 
                 // Update spotlight if active
-                if (spotlightedAvatarId !== null) {
+                if (spotlightedAvatarIds.length > 0) {
                     updateSpotlightOverlay();
                 }
                 
