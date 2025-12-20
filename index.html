@@ -4866,7 +4866,7 @@
             // If grid is smaller than viewport (zoomed way out), allow free panning
             // No need to clamp when the entire grid fits on screen
             if (gridScreenSize < window.innerWidth && gridScreenSize < window.innerHeight) {
-                return { panX: rawPanX, panY: rawPanY };
+                return { panX: Math.round(rawPanX), panY: Math.round(rawPanY) };
             }
             
             // Very generous clamping - only prevent losing the grid entirely
@@ -4882,8 +4882,8 @@
             const minPanY = window.innerHeight - gridScreenSize * (1 - minVisibleAmount); // Can pan almost all the way up
             
             return {
-                panX: Math.max(minPanX, Math.min(maxPanX, rawPanX)),
-                panY: Math.max(minPanY, Math.min(maxPanY, rawPanY))
+                panX: Math.round(Math.max(minPanX, Math.min(maxPanX, rawPanX))),
+                panY: Math.round(Math.max(minPanY, Math.min(maxPanY, rawPanY)))
             };
         }
 
