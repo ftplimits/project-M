@@ -10651,8 +10651,9 @@
                     const centerClientX = window.innerWidth / 2;
                     const centerClientY = window.innerHeight / 2;
                     // Round world coordinates to prevent sliding during zoom
+                    // Grid images use same coordinate system as grid (no GRID_OFFSET_Y)
                     const gridCenterX = Math.round((centerClientX - activeBackdrop.gridTransform.panX) / activeBackdrop.gridTransform.zoom - width / 2);
-                    const gridCenterY = Math.round((centerClientY - GRID_OFFSET_Y - activeBackdrop.gridTransform.panY) / activeBackdrop.gridTransform.zoom - height / 2);
+                    const gridCenterY = Math.round((centerClientY - activeBackdrop.gridTransform.panY) / activeBackdrop.gridTransform.zoom - height / 2);
                     
                     const newImage = {
                         id: Date.now(),
@@ -10748,8 +10749,9 @@
             ctx.save();
             
             // Round transformed coordinates to prevent sub-pixel drift during zoom
+            // Grid images use same coordinate system as grid (no GRID_OFFSET_Y)
             const transformedX = Math.round(image.x * gridTransform.zoom + gridTransform.panX);
-            const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y);
+            const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY);
             const transformedWidth = Math.round(image.width * image.scale * gridTransform.zoom);
             const transformedHeight = Math.round(image.height * image.scale * gridTransform.zoom);
             
@@ -10831,8 +10833,9 @@
                 if (image.locked) continue;
                 
                 // Use same rounding as rendering to match visual position
+                // Grid images use same coordinate system as grid (no GRID_OFFSET_Y)
                 const transformedX = Math.round(image.x * gridTransform.zoom + gridTransform.panX);
-                const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y);
+                const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY);
                 const transformedWidth = Math.round(image.width * image.scale * gridTransform.zoom);
                 const transformedHeight = Math.round(image.height * image.scale * gridTransform.zoom);
                 
@@ -10858,8 +10861,9 @@
                 const image = gridImages[i];
                 
                 // Use same rounding as rendering to match visual position
+                // Grid images use same coordinate system as grid (no GRID_OFFSET_Y)
                 const transformedX = Math.round(image.x * gridTransform.zoom + gridTransform.panX);
-                const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y);
+                const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY);
                 const transformedWidth = Math.round(image.width * image.scale * gridTransform.zoom);
                 const transformedHeight = Math.round(image.height * image.scale * gridTransform.zoom);
                 
@@ -10986,8 +10990,9 @@
                     
                     const gridTransform = activeBackdrop.gridTransform;
                     // Use same rounding as rendering to match visual position
+                    // Grid images use same coordinate system as grid (no GRID_OFFSET_Y)
                     const transformedX = Math.round(image.x * gridTransform.zoom + gridTransform.panX);
-                    const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y);
+                    const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY);
                     
                     draggedImage = image;
                     imageDragOffset = {
@@ -11021,8 +11026,9 @@
                 
                 const gridTransform = activeBackdrop.gridTransform;
                 // Round world coordinates to prevent sliding during zoom
+                // Grid images use same coordinate system as grid (no GRID_OFFSET_Y)
                 const newX = Math.round((e.clientX - imageDragOffset.x - gridTransform.panX) / gridTransform.zoom);
-                const newY = Math.round((e.clientY - imageDragOffset.y - GRID_OFFSET_Y - gridTransform.panY) / gridTransform.zoom);
+                const newY = Math.round((e.clientY - imageDragOffset.y - gridTransform.panY) / gridTransform.zoom);
                 
                 draggedImage.x = newX;
                 draggedImage.y = newY;
