@@ -2564,6 +2564,37 @@
                     }
                     break;
                     
+                case 'COUNTERS_VISIBILITY':
+                    // Receive counters panel visibility from host
+                    if (message.data !== undefined && !isHost) {
+                        countersPanelVisible = message.data;
+                        const panel = document.getElementById('countersPanel');
+                        if (panel) {
+                            if (countersPanelVisible) {
+                                // Position panel (centered if no saved position)
+                                if (countersPanelPosition.x === null || countersPanelPosition.y === null) {
+                                    panel.style.left = '50%';
+                                    panel.style.top = '50%';
+                                    panel.style.transform = 'translate(-50%, -50%)';
+                                } else {
+                                    panel.style.left = countersPanelPosition.x + 'px';
+                                    panel.style.top = countersPanelPosition.y + 'px';
+                                    panel.style.transform = 'none';
+                                }
+                                
+                                if (countersPanelSize.width) {
+                                    panel.style.width = countersPanelSize.width + 'px';
+                                }
+                                
+                                panel.style.display = 'block';
+                                updateCountersDisplay();
+                            } else {
+                                panel.style.display = 'none';
+                            }
+                        }
+                    }
+                    break;
+                    
                 case 'PLAY_SOUND_EFFECT':
                     // Host played a sound effect - all players play it too
                     if (message.data && message.data.soundId && !isHost) {
@@ -2883,6 +2914,7 @@
                 musicTracks: musicTracks, // Just URLs - lightweight
                 soundEffects: soundEffects,
                 counters: counters,
+                countersPanelVisible: countersPanelVisible,
                 defaultTrackId: defaultTrackId,
                 currentTrackId: currentTrackId,
                 hostViewport: hostViewport,
@@ -8129,6 +8161,11 @@
             }
             
             saveToLocalStorage();
+            
+            // Broadcast visibility to players
+            if (isHost && isConnected) {
+                broadcastState('COUNTERS_VISIBILITY', countersPanelVisible);
+            }
         }
         
         function addCounter() {
@@ -14921,6 +14958,35 @@
                         if (state.counters) {
                             counters = state.counters;
                             updateCountersDisplay();
+                        }
+                        
+                        // Restore counters panel visibility
+                        if (state.countersPanelVisible !== undefined) {
+                            countersPanelVisible = state.countersPanelVisible;
+                            const panel = document.getElementById('countersPanel');
+                            if (panel) {
+                                if (countersPanelVisible) {
+                                    // Position panel (centered if no saved position)
+                                    if (countersPanelPosition.x === null || countersPanelPosition.y === null) {
+                                        panel.style.left = '50%';
+                                        panel.style.top = '50%';
+                                        panel.style.transform = 'translate(-50%, -50%)';
+                                    } else {
+                                        panel.style.left = countersPanelPosition.x + 'px';
+                                        panel.style.top = countersPanelPosition.y + 'px';
+                                        panel.style.transform = 'none';
+                                    }
+                                    
+                                    if (countersPanelSize.width) {
+                                        panel.style.width = countersPanelSize.width + 'px';
+                                    }
+                                    
+                                    panel.style.display = 'block';
+                                    updateCountersDisplay();
+                                } else {
+                                    panel.style.display = 'none';
+                                }
+                            }
                         }
                         
                         // Restore per-scene data for the visible scene
