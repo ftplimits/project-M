@@ -5877,8 +5877,9 @@
             const gridTransform = activeBackdrop.gridTransform;
             
             tokens.forEach(token => {
-                // Skip hidden tokens for non-hosts (players shouldn't see them at all)
-                if (token.hidden && !isHost) {
+                // Skip hidden tokens ONLY for connected non-host players
+                // Solo users and hosts should see them with red tint
+                if (token.hidden && isConnected && !isHost) {
                     return;
                 }
                 
