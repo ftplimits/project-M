@@ -10746,10 +10746,11 @@
         function drawGridImage(ctx, image, img, gridTransform) {
             ctx.save();
             
-            const transformedX = image.x * gridTransform.zoom + gridTransform.panX;
-            const transformedY = image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
-            const transformedWidth = image.width * image.scale * gridTransform.zoom;
-            const transformedHeight = image.height * image.scale * gridTransform.zoom;
+            // Round transformed coordinates to prevent sub-pixel drift during zoom
+            const transformedX = Math.round(image.x * gridTransform.zoom + gridTransform.panX);
+            const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y);
+            const transformedWidth = Math.round(image.width * image.scale * gridTransform.zoom);
+            const transformedHeight = Math.round(image.height * image.scale * gridTransform.zoom);
             
             // Draw the image at full opacity (lock icon provides enough feedback)
             ctx.globalAlpha = 1.0;
@@ -10828,10 +10829,11 @@
                 const image = gridImages[i];
                 if (image.locked) continue;
                 
-                const transformedX = image.x * gridTransform.zoom + gridTransform.panX;
-                const transformedY = image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
-                const transformedWidth = image.width * image.scale * gridTransform.zoom;
-                const transformedHeight = image.height * image.scale * gridTransform.zoom;
+                // Use same rounding as rendering to match visual position
+                const transformedX = Math.round(image.x * gridTransform.zoom + gridTransform.panX);
+                const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y);
+                const transformedWidth = Math.round(image.width * image.scale * gridTransform.zoom);
+                const transformedHeight = Math.round(image.height * image.scale * gridTransform.zoom);
                 
                 if (clientX >= transformedX && clientX <= transformedX + transformedWidth &&
                     clientY >= transformedY && clientY <= transformedY + transformedHeight) {
@@ -10854,10 +10856,11 @@
             for (let i = gridImages.length - 1; i >= 0; i--) {
                 const image = gridImages[i];
                 
-                const transformedX = image.x * gridTransform.zoom + gridTransform.panX;
-                const transformedY = image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
-                const transformedWidth = image.width * image.scale * gridTransform.zoom;
-                const transformedHeight = image.height * image.scale * gridTransform.zoom;
+                // Use same rounding as rendering to match visual position
+                const transformedX = Math.round(image.x * gridTransform.zoom + gridTransform.panX);
+                const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y);
+                const transformedWidth = Math.round(image.width * image.scale * gridTransform.zoom);
+                const transformedHeight = Math.round(image.height * image.scale * gridTransform.zoom);
                 
                 // Delete button (top right)
                 if (clientX >= transformedX + transformedWidth - buttonSize - padding &&
@@ -10981,8 +10984,9 @@
                     if (!activeBackdrop) return;
                     
                     const gridTransform = activeBackdrop.gridTransform;
-                    const transformedX = image.x * gridTransform.zoom + gridTransform.panX;
-                    const transformedY = image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y;
+                    // Use same rounding as rendering to match visual position
+                    const transformedX = Math.round(image.x * gridTransform.zoom + gridTransform.panX);
+                    const transformedY = Math.round(image.y * gridTransform.zoom + gridTransform.panY + GRID_OFFSET_Y);
                     
                     draggedImage = image;
                     imageDragOffset = {
