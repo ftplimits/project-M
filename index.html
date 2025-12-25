@@ -1649,7 +1649,7 @@
     <div id="countersPanel">
         <div id="countersPanelHeader">📊 Counters</div>
         <div id="countersList"></div>
-        <button class="counter-add-btn" onclick="addCounter()">+ Add Counter</button>
+        <button class="counter-add-btn" id="counterAddBtn">+ Add Counter</button>
     </div>
     
     <div id="weatherMenu" class="weather-menu"></div>
@@ -1693,7 +1693,7 @@
         <div style="margin-bottom: 12px; padding: 10px; background-color: #2a2a2a; border-radius: 6px; border: 1px solid #444;">
             <input type="text" id="presetNameInput" placeholder="Preset Name" style="width: 100%; padding: 6px; margin-bottom: 6px; background-color: #1a1a1a; color: #e0e0e0; border: 1px solid #d4af37; border-radius: 4px; font-size: 12px; font-family: Arial, sans-serif;" />
             <input type="text" id="presetFormulaInput" placeholder="Formula (e.g., 2d6+3)" style="width: 100%; padding: 6px; margin-bottom: 6px; background-color: #1a1a1a; color: #e0e0e0; border: 1px solid #d4af37; border-radius: 4px; font-size: 12px; font-family: Arial, sans-serif;" />
-            <button onclick="addPreset()" style="width: 100%; padding: 6px; background-color: #28a745; color: #fff; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif;">
+            <button id="addPresetBtn" style="width: 100%; padding: 6px; background-color: #28a745; color: #fff; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif;">
                 + Add Preset
             </button>
         </div>
@@ -1705,7 +1705,7 @@
     </div>
     
     <!-- Character Sheet System -->
-    <div id="sheetTabButton" onclick="handleSheetTabClick()" oncontextmenu="return false" style="position: fixed; left: 10px; top: 50%; transform: translateY(-50%); z-index: 2000; background-color: #1a1a1a; border: 2px solid #d4af37; border-radius: 8px; padding: 11px 9px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 8px;" onmouseenter="this.style.transform='translateY(-50%) scale(1.05)'; this.style.backgroundColor='#2a2a2a';" onmouseleave="this.style.transform='translateY(-50%) scale(1)'; this.style.backgroundColor='#1a1a1a';">
+    <div id="sheetTabButton" oncontextmenu="return false" style="position: fixed; left: 10px; top: 50%; transform: translateY(-50%); z-index: 2000; background-color: #1a1a1a; border: 2px solid #d4af37; border-radius: 8px; padding: 11px 9px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.6); transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 8px;" onmouseenter="this.style.transform='translateY(-50%) scale(1.05)'; this.style.backgroundColor='#2a2a2a';" onmouseleave="this.style.transform='translateY(-50%) scale(1)'; this.style.backgroundColor='#1a1a1a';">
         <div style="font-size: 24px;">👤</div>
         <div style="font-size: 8px; color: #d4af37; font-family: Arial, sans-serif; font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">SHEETS</div>
     </div>
@@ -1727,12 +1727,12 @@
     <div class="gif-search-modal" id="gifSearchModal">
         <div class="gif-search-header">
             <div class="gif-search-title">🎬 Search GIFs & Stickers</div>
-            <button class="gif-search-close" onclick="closeGifSearch()">✕</button>
+            <button class="gif-search-close" id="gifSearchCloseBtn">✕</button>
         </div>
         <div class="gif-search-body">
             <div class="gif-search-input-container">
                 <input type="text" class="gif-search-input" id="gifSearchInput" placeholder="Search for fire, smoke, magic..." />
-                <button class="gif-search-button" onclick="searchGifs()">Search</button>
+                <button class="gif-search-button" id="gifSearchBtn">Search</button>
             </div>
             <div id="gifResultsContainer">
                 <div class="gif-no-results">Enter a search term to find GIFs and animated stickers!</div>
@@ -1744,18 +1744,18 @@
     <div id="drawingMenu" class="drawing-menu">
         <div class="drawing-menu-header" id="drawingMenuHeader">
             <div class="drawing-menu-title">🎨 Drawing Tools</div>
-            <button class="drawing-menu-close" onclick="closeDrawingMenu()">✕</button>
+            <button class="drawing-menu-close" id="drawingMenuCloseBtn">✕</button>
         </div>
         <div class="drawing-menu-body">
             <div class="drawing-menu-section">
                 <div class="drawing-menu-label">Shape Tools</div>
                 <div class="drawing-tools-grid">
-                    <button class="drawing-tool-btn" onclick="setDrawingMode('freehand')" title="Freehand">✏️</button>
-                    <button class="drawing-tool-btn" onclick="setDrawingMode('rectangle')" title="Rectangle">▢</button>
-                    <button class="drawing-tool-btn" onclick="setDrawingMode('circle')" title="Circle">⭕</button>
-                    <button class="drawing-tool-btn" onclick="setDrawingMode('triangle')" title="Triangle">△</button>
-                    <button class="drawing-tool-btn" onclick="setDrawingMode('line')" title="Line">━</button>
-                    <button class="drawing-tool-btn" onclick="setDrawingMode('text')" title="Text">📝</button>
+                    <button class="drawing-tool-btn" id="drawFreehandBtn" title="Freehand">✏️</button>
+                    <button class="drawing-tool-btn" id="drawRectangleBtn" title="Rectangle">▢</button>
+                    <button class="drawing-tool-btn" id="drawCircleBtn" title="Circle">⭕</button>
+                    <button class="drawing-tool-btn" id="drawTriangleBtn" title="Triangle">△</button>
+                    <button class="drawing-tool-btn" id="drawLineBtn" title="Line">━</button>
+                    <button class="drawing-tool-btn" id="drawTextBtn" title="Text">📝</button>
                 </div>
             </div>
             <div class="drawing-menu-section">
@@ -2880,6 +2880,9 @@
                 
                 avatar.dataset.activationKey = e.key.toLowerCase();
                 closeModal();
+                
+                // Show feedback
+                showStyledAlert('✅ Success', `Activation key set to: ${e.key.toUpperCase()}`);
             };
             
             document.addEventListener('keydown', keyHandler);
@@ -7908,6 +7911,71 @@
             const rollItButton = document.getElementById('rollItButton');
             if (rollItButton) {
                 rollItButton.addEventListener('click', rollSelectedDice);
+            }
+            
+            // Counter add button
+            const counterAddBtn = document.getElementById('counterAddBtn');
+            if (counterAddBtn) {
+                counterAddBtn.addEventListener('click', addCounter);
+            }
+            
+            // Add preset button
+            const addPresetBtn = document.getElementById('addPresetBtn');
+            if (addPresetBtn) {
+                addPresetBtn.addEventListener('click', addPreset);
+            }
+            
+            // Sheet tab button
+            const sheetTabButton = document.getElementById('sheetTabButton');
+            if (sheetTabButton) {
+                sheetTabButton.addEventListener('click', handleSheetTabClick);
+            }
+            
+            // GIF search buttons
+            const gifSearchCloseBtn = document.getElementById('gifSearchCloseBtn');
+            if (gifSearchCloseBtn) {
+                gifSearchCloseBtn.addEventListener('click', closeGifSearch);
+            }
+            
+            const gifSearchBtn = document.getElementById('gifSearchBtn');
+            if (gifSearchBtn) {
+                gifSearchBtn.addEventListener('click', searchGifs);
+            }
+            
+            // Drawing menu buttons
+            const drawingMenuCloseBtn = document.getElementById('drawingMenuCloseBtn');
+            if (drawingMenuCloseBtn) {
+                drawingMenuCloseBtn.addEventListener('click', closeDrawingMenu);
+            }
+            
+            const drawFreehandBtn = document.getElementById('drawFreehandBtn');
+            if (drawFreehandBtn) {
+                drawFreehandBtn.addEventListener('click', () => setDrawingMode('freehand'));
+            }
+            
+            const drawRectangleBtn = document.getElementById('drawRectangleBtn');
+            if (drawRectangleBtn) {
+                drawRectangleBtn.addEventListener('click', () => setDrawingMode('rectangle'));
+            }
+            
+            const drawCircleBtn = document.getElementById('drawCircleBtn');
+            if (drawCircleBtn) {
+                drawCircleBtn.addEventListener('click', () => setDrawingMode('circle'));
+            }
+            
+            const drawTriangleBtn = document.getElementById('drawTriangleBtn');
+            if (drawTriangleBtn) {
+                drawTriangleBtn.addEventListener('click', () => setDrawingMode('triangle'));
+            }
+            
+            const drawLineBtn = document.getElementById('drawLineBtn');
+            if (drawLineBtn) {
+                drawLineBtn.addEventListener('click', () => setDrawingMode('line'));
+            }
+            
+            const drawTextBtn = document.getElementById('drawTextBtn');
+            if (drawTextBtn) {
+                drawTextBtn.addEventListener('click', () => setDrawingMode('text'));
             }
         });
         
