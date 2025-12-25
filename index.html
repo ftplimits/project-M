@@ -8427,19 +8427,20 @@
                 drawTextBtn.addEventListener('click', () => setDrawingMode('text'));
             }
             
-            // Welcome splash (show only in Discord mode)
-            if (isDiscordMode) {
-                setTimeout(() => {
-                    document.getElementById('welcomeSplash').style.display = 'flex';
-                }, 500); // Short delay after page load
-            }
-            
             // Welcome continue button
             const welcomeContinueBtn = document.getElementById('welcomeContinueBtn');
             if (welcomeContinueBtn) {
                 welcomeContinueBtn.addEventListener('click', () => {
                     document.getElementById('welcomeSplash').style.display = 'none';
                 });
+            }
+            
+            // Welcome splash (show if in iframe, which means Discord)
+            const inIframe = window.self !== window.top;
+            if (inIframe) {
+                setTimeout(() => {
+                    document.getElementById('welcomeSplash').style.display = 'flex';
+                }, 500); // Short delay after page load
             }
         });
         
