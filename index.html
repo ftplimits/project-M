@@ -7660,6 +7660,68 @@
             }
         });
         
+        // ===== IFRAME DETECTION (Discord Activity Protection) =====
+        
+        function checkIfInDiscord() {
+            // Check if we're in an iframe (Discord runs activities in iframes)
+            const inIframe = window.self !== window.top;
+            
+            // Check if parent origin is Discord
+            let isDiscordFrame = false;
+            try {
+                isDiscordFrame = inIframe && (
+                    window.location.ancestorOrigins?.[0]?.includes('discord.com') ||
+                    document.referrer.includes('discord.com')
+                );
+            } catch (e) {
+                // Cross-origin restriction - likely in iframe
+                isDiscordFrame = inIframe;
+            }
+            
+            // If not in Discord iframe, show warning
+            if (!inIframe && window.location.hostname !== 'localhost') {
+                document.body.innerHTML = `
+                    <div style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        height: 100vh;
+                        background: #1a1a1a;
+                        color: #d4af37;
+                        font-family: 'Times New Roman', Times, serif;
+                        text-align: center;
+                        padding: 40px;
+                    ">
+                        <div>
+                            <div style="font-size: 72px; margin-bottom: 20px;">🎮</div>
+                            <h1 style="font-size: 32px; margin-bottom: 20px;">Monomyth VTT</h1>
+                            <p style="font-size: 18px; color: #888; max-width: 600px; line-height: 1.6;">
+                                This application is designed to run as a Discord Activity.<br><br>
+                                Please launch it from within a Discord voice channel.
+                            </p>
+                            <div style="margin-top: 40px; padding: 20px; background: #2a2a2a; border: 2px solid #d4af37; border-radius: 8px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                                <p style="font-size: 14px; color: #d4af37; margin-bottom: 10px;">How to Access:</p>
+                                <ol style="text-align: left; font-size: 13px; color: #e0e0e0; line-height: 1.8;">
+                                    <li>Join a Discord voice channel</li>
+                                    <li>Click the Activities button (rocket icon)</li>
+                                    <li>Select "Monomyth VTT"</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return false;
+            }
+            
+            return true;
+        }
+        
+        // Check on load
+        if (!checkIfInDiscord()) {
+            // Stop execution if not in Discord
+            throw new Error('Application requires Discord Activity environment');
+        }
+        
         // ===== DISCORD INTEGRATION & MULTIPLAYER =====
         
         async function initializeDiscord() {
