@@ -1607,13 +1607,13 @@
     <!-- Initiative Tracker -->
     <div id="initiativeTracker" style="display: none; position: fixed; top: 72px; left: 50%; transform: translateX(-50%); align-items: center; gap: 12px; padding: 10px 20px; background-color: rgba(26, 26, 26, 0.9); border-radius: 0 0 12px 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); z-index: 2100; border: 2px solid #d4af37;">
         <!-- Previous Turn Button -->
-        <button id="prevTurnBtn" style="background-color: transparent; border: 2px solid #d4af37; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #d4af37; font-size: 18px; font-weight: bold; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.4);" title="Previous Turn" onclick="previousTurn()">◀</button>
+        <button id="prevTurnBtn" style="background-color: transparent; border: 2px solid #d4af37; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #d4af37; font-size: 18px; font-weight: bold; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.4);" title="Previous Turn">◀</button>
         
         <!-- Token Images Container -->
         <div id="initiativeTokens" style="display: flex; gap: 8px; align-items: center;"></div>
         
         <!-- Next Turn Button -->
-        <button id="nextTurnBtn" style="background-color: transparent; border: 2px solid #d4af37; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #d4af37; font-size: 18px; font-weight: bold; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.4);" title="Next Turn" onclick="nextTurn()">▶</button>
+        <button id="nextTurnBtn" style="background-color: transparent; border: 2px solid #d4af37; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #d4af37; font-size: 18px; font-weight: bold; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.4);" title="Next Turn">▶</button>
     </div>
     
     <!-- Initiative Hover Line Canvas -->
@@ -1664,10 +1664,10 @@
     <div id="avatar-container"></div>
     
     <!-- Dice System -->
-    <div id="diceToggle" class="dice-toggle" onclick="toggleDiceContainer()" oncontextmenu="return false">
+    <div id="diceToggle" class="dice-toggle" oncontextmenu="return false">
         <div style="font-size: 16px; color: #d97706; font-weight: bold;">🎲</div>
     </div>
-    <div id="rollItButton" onclick="rollSelectedDice()" style="display: none; position: fixed; left: 150px; bottom: 125px; z-index: 2001; background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #fff; padding: 12px 24px; border-radius: 8px; border: 2px solid #fbbf24; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.6); cursor: pointer; font-weight: bold; font-size: 16px; font-family: Arial, sans-serif; transition: all 0.2s; user-select: none; text-align: center;" onmouseenter="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 16px rgba(217, 119, 6, 0.8)';" onmouseleave="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(217, 119, 6, 0.6)';">
+    <div id="rollItButton" style="display: none; position: fixed; left: 150px; bottom: 125px; z-index: 2001; background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #fff; padding: 12px 24px; border-radius: 8px; border: 2px solid #fbbf24; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.6); cursor: pointer; font-weight: bold; font-size: 16px; font-family: Arial, sans-serif; transition: all 0.2s; user-select: none; text-align: center;" onmouseenter="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 16px rgba(217, 119, 6, 0.8)';" onmouseleave="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(217, 119, 6, 0.6)';">
         🎲 ROLL IT!
     </div>
     <div id="diceContainer" class="dice-container hidden"></div>
@@ -1679,7 +1679,7 @@
         <div id="rollLogContent" style="overflow-y: auto; flex: 1; padding-right: 5px;"></div>
     </div>
     
-    <div id="rollLogToggle" onclick="toggleRollLog()" oncontextmenu="return false" style="position: fixed; right: 5px; bottom: 20px; z-index: 2000; background-color: #1a1a1a; padding: 8px 6px; border-radius: 8px 0 0 8px; border: 2px solid #444; border-right: none; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; transition: right 0.3s ease-in-out, background-color 0.2s; user-select: none;">
+    <div id="rollLogToggle" oncontextmenu="return false" style="position: fixed; right: 5px; bottom: 20px; z-index: 2000; background-color: #1a1a1a; padding: 8px 6px; border-radius: 8px 0 0 8px; border: 2px solid #444; border-right: none; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; transition: right 0.3s ease-in-out, background-color 0.2s; user-select: none;">
         <div style="font-size: 16px; color: #d97706; font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">📜 ROLL LOG</div>
     </div>
     
@@ -1700,7 +1700,7 @@
         <div id="presetsList" style="overflow-y: auto; flex: 1;"></div>
     </div>
     
-    <div id="presetsToggle" onclick="togglePresetsPanel()" oncontextmenu="return false" style="position: fixed; right: 5px; top: 80px; z-index: 2000; background-color: #1a1a1a; padding: 8px 6px; border-radius: 8px 0 0 8px; border: 2px solid #444; border-right: none; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; transition: right 0.3s ease-in-out, background-color 0.2s; user-select: none;">
+    <div id="presetsToggle" oncontextmenu="return false" style="position: fixed; right: 5px; top: 80px; z-index: 2000; background-color: #1a1a1a; padding: 8px 6px; border-radius: 8px 0 0 8px; border: 2px solid #444; border-right: none; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; transition: right 0.3s ease-in-out, background-color 0.2s; user-select: none;">
         <div style="font-size: 16px; color: #d97706; font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">🎲 PRESETS</div>
     </div>
     
@@ -7876,6 +7876,39 @@
         // Initialize Discord when page loads
         window.addEventListener('load', () => {
             initializeDiscord();
+            
+            // Attach event listeners for toggle buttons (Discord-compatible)
+            const diceToggle = document.getElementById('diceToggle');
+            if (diceToggle) {
+                diceToggle.addEventListener('click', toggleDiceContainer);
+            }
+            
+            const presetsToggle = document.getElementById('presetsToggle');
+            if (presetsToggle) {
+                presetsToggle.addEventListener('click', togglePresetsPanel);
+            }
+            
+            const rollLogToggle = document.getElementById('rollLogToggle');
+            if (rollLogToggle) {
+                rollLogToggle.addEventListener('click', toggleRollLog);
+            }
+            
+            // Initiative tracker buttons
+            const prevTurnBtn = document.getElementById('prevTurnBtn');
+            if (prevTurnBtn) {
+                prevTurnBtn.addEventListener('click', previousTurn);
+            }
+            
+            const nextTurnBtn = document.getElementById('nextTurnBtn');
+            if (nextTurnBtn) {
+                nextTurnBtn.addEventListener('click', nextTurn);
+            }
+            
+            // Roll It button (for selected dice)
+            const rollItButton = document.getElementById('rollItButton');
+            if (rollItButton) {
+                rollItButton.addEventListener('click', rollSelectedDice);
+            }
         });
         
         // Update pointer broadcasting in existing mouse events
