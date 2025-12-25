@@ -4319,7 +4319,12 @@
         
         // GIF Search System
         const TENOR_API_KEY = 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ'; // Demo key
-        const TENOR_API_BASE = 'https://tenor.googleapis.com/v2';
+        
+        function getTenorApiBase() {
+            // Check if in Discord iframe - use proxy
+            const inIframe = window.self !== window.top;
+            return inIframe ? '/.proxy/tenor' : 'https://tenor.googleapis.com/v2';
+        }
         
         function openGifSearch() {
             const modal = document.getElementById('gifSearchModal');
@@ -4361,11 +4366,13 @@
             const container = document.getElementById('gifResultsContainer');
             container.innerHTML = '<div class="gif-loading">Searching...</div>';
             
+            const apiBase = getTenorApiBase();
+            
             try {
                 // Search both GIFs and stickers with transparent formats
                 const [gifsResponse, stickersResponse] = await Promise.all([
-                    fetch(`${TENOR_API_BASE}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`),
-                    fetch(`${TENOR_API_BASE}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`)
+                    fetch(`${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`),
+                    fetch(`${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`)
                 ]);
                 
                 const gifsData = await gifsResponse.json();
@@ -4386,11 +4393,13 @@
             const container = document.getElementById('gifResultsContainer');
             container.innerHTML = '<div class="gif-loading">Loading trending...</div>';
             
+            const apiBase = getTenorApiBase();
+            
             try {
                 // Get trending GIFs and stickers with transparent formats
                 const [gifsResponse, stickersResponse] = await Promise.all([
-                    fetch(`${TENOR_API_BASE}/featured?key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`),
-                    fetch(`${TENOR_API_BASE}/featured?key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`)
+                    fetch(`${apiBase}/featured?key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`),
+                    fetch(`${apiBase}/featured?key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`)
                 ]);
                 
                 const gifsData = await gifsResponse.json();
