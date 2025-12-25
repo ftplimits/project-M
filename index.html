@@ -5059,37 +5059,89 @@
                 };
                 
                 console.log('Game state built successfully');
-                console.log('Creating download...');
                 
-                // Create download
                 const jsonString = JSON.stringify(state, null, 2);
-                const blob = new Blob([jsonString], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
                 
-                console.log('Blob URL created:', url);
-                
-                // Create and trigger download
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = `${filename}.json`;
-                
-                document.body.appendChild(a);
-                console.log('Anchor appended, triggering click...');
-                
-                // Small delay to ensure DOM update
-                setTimeout(() => {
-                    a.click();
-                    console.log('Click triggered');
+                // Check if we're in Discord - use clipboard instead of download
+                if (isDiscordMode) {
+                    console.log('Discord mode detected - copying to clipboard...');
                     
-                    // Cleanup
+                    try {
+                        await navigator.clipboard.writeText(jsonString);
+                        console.log('Copied to clipboard successfully');
+                        
+                        await showStyledAlert(
+                            '📋 Saved to Clipboard!', 
+                            `Session "${filename}" copied to clipboard!\n\nTo save:\n1. Open a text editor\n2. Paste (Ctrl+V)\n3. Save as ${filename}.json`
+                        );
+                    } catch (clipboardError) {
+                        console.error('Clipboard copy failed:', clipboardError);
+                        
+                        // Fallback: Show JSON in a modal for manual copy
+                        const copyModal = document.createElement('div');
+                        copyModal.style.cssText = `
+                            position: fixed;
+                            top: 50%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            background: #1a1a1a;
+                            border: 3px solid #d4af37;
+                            border-radius: 12px;
+                            padding: 20px;
+                            z-index: 10001;
+                            max-width: 600px;
+                            max-height: 80vh;
+                            overflow: auto;
+                        `;
+                        
+                        copyModal.innerHTML = `
+                            <h3 style="color: #d4af37; margin-bottom: 10px;">Copy Session Data</h3>
+                            <p style="color: #e0e0e0; margin-bottom: 10px; font-size: 13px;">Copy this text and save it as ${filename}.json</p>
+                            <textarea readonly style="width: 100%; height: 300px; background: #2a2a2a; color: #e0e0e0; border: 2px solid #d4af37; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px;">${jsonString}</textarea>
+                            <button id="closeJsonModal" style="margin-top: 10px; width: 100%; padding: 10px; background: #d4af37; color: #1a1a1a; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Close</button>
+                        `;
+                        
+                        document.body.appendChild(copyModal);
+                        
+                        const textarea = copyModal.querySelector('textarea');
+                        textarea.select();
+                        
+                        document.getElementById('closeJsonModal').onclick = () => {
+                            copyModal.remove();
+                        };
+                    }
+                } else {
+                    // Standard mode - use file download
+                    console.log('Standard mode - creating download...');
+                    
+                    const blob = new Blob([jsonString], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    console.log('Blob URL created:', url);
+                    
+                    // Create and trigger download
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `${filename}.json`;
+                    
+                    document.body.appendChild(a);
+                    console.log('Anchor appended, triggering click...');
+                    
+                    // Small delay to ensure DOM update
                     setTimeout(() => {
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                        console.log('Cleanup complete');
-                        showStyledAlert('✅ Success', `Session saved successfully as ${filename}.json`);
+                        a.click();
+                        console.log('Click triggered');
+                        
+                        // Cleanup
+                        setTimeout(() => {
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                            console.log('Cleanup complete');
+                            showStyledAlert('✅ Success', `Session saved successfully as ${filename}.json`);
+                        }, 100);
                     }, 100);
-                }, 100);
+                }
                 
             } catch (error) {
                 console.error('Error saving session:', error);
