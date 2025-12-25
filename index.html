@@ -4323,7 +4323,9 @@
         function getTenorApiBase() {
             // Check if in Discord iframe - use proxy
             const inIframe = window.self !== window.top;
-            return inIframe ? '/.proxy/tenor' : 'https://tenor.googleapis.com/v2';
+            const apiBase = inIframe ? '/.proxy/tenor' : 'https://tenor.googleapis.com/v2';
+            console.log('Tenor API - In iframe:', inIframe, '- Using base:', apiBase);
+            return apiBase;
         }
         
         function openGifSearch() {
@@ -4367,16 +4369,34 @@
             container.innerHTML = '<div class="gif-loading">Searching...</div>';
             
             const apiBase = getTenorApiBase();
+            console.log('GIF Search - API Base:', apiBase);
+            console.log('GIF Search - Search term:', searchTerm);
             
             try {
+                const url1 = `${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`;
+                const url2 = `${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`;
+                
+                console.log('GIF Search - Fetching URLs:', url1, url2);
+                
                 // Search both GIFs and stickers with transparent formats
                 const [gifsResponse, stickersResponse] = await Promise.all([
-                    fetch(`${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`),
-                    fetch(`${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`)
+                    fetch(url1),
+                    fetch(url2)
                 ]);
+                
+                console.log('GIF Search - Response status:', gifsResponse.status, stickersResponse.status);
+                
+                if (!gifsResponse.ok || !stickersResponse.ok) {
+                    const errorText1 = await gifsResponse.text();
+                    const errorText2 = await stickersResponse.text();
+                    console.error('GIF Search - Error responses:', errorText1, errorText2);
+                    throw new Error(`HTTP ${gifsResponse.status}`);
+                }
                 
                 const gifsData = await gifsResponse.json();
                 const stickersData = await stickersResponse.json();
+                
+                console.log('GIF Search - Results:', gifsData.results?.length || 0, 'gifs,', stickersData.results?.length || 0, 'stickers');
                 
                 // Combine and shuffle results
                 const allResults = [...(gifsData.results || []), ...(stickersData.results || [])];
@@ -4385,7 +4405,7 @@
                 displayGifResults(shuffled);
             } catch (error) {
                 console.error('GIF search error:', error);
-                container.innerHTML = '<div class="gif-no-results">Error loading GIFs. Please try again.</div>';
+                container.innerHTML = `<div class="gif-no-results">Error loading GIFs. Please try again.<br><small style="color: #666;">${error.message}</small></div>`;
             }
         }
         
