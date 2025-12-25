@@ -1597,6 +1597,29 @@
     </style>
 </head>
 <body>
+    <!-- Welcome Splash Screen -->
+    <div id="welcomeSplash" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.95); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+        <div style="text-align: center;">
+            <div style="font-family: 'Times New Roman', Times, serif; font-size: 72px; font-weight: bold; color: #d4af37; text-shadow: 0 0 20px rgba(212, 175, 55, 0.8), 0 0 40px rgba(212, 175, 55, 0.4); margin-bottom: 20px; letter-spacing: 8px;">
+                MONOMYTH
+            </div>
+            
+            <div style="width: 200px; height: 3px; background: linear-gradient(90deg, transparent, #d4af37, transparent); margin: 0 auto 30px auto; box-shadow: 0 0 10px rgba(212, 175, 55, 0.6);"></div>
+
+            <div style="font-size: 13px; color: #e0e0e0; font-family: Arial, sans-serif; line-height: 1.6; max-width: 500px; margin: 0 auto;">
+                Welcome to the Monomyth Discord Activity beta!
+                <br /><br />
+                Please report bugs or feature requests to <span style="color: #d4af37; font-weight: bold;">dm_doom</span> on Discord
+                <br /><br />
+                <span style="color: #d4af37; font-size: 11px; font-style: italic;">ENJOY</span>
+            </div>
+
+            <button id="welcomeContinueBtn" style="margin-top: 40px; padding: 12px 40px; background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%); color: #1a1a1a; border: 3px solid #ffd700; border-radius: 8px; font-size: 16px; font-weight: bold; font-family: 'Times New Roman', Times, serif; cursor: pointer; box-shadow: 0 0 20px rgba(212, 175, 55, 0.6); transition: all 0.2s ease; letter-spacing: 1px;">
+                CONTINUE
+            </button>
+        </div>
+    </div>
+    
     <!-- Brand Logo -->
     <div class="brand-logo">
         <div class="brand-logo-text">M</div>
@@ -1715,7 +1738,7 @@
             <span>Character Sheets</span>
             <label style="background-color: #28a745; color: #fff; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif;">
                 + Upload
-                <input type="file" accept="image/*" onchange="handleSheetUpload(event)" style="display: none;" />
+                <input type="file" id="sheetUploadInput" accept="image/*" style="display: none;" />
             </label>
         </div>
         <div id="sheetSelectorContent"></div>
@@ -1789,6 +1812,29 @@
     </div>
     
     <div id="drawnElementsContainer"></div>
+    
+    <!-- Welcome Splash Screen (Beta Test) -->
+    <div id="welcomeSplash" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.95); z-index: 10000; display: none; align-items: center; justify-content: center;">
+        <div style="text-align: center;">
+            <div style="font-family: Georgia, serif; font-size: 72px; font-weight: bold; color: #d4a574; text-shadow: 0 0 20px rgba(212, 165, 116, 0.8), 0 0 40px rgba(212, 165, 116, 0.4); margin-bottom: 20px; letter-spacing: 8px;">
+                MONOMYTH
+            </div>
+            
+            <div style="width: 200px; height: 3px; background: linear-gradient(90deg, transparent, #d4a574, transparent); margin: 0 auto 30px auto; box-shadow: 0 0 10px rgba(212, 175, 55, 0.6);"></div>
+
+            <div style="font-size: 13px; color: #e0e0e0; font-family: Arial, sans-serif; line-height: 1.6; max-width: 500px; margin: 0 auto;">
+                Welcome to the Monomyth Discord Activity beta test!
+                <br /><br />
+                Please report bugs or feature requests to <span style="color: #d4a574; font-weight: bold;">dm_doom</span> on Discord
+                <br /><br />
+                <span style="color: #d4a574; font-size: 11px; font-style: italic;">ENJOY</span>
+            </div>
+
+            <button id="welcomeContinueBtn" style="margin-top: 40px; padding: 12px 40px; background-color: #d4a574; color: #1a1a1a; border: 3px solid #f5c842; border-radius: 8px; font-size: 16px; font-weight: bold; font-family: Georgia, serif; cursor: pointer; box-shadow: 0 0 20px rgba(212, 175, 55, 0.6); transition: all 0.2s ease; letter-spacing: 1px;">
+                CONTINUE
+            </button>
+        </div>
+    </div>
     
     <script>
         let tokens = [];
@@ -3301,6 +3347,53 @@
         }
         
         // Character Sheet Functions
+        
+        function downscaleImage(file, maxWidth = 1024, maxHeight = 1024) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const reader = new FileReader();
+                
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                
+                reader.onload = (e) => {
+                    img.onerror = () => reject(new Error('Failed to load image'));
+                    
+                    img.onload = () => {
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        // Calculate new dimensions (preserve aspect ratio)
+                        if (width > maxWidth || height > maxHeight) {
+                            const ratio = Math.min(maxWidth / width, maxHeight / height);
+                            width = Math.round(width * ratio);
+                            height = Math.round(height * ratio);
+                        }
+                        
+                        // Create canvas and resize
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        
+                        // High quality image smoothing
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        
+                        // Draw resized image
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Convert to JPEG for character sheets
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                        resolve(dataUrl);
+                    };
+                    
+                    img.src = e.target.result;
+                };
+                
+                reader.readAsDataURL(file);
+            });
+        }
+        
         function handleSheetTabClick() {
             sheetSelectorVisible = !sheetSelectorVisible;
             updateSheetSelectorDisplay();
@@ -3312,7 +3405,7 @@
             
             try {
                 const downscaledDataUrl = await downscaleImage(file, 1024, 1024);
-                const characterName = await customPrompt('Enter character name:', 'Character') || 'Character';
+                const characterName = await showStyledPrompt('Character Sheet Upload', 'Enter character name:', 'Character') || 'Character';
                 
                 const newSheet = {
                     id: Date.now(),
@@ -3325,7 +3418,7 @@
                 updateSheetSelectorDisplay();
             } catch (err) {
                 console.error('Failed to process image:', err);
-                await customAlert('Failed to load image. Please try a different file.');
+                await showStyledAlert('❌ Error', 'Failed to load image. Please try a different file.');
             }
             
             e.target.value = '';
@@ -3352,7 +3445,7 @@
         }
 
         async function deleteCharacterSheet(sheetId) {
-            const confirmed = await customConfirm('Delete this character sheet?');
+            const confirmed = await showStyledConfirm('🗑️ Delete Sheet', 'Delete this character sheet?');
             if (confirmed) {
                 characterSheets = characterSheets.filter(s => s.id !== sheetId);
                 closeSheet(sheetId);
@@ -4134,6 +4227,103 @@
                 document.onkeydown = (e) => {
                     if (e.key === 'Enter' || e.key === 'Escape') {
                         cleanup();
+                    }
+                };
+            });
+        }
+        
+        function showStyledConfirm(title, message) {
+            return new Promise((resolve) => {
+                // Create overlay
+                const overlay = document.createElement('div');
+                overlay.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0, 0, 0, 0.7);
+                    z-index: 9999;
+                `;
+                
+                // Create modal
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+                    border: 3px solid #d4af37;
+                    border-radius: 12px;
+                    padding: 24px;
+                    min-width: 350px;
+                    z-index: 10000;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+                `;
+                
+                modal.innerHTML = `
+                    <div style="font-family: 'Times New Roman', Times, serif; font-size: 18px; font-weight: bold; color: #d4af37; margin-bottom: 16px; text-align: center;">
+                        ${title}
+                    </div>
+                    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #e0e0e0; margin-bottom: 24px; text-align: center; line-height: 1.5;">
+                        ${message}
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <button id="confirmYes" style="
+                            flex: 1;
+                            padding: 12px;
+                            background: linear-gradient(135deg, #d4af37 0%, #b8942a 100%);
+                            border: 2px solid #f5c842;
+                            border-radius: 8px;
+                            color: #1a1a1a;
+                            font-size: 14px;
+                            font-weight: bold;
+                            cursor: pointer;
+                            font-family: Arial, sans-serif;
+                        ">Yes</button>
+                        <button id="confirmNo" style="
+                            flex: 1;
+                            padding: 12px;
+                            background: #666;
+                            border: 2px solid #888;
+                            border-radius: 8px;
+                            color: #fff;
+                            font-size: 14px;
+                            font-weight: bold;
+                            cursor: pointer;
+                            font-family: Arial, sans-serif;
+                        ">No</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(overlay);
+                document.body.appendChild(modal);
+                
+                const yesBtn = document.getElementById('confirmYes');
+                const noBtn = document.getElementById('confirmNo');
+                
+                // Focus No button by default (safer)
+                setTimeout(() => {
+                    noBtn.focus();
+                }, 50);
+                
+                const cleanup = (result) => {
+                    overlay.remove();
+                    modal.remove();
+                    document.onkeydown = null;
+                    resolve(result);
+                };
+                
+                yesBtn.onclick = () => cleanup(true);
+                noBtn.onclick = () => cleanup(false);
+                overlay.onclick = () => cleanup(false);
+                
+                document.onkeydown = (e) => {
+                    if (e.key === 'Enter') {
+                        cleanup(false); // Default to No on Enter
+                    } else if (e.key === 'Escape') {
+                        cleanup(false);
                     }
                 };
             });
@@ -8122,6 +8312,23 @@
         window.addEventListener('load', () => {
             initializeDiscord();
             
+            // Welcome splash continue button
+            const welcomeContinueBtn = document.getElementById('welcomeContinueBtn');
+            if (welcomeContinueBtn) {
+                welcomeContinueBtn.addEventListener('click', () => {
+                    const welcomeSplash = document.getElementById('welcomeSplash');
+                    if (welcomeSplash) {
+                        welcomeSplash.style.display = 'none';
+                    }
+                });
+            }
+            
+            // Character sheet upload input
+            const sheetUploadInput = document.getElementById('sheetUploadInput');
+            if (sheetUploadInput) {
+                sheetUploadInput.addEventListener('change', handleSheetUpload);
+            }
+            
             // Attach event listeners for toggle buttons (Discord-compatible)
             const diceToggle = document.getElementById('diceToggle');
             if (diceToggle) {
@@ -8218,6 +8425,21 @@
             const drawTextBtn = document.getElementById('drawTextBtn');
             if (drawTextBtn) {
                 drawTextBtn.addEventListener('click', () => setDrawingMode('text'));
+            }
+            
+            // Welcome splash (show only in Discord mode)
+            if (isDiscordMode) {
+                setTimeout(() => {
+                    document.getElementById('welcomeSplash').style.display = 'flex';
+                }, 500); // Short delay after page load
+            }
+            
+            // Welcome continue button
+            const welcomeContinueBtn = document.getElementById('welcomeContinueBtn');
+            if (welcomeContinueBtn) {
+                welcomeContinueBtn.addEventListener('click', () => {
+                    document.getElementById('welcomeSplash').style.display = 'none';
+                });
             }
         });
         
