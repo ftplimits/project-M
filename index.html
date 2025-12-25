@@ -3219,9 +3219,6 @@
             });
         };
         
-        const downscaleImage = (file, maxWidth = 1024, maxHeight = 1024) => {
-            return compressImage(file, 'gridImage');
-        };
         
         // Dice Functions
         function parseDiceFormula(formula) {
@@ -8290,16 +8287,6 @@
         window.addEventListener('load', () => {
             initializeDiscord();
             
-            // Welcome splash continue button
-            const welcomeContinueBtn = document.getElementById('welcomeContinueBtn');
-            if (welcomeContinueBtn) {
-                welcomeContinueBtn.addEventListener('click', () => {
-                    const welcomeSplash = document.getElementById('welcomeSplash');
-                    if (welcomeSplash) {
-                        welcomeSplash.style.display = 'none';
-                    }
-                });
-            }
             
             // Character sheet upload input
             const sheetUploadInput = document.getElementById('sheetUploadInput');
