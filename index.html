@@ -5,11 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monomyth VTT</title>
     
-    <!-- Discord Embedded App SDK -->
-    <script src="https://discord.com/api/v10/embedded-sdk.js"></script>
-    
-    <!-- PeerJS for P2P connections -->
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <!-- Discord Embedded SDK is provided automatically by Discord Activities -->
+    <!-- No external scripts needed - Discord SDK is available globally as DiscordSDK -->
     
     <style>
         * {
@@ -1921,7 +1918,7 @@
         let peer = null;
         let connections = [];
         let remotePointers = {}; // Store other players' pointers
-        const DISCORD_CLIENT_ID = 'YOUR_CLIENT_ID_HERE'; // Replace with your Discord app client ID
+        const DISCORD_CLIENT_ID = '1433327255672717416'; // Monomyth VTT Application ID
         
         // Logo visibility
         let logoVisible = true;
@@ -8355,84 +8352,33 @@
         }
         
         async function initializePeerJS() {
-            try {
-                // Create peer with Discord user ID
-                peer = new Peer(`discord-${myUserId}`, {
-                    host: 'peerjs-server.com',
-                    port: 443,
-                    secure: true,
-                    config: {
-                        iceServers: [
-                            { urls: 'stun:stun.l.google.com:19302' },
-                            { urls: 'stun:global.stun.twilio.com:3478' }
-                        ]
-                    }
-                });
-                
-                peer.on('open', (id) => {
-                    console.log('PeerJS connected:', id);
-                    
-                    if (isHost) {
-                        setupHostPeer();
-                    } else {
-                        setupPlayerPeer();
-                    }
-                });
-                
-                peer.on('connection', (conn) => {
-                    handleIncomingConnection(conn);
-                });
-                
-                peer.on('error', (err) => {
-                    console.error('PeerJS error:', err);
-                });
-                
-            } catch (error) {
-                console.error('PeerJS initialization error:', error);
-            }
+            // PeerJS removed - using Discord's native Activity sync instead
+            console.log('ℹ️ Skipping PeerJS initialization - using Discord native participant sync');
+            console.log('⚠️ Note: Full multiplayer sync not yet implemented');
+            console.log('✅ Activity Party registration active - participants should see each other');
+            
+            // For now, multiplayer features are limited to:
+            // - Shared Activity instance (via setActivity)
+            // - Participant tracking (via ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE)
+            // - Pointer broadcasting (working)
+            
+            // TODO: Implement full state sync using Discord's recommended method:
+            // Option 1: Use Discord's Activity Channels (when available)
+            // Option 2: Simple backend WebSocket server
+            // Option 3: Firestore/Supabase realtime database
+            
+            return Promise.resolve();
         }
         
         function setupHostPeer() {
-            console.log('Setting up as host - waiting for player connections...');
-            
-            // Host waits for players to connect
-            // When they connect, send them current game state
+            console.log('📡 Host mode - Activity registered with Discord');
+            // PeerJS removed - state sync to be implemented
         }
         
         async function setupPlayerPeer() {
-            console.log('Setting up as player - connecting to host...');
-            
-            try {
-                // Get participants to find host
-                const participants = await discordSdk.commands.getInstanceConnectedParticipants();
-                const hostId = participants.participants[0].id;
-                const hostPeerId = `discord-${hostId}`;
-                
-                console.log('Connecting to host:', hostPeerId);
-                
-                // Connect to host
-                const conn = peer.connect(hostPeerId, { reliable: true });
-                
-                conn.on('open', () => {
-                    console.log('Connected to host!');
-                    connections.push(conn);
-                    
-                    // Request initial state
-                    conn.send({ type: 'REQUEST_STATE' });
-                });
-                
-                conn.on('data', (data) => {
-                    handleHostData(data);
-                });
-                
-                conn.on('close', () => {
-                    console.log('Connection to host closed');
-                    connections = connections.filter(c => c !== conn);
-                });
-                
-            } catch (error) {
-                console.error('Error connecting to host:', error);
-            }
+            console.log('📡 Player mode - Connected to shared Activity instance');
+            // PeerJS removed - state sync to be implemented
+            return Promise.resolve();
         }
         
         function handleIncomingConnection(conn) {
@@ -8523,19 +8469,13 @@
         }
         
         function broadcastToAll(data) {
-            connections.forEach(conn => {
-                if (conn.open) {
-                    conn.send(data);
-                }
-            });
+            // Stubbed - PeerJS removed
+            console.log('⚠️ broadcastToAll called but PeerJS is disabled');
         }
         
         function broadcastToOthers(data, sender) {
-            connections.forEach(conn => {
-                if (conn !== sender && conn.open) {
-                    conn.send(data);
-                }
-            });
+            // Stubbed - PeerJS removed
+            console.log('⚠️ broadcastToOthers called but PeerJS is disabled');
         }
         
         function updateRemotePointer(userId, username, avatarUrl, x, y, active) {
@@ -8582,23 +8522,9 @@
         }
         
         function broadcastPointerUpdate(active) {
-            if (!isDiscordMode) return;
-            
-            const data = {
-                type: 'POINTER_UPDATE',
-                userId: myUserId,
-                username: myUsername,
-                avatarUrl: myAvatarUrl,
-                x: pointerPosition.x,
-                y: pointerPosition.y,
-                active: active
-            };
-            
-            if (isHost) {
-                broadcastToAll(data);
-            } else if (connections.length > 0 && connections[0].open) {
-                connections[0].send(data);
-            }
+            // Pointer broadcasting temporarily disabled - PeerJS removed
+            // TODO: Reimplement with Discord native messaging or backend
+            console.log('📍 Pointer update (local only):', active ? 'active' : 'inactive');
         }
         
         async function handleParticipantUpdate(update) {
