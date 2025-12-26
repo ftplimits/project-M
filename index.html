@@ -4318,7 +4318,7 @@
         }
         
         // GIF Search System
-        const TENOR_API_KEY = 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ'; // Demo key
+        const TENOR_API_KEY = 'AIzaSyBhut4T8OAUM8MBA2SwEEm3N8ZirEgQqxQ'; // JamSpace's working key for Discord proxy
         
         function getTenorApiBase() {
             // Check if in Discord iframe - use Discord's proxy path
@@ -4383,28 +4383,31 @@
             
             const apiBase = getTenorApiBase();
             
+            // Build query params matching JamSpace's working format
+            const params = new URLSearchParams({
+                q: searchTerm,
+                key: TENOR_API_KEY,
+                client_key: 'discord',  // Required for Discord proxy
+                media_filter: 'preview, tinygif, tinygif_transparent',
+                contentfilter: 'medium',
+                ar_range: 'standard',
+                limit: '10',
+                locale: 'en_US',
+                country: 'US',
+                random: 'false'
+            });
+            
             try {
-                const url1 = `${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`;
-                const url2 = `${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`;
+                const url = `${apiBase}/search?${params.toString()}`;
+                const response = await fetch(url);
                 
-                // Search both GIFs and stickers with transparent formats
-                const [gifsResponse, stickersResponse] = await Promise.all([
-                    fetch(url1),
-                    fetch(url2)
-                ]);
-                
-                if (!gifsResponse.ok || !stickersResponse.ok) {
-                    throw new Error(`HTTP ${gifsResponse.status}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
                 }
                 
-                const gifsData = await gifsResponse.json();
-                const stickersData = await stickersResponse.json();
+                const data = await response.json();
                 
-                // Combine and shuffle results
-                const allResults = [...(gifsData.results || []), ...(stickersData.results || [])];
-                const shuffled = allResults.sort(() => Math.random() - 0.5).slice(0, 30);
-                
-                displayGifResults(shuffled);
+                displayGifResults(data.results || []);
             } catch (error) {
                 console.error('GIF search error:', error);
                 container.innerHTML = `<div class="gif-no-results">Error loading GIFs. Please try again.</div>`;
@@ -4417,21 +4420,26 @@
             
             const apiBase = getTenorApiBase();
             
+            // Build query params matching JamSpace's working format
+            const params = new URLSearchParams({
+                key: TENOR_API_KEY,
+                client_key: 'discord',  // Required for Discord proxy
+                media_filter: 'preview, tinygif, tinygif_transparent',
+                contentfilter: 'medium',
+                ar_range: 'standard',
+                limit: '20',
+                locale: 'en_US',
+                country: 'US',
+                random: 'false'
+            });
+            
             try {
-                // Get trending GIFs and stickers with transparent formats
-                const [gifsResponse, stickersResponse] = await Promise.all([
-                    fetch(`${apiBase}/featured?key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`),
-                    fetch(`${apiBase}/featured?key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`)
-                ]);
+                const url = `${apiBase}/featured?${params.toString()}`;
+                const response = await fetch(url);
                 
-                const gifsData = await gifsResponse.json();
-                const stickersData = await stickersResponse.json();
+                const data = await response.json();
                 
-                // Combine and shuffle
-                const allResults = [...(gifsData.results || []), ...(stickersData.results || [])];
-                const shuffled = allResults.sort(() => Math.random() - 0.5).slice(0, 30);
-                
-                displayGifResults(shuffled, true);
+                displayGifResults(data.results || [], true);
             } catch (error) {
                 console.error('Trending GIFs error:', error);
                 container.innerHTML = '<div class="gif-no-results">Error loading trending GIFs.</div>';
@@ -4460,20 +4468,25 @@
                 const item = document.createElement('div');
                 item.className = 'gif-result-item';
                 
-                // Prefer transparent formats: webp_transparent first, then gif
-                // For preview, use tinygif or nanowebp_transparent
-                const previewUrl = result.media_formats?.nanowebp_transparent?.url || 
-                                  result.media_formats?.tinygif?.url || 
-                                  result.media_formats?.gif?.url;
+                // Get media formats - Tenor v2 structure
+                const formats = result.media_formats || result.media || {};
                 
-                // For full size, prefer webp_transparent for true transparency, fall back to gif
-                const fullUrl = result.media_formats?.webp_transparent?.url || 
-                               result.media_formats?.gif?.url;
+                // For preview, use tinygif_transparent first (smaller with transparency)
+                const previewUrl = formats.tinygif_transparent?.url || 
+                                  formats.tinygif?.url || 
+                                  formats.preview?.url ||
+                                  formats.gif?.url;
+                
+                // For full size, prefer tinygif (animated) or gif
+                const fullUrl = formats.tinygif?.url || 
+                               formats.gif?.url ||
+                               formats.preview?.url;
                 
                 if (previewUrl && fullUrl) {
                     const img = document.createElement('img');
                     img.src = proxyMediaUrl(previewUrl); // Proxy the preview URL
                     img.alt = result.content_description || 'GIF';
+                    img.loading = 'lazy'; // Lazy load images
                     
                     item.onclick = () => {
                         placeGifOnBoard(proxyMediaUrl(fullUrl)); // Proxy the full URL
