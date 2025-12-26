@@ -1980,7 +1980,7 @@
         }
         
         // Grid system
-        let gridEnabled = false;
+        let gridEnabled = true; // Default ON
         let gridSnapping = true; // Default ON
         let gridSize = 100; // 100x100 cells
         let gridColor = '#ffffff';
@@ -2188,8 +2188,14 @@
             
             contextMenu = document.createElement('div');
             contextMenu.className = 'context-menu';
+            contextMenu.style.cssText = 'min-width: 500px;';
             
-            const menuItems = [
+            // Two-column layout container
+            const columnsContainer = document.createElement('div');
+            columnsContainer.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px;';
+            
+            // LEFT COLUMN items
+            const leftColumnItems = [
                 { label: '🎭 Upload Token', action: uploadToken },
                 { label: '👥 Upload PC Avatar', action: uploadAvatar },
                 { label: '👤 Upload Host Avatar', action: uploadHostAvatar },
@@ -2197,29 +2203,34 @@
                 { label: '🎬 Search GIFs & Stickers', action: openGifSearch },
                 { label: '🏰 Set Board Banner', action: setBoardBanner },
                 { label: '📝 Sticky Note', action: createStickyNote },
-                { label: countersPanelVisible ? '📊 Hide Counters' : '📊 Show Counters', action: toggleCounters },
+                { label: countersPanelVisible ? '📊 Hide Counters' : '📊 Show Counters', action: toggleCounters }
+            ];
+            
+            // RIGHT COLUMN items
+            const rightColumnItems = [
                 { label: '💾 Save Session', action: exportGameState },
                 { label: '📂 Load Session', action: loadSessionFile },
                 { label: '🌦️ Weather Effects', action: (e) => toggleWeatherMenu(e) },
                 { label: '🎨 Drawing Tools', action: (e) => showDrawingMenu(e) },
                 { label: gridEnabled ? '⊟ Hide Grid' : '⊞ Show Grid', action: toggleGrid },
-                { label: '🔄 Reset View', action: resetView }
+                { label: '🔄 Reset View', action: resetView },
+                { label: '📺 Sync Views', action: syncAllViews },
+                { label: logoVisible ? '🙈 Hide Logo' : '👁️ Show Logo', action: toggleLogo }
             ];
             
             if (gridEnabled) {
-                menuItems.push({ label: '⚙️ Grid Options', action: showGridOptions });
+                rightColumnItems.splice(5, 0, { label: '⚙️ Grid Options', action: showGridOptions });
             }
             
-            // Add hide logo option at the end
-            menuItems.push({ label: logoVisible ? '🙈 Hide Logo' : '👁️ Show Logo', action: toggleLogo });
-            
-            menuItems.forEach(item => {
+            // Create left column
+            const leftColumn = document.createElement('div');
+            leftColumn.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+            leftColumnItems.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'context-menu-item';
                 div.textContent = item.label;
                 div.onclick = (e) => {
                     e.stopPropagation();
-                    // Special handling for menus that need event
                     if (item.label.includes('Weather Effects') || item.label.includes('Drawing Tools')) {
                         item.action(e);
                     } else {
@@ -2228,8 +2239,32 @@
                     contextMenu.remove();
                     contextMenu = null;
                 };
-                contextMenu.appendChild(div);
+                leftColumn.appendChild(div);
             });
+            
+            // Create right column
+            const rightColumn = document.createElement('div');
+            rightColumn.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+            rightColumnItems.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'context-menu-item';
+                div.textContent = item.label;
+                div.onclick = (e) => {
+                    e.stopPropagation();
+                    if (item.label.includes('Weather Effects') || item.label.includes('Drawing Tools')) {
+                        item.action(e);
+                    } else {
+                        item.action();
+                    }
+                    contextMenu.remove();
+                    contextMenu = null;
+                };
+                rightColumn.appendChild(div);
+            });
+            
+            columnsContainer.appendChild(leftColumn);
+            columnsContainer.appendChild(rightColumn);
+            contextMenu.appendChild(columnsContainer);
             
             document.body.appendChild(contextMenu);
             positionPopup(contextMenu, x, y);
@@ -6130,6 +6165,27 @@
             }
         }
         
+        function syncAllViews() {
+            // Broadcast current view state to all connected clients
+            const viewState = {
+                type: 'SYNC_VIEW',
+                zoom: zoom,
+                panX: panX,
+                panY: panY
+            };
+            
+            // Send to all connections
+            connections.forEach(conn => {
+                try {
+                    conn.send(viewState);
+                } catch (error) {
+                    console.error('Error syncing view:', error);
+                }
+            });
+            
+            showStyledAlert('📺 Views Synced', 'All player views synchronized to your current view.');
+        }
+        
         function setBoardBanner() {
             const currentText = boardBanner.textContent;
             showStyledPrompt('Set Board Banner', 'Enter board name:', currentText || 'Board Name').then((newName) => {
@@ -7281,8 +7337,8 @@
                 const gridY = parseFloat(draggedToken.dataset.gridY);
                 
                 // Snap center to nearest cell center (X.5 values)
-                const snappedX = Math.round(gridX - 0.5) + 0.565;
-                const snappedY = Math.round(gridY - 0.5) + 0.565;
+                const snappedX = Math.round(gridX - 0.5) + 0.5;
+                const snappedY = Math.round(gridY - 0.5) + 0.5;
                 
                 // Update center position
                 draggedToken.dataset.gridX = snappedX;
@@ -8273,6 +8329,23 @@
                     // TODO: Apply state to game
                     break;
                     
+                case 'SYNC_VIEW':
+                    // Update view to match host
+                    zoom = data.zoom;
+                    panX = data.panX;
+                    panY = data.panY;
+                    
+                    // Update all visuals
+                    updateTokenSizes();
+                    updateTokenPositions();
+                    updateImageSizes();
+                    updateImagePositions();
+                    
+                    if (gridEnabled) {
+                        drawGrid();
+                    }
+                    break;
+                    
                 case 'POINTER_UPDATE':
                     updateRemotePointer(data.userId, data.avatarUrl, data.x, data.y, data.active);
                     break;
@@ -8379,6 +8452,10 @@
         window.addEventListener('load', () => {
             initializeDiscord();
             
+            // Draw grid on startup since it's enabled by default
+            if (gridEnabled) {
+                drawGrid();
+            }
             
             // Character sheet upload input
             const sheetUploadInput = document.getElementById('sheetUploadInput');
