@@ -1981,7 +1981,7 @@
         
         // Grid system
         let gridEnabled = false;
-        let gridSnapping = false;
+        let gridSnapping = true; // Default ON
         let gridSize = 100; // 100x100 cells
         let gridColor = '#ffffff';
         let gridOpacity = 0.3;
@@ -7281,8 +7281,8 @@
                 const gridY = parseFloat(draggedToken.dataset.gridY);
                 
                 // Snap center to nearest cell center (X.5 values)
-                const snappedX = Math.round(gridX - 0.5) + 0.57;
-                const snappedY = Math.round(gridY - 0.5) + 0.57;
+                const snappedX = Math.round(gridX - 0.5) + 0.56;
+                const snappedY = Math.round(gridY - 0.5) + 0.56;
                 
                 // Update center position
                 draggedToken.dataset.gridX = snappedX;
