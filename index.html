@@ -4558,7 +4558,10 @@
             
             const container = document.createElement('div');
             container.className = 'map-image below-grid';
-            container.style.background = 'transparent'; // Ensure transparent background
+            
+            // CRITICAL: Ensure completely transparent background
+            container.style.backgroundColor = 'transparent';
+            container.style.backgroundImage = 'none';
             
             // Create actual img element for proper transparency support
             const imgElement = document.createElement('img');
