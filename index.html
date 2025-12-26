@@ -4321,11 +4321,24 @@
         const TENOR_API_KEY = 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ'; // Demo key
         
         function getTenorApiBase() {
-            // Check if in Discord iframe - use proxy
+            // Check if in Discord iframe - use Discord's proxy path
             const inIframe = window.self !== window.top;
-            const apiBase = inIframe ? '/.proxy/tenor' : 'https://tenor.googleapis.com/v2';
-            console.log('Tenor API - In iframe:', inIframe, '- Using base:', apiBase);
-            return apiBase;
+            return inIframe ? '/.proxy/subgoogleapis/tenor/v2' : 'https://tenor.googleapis.com/v2';
+        }
+        
+        function proxyMediaUrl(url) {
+            // Convert Tenor media URLs to Discord proxy format when in iframe
+            const inIframe = window.self !== window.top;
+            if (!inIframe || !url) return url;
+            
+            // Extract path from media.tenor.com URLs
+            // Example: https://media.tenor.com/path/file.gif → /.proxy/tenormedia/path/file.gif
+            const match = url.match(/https?:\/\/media\.tenor\.com\/(.+)/);
+            if (match) {
+                return `/.proxy/tenormedia/${match[1]}`;
+            }
+            
+            return url;
         }
         
         function openGifSearch() {
@@ -4369,14 +4382,10 @@
             container.innerHTML = '<div class="gif-loading">Searching...</div>';
             
             const apiBase = getTenorApiBase();
-            console.log('GIF Search - API Base:', apiBase);
-            console.log('GIF Search - Search term:', searchTerm);
             
             try {
                 const url1 = `${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&media_filter=gif,webp_transparent`;
                 const url2 = `${apiBase}/search?q=${encodeURIComponent(searchTerm)}&key=${TENOR_API_KEY}&limit=15&searchfilter=sticker,-static&media_filter=gif,webp_transparent`;
-                
-                console.log('GIF Search - Fetching URLs:', url1, url2);
                 
                 // Search both GIFs and stickers with transparent formats
                 const [gifsResponse, stickersResponse] = await Promise.all([
@@ -4384,19 +4393,12 @@
                     fetch(url2)
                 ]);
                 
-                console.log('GIF Search - Response status:', gifsResponse.status, stickersResponse.status);
-                
                 if (!gifsResponse.ok || !stickersResponse.ok) {
-                    const errorText1 = await gifsResponse.text();
-                    const errorText2 = await stickersResponse.text();
-                    console.error('GIF Search - Error responses:', errorText1, errorText2);
                     throw new Error(`HTTP ${gifsResponse.status}`);
                 }
                 
                 const gifsData = await gifsResponse.json();
                 const stickersData = await stickersResponse.json();
-                
-                console.log('GIF Search - Results:', gifsData.results?.length || 0, 'gifs,', stickersData.results?.length || 0, 'stickers');
                 
                 // Combine and shuffle results
                 const allResults = [...(gifsData.results || []), ...(stickersData.results || [])];
@@ -4405,7 +4407,7 @@
                 displayGifResults(shuffled);
             } catch (error) {
                 console.error('GIF search error:', error);
-                container.innerHTML = `<div class="gif-no-results">Error loading GIFs. Please try again.<br><small style="color: #666;">${error.message}</small></div>`;
+                container.innerHTML = `<div class="gif-no-results">Error loading GIFs. Please try again.</div>`;
             }
         }
         
@@ -4470,11 +4472,11 @@
                 
                 if (previewUrl && fullUrl) {
                     const img = document.createElement('img');
-                    img.src = previewUrl;
+                    img.src = proxyMediaUrl(previewUrl); // Proxy the preview URL
                     img.alt = result.content_description || 'GIF';
                     
                     item.onclick = () => {
-                        placeGifOnBoard(fullUrl);
+                        placeGifOnBoard(proxyMediaUrl(fullUrl)); // Proxy the full URL
                         closeGifSearch();
                     };
                     
