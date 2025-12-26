@@ -131,6 +131,7 @@
             position: absolute;
             border: none;
             cursor: move;
+            background: transparent none;  /* CRITICAL: Explicit transparent background */
             background-size: cover;
             background-position: center;
             -webkit-user-select: none;
@@ -141,6 +142,7 @@
         }
         
         .map-image img {
+            background: transparent;  /* Ensure img itself has no background */
             -webkit-user-select: none;
             -moz-user-select: none;
             user-select: none;
@@ -4557,8 +4559,9 @@
                                   formats.preview?.url ||
                                   formats.gif?.url;
                 
-                // For full size, prefer tinygif (animated) or gif
-                const fullUrl = formats.tinygif?.url || 
+                // For full size, ALSO use tinygif_transparent to preserve transparency!
+                const fullUrl = formats.tinygif_transparent?.url ||
+                               formats.tinygif?.url || 
                                formats.gif?.url ||
                                formats.preview?.url;
                 
@@ -4605,6 +4608,7 @@
             imgElement.style.height = '100%';
             imgElement.style.objectFit = 'contain';
             imgElement.style.display = 'block';
+            imgElement.style.backgroundColor = 'transparent';  // Explicit transparent bg
             imgElement.style.pointerEvents = 'none'; // Let clicks pass through to container
             
             container.appendChild(imgElement);
