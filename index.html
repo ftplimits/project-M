@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monomyth VTT</title>
     
-    <!-- Discord Embedded SDK is provided automatically by Discord Activities -->
-    <!-- No external scripts needed - Discord SDK is available globally as DiscordSDK -->
+    <!-- Discord Embedded SDK - Use proxy path for CSP compliance -->
+    <script src="/.proxy/api/v10/embedded-sdk.js"></script>
     
     <style>
         * {
@@ -8058,10 +8058,18 @@
             
             console.log('✅ Client ID configured:', DISCORD_CLIENT_ID);
             
+            // Wait for DiscordSDK to be available (it loads asynchronously)
+            let sdkWaitAttempts = 0;
+            while (typeof DiscordSDK === 'undefined' && sdkWaitAttempts < 50) {
+                console.log(`⏳ Waiting for DiscordSDK... attempt ${sdkWaitAttempts + 1}/50`);
+                await new Promise(resolve => setTimeout(resolve, 100));
+                sdkWaitAttempts++;
+            }
+            
             try {
                 // Check if we're running in Discord
                 if (typeof DiscordSDK === 'undefined') {
-                    console.log('Not running in Discord - standalone mode');
+                    console.log('❌ DiscordSDK not available after 5 seconds - standalone mode');
                     isDiscordMode = false;
                     isHost = true; // Solo mode = always host
                     return;
