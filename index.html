@@ -6855,9 +6855,9 @@
                 const centerScreenX = gridX * cellSize + panX;
                 const centerScreenY = gridY * cellSize + panY;
                 
-                // Offset by half token size to get top-left corner, then adjust for border
-                const left = Math.round(centerScreenX - tokenSize / 2) - 4;
-                const top = Math.round(centerScreenY - tokenSize / 2) - 4;
+                // Offset by half token size to get top-left corner, accounting for 2px border
+                const left = Math.round(centerScreenX - tokenSize / 2 - 2);
+                const top = Math.round(centerScreenY - tokenSize / 2 - 2);
                 
                 token.style.left = left + 'px';
                 token.style.top = top + 'px';
@@ -7158,9 +7158,9 @@
             const centerScreenX = centerX * cellSize + panX;
             const centerScreenY = centerY * cellSize + panY;
             
-            // Offset by half token size to get top-left corner, then adjust for border
-            const left = Math.round(centerScreenX - tokenSize / 2) - 4;
-            const top = Math.round(centerScreenY - tokenSize / 2) - 4;
+            // Offset by half token size to get top-left corner, accounting for 2px border
+            const left = Math.round(centerScreenX - tokenSize / 2 - 2);
+            const top = Math.round(centerScreenY - tokenSize / 2 - 2);
             
             token.style.left = left + 'px';
             token.style.top = top + 'px';
@@ -7307,15 +7307,16 @@
             
             const playspaceRect = playspace.getBoundingClientRect();
             const cellSize = (playspaceRect.width / gridSize) * zoom;
-            const tokenSize = cellSize * TOKEN_CELLS;
+            const sizeMultiplier = parseInt(draggedToken.dataset.sizeMultiplier) || 1;
+            const tokenSize = cellSize * TOKEN_CELLS * sizeMultiplier;
             
             // Screen position of top-left corner
             let screenX = e.clientX - playspaceRect.left - dragOffset.x;
             let screenY = e.clientY - playspaceRect.top - dragOffset.y;
             
-            // Calculate screen position of token CENTER
-            const centerScreenX = screenX + tokenSize / 2;
-            const centerScreenY = screenY + tokenSize / 2;
+            // Calculate screen position of token CENTER (accounting for 2px border)
+            const centerScreenX = screenX + tokenSize / 2 + 2;
+            const centerScreenY = screenY + tokenSize / 2 + 2;
             
             // Convert center screen position to grid coordinates
             const centerGridX = (centerScreenX - panX) / cellSize;
@@ -7347,15 +7348,16 @@
                 // Calculate screen position
                 const rect = playspace.getBoundingClientRect();
                 const cellSize = (rect.width / gridSize) * zoom;
-                const tokenSize = cellSize * TOKEN_CELLS;
+                const sizeMultiplier = parseInt(draggedToken.dataset.sizeMultiplier) || 1;
+                const tokenSize = cellSize * TOKEN_CELLS * sizeMultiplier;
                 
                 // Get screen position of token CENTER
                 const centerScreenX = snappedX * cellSize + panX;
                 const centerScreenY = snappedY * cellSize + panY;
                 
-                // Offset by half token size to get top-left corner, then adjust for border
-                const left = Math.round(centerScreenX - tokenSize / 2) - 4;
-                const top = Math.round(centerScreenY - tokenSize / 2) - 4;
+                // Offset by half token size to get top-left corner, accounting for 2px border
+                const left = Math.round(centerScreenX - tokenSize / 2 - 2);
+                const top = Math.round(centerScreenY - tokenSize / 2 - 2);
                 
                 draggedToken.style.left = left + 'px';
                 draggedToken.style.top = top + 'px';
