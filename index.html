@@ -6855,9 +6855,9 @@
                 const centerScreenX = gridX * cellSize + panX;
                 const centerScreenY = gridY * cellSize + panY;
                 
-                // Offset by half token size to get top-left corner, accounting for 2px border
-                const left = Math.round(centerScreenX - tokenSize / 2 - 2);
-                const top = Math.round(centerScreenY - tokenSize / 2 - 2);
+                // Offset by half token size to get top-left corner (no border offset)
+                const left = Math.round(centerScreenX - tokenSize / 2);
+                const top = Math.round(centerScreenY - tokenSize / 2);
                 
                 token.style.left = left + 'px';
                 token.style.top = top + 'px';
@@ -7158,9 +7158,9 @@
             const centerScreenX = centerX * cellSize + panX;
             const centerScreenY = centerY * cellSize + panY;
             
-            // Offset by half token size to get top-left corner, accounting for 2px border
-            const left = Math.round(centerScreenX - tokenSize / 2 - 2);
-            const top = Math.round(centerScreenY - tokenSize / 2 - 2);
+            // Offset by half token size to get top-left corner (no border offset)
+            const left = Math.round(centerScreenX - tokenSize / 2);
+            const top = Math.round(centerScreenY - tokenSize / 2);
             
             token.style.left = left + 'px';
             token.style.top = top + 'px';
@@ -7314,9 +7314,9 @@
             let screenX = e.clientX - playspaceRect.left - dragOffset.x;
             let screenY = e.clientY - playspaceRect.top - dragOffset.y;
             
-            // Calculate screen position of token CENTER (accounting for 2px border)
-            const centerScreenX = screenX + tokenSize / 2 + 2;
-            const centerScreenY = screenY + tokenSize / 2 + 2;
+            // Calculate screen position of token CENTER (no border offset)
+            const centerScreenX = screenX + tokenSize / 2;
+            const centerScreenY = screenY + tokenSize / 2;
             
             // Convert center screen position to grid coordinates
             const centerGridX = (centerScreenX - panX) / cellSize;
@@ -7355,9 +7355,9 @@
                 const centerScreenX = snappedX * cellSize + panX;
                 const centerScreenY = snappedY * cellSize + panY;
                 
-                // Offset by half token size to get top-left corner, accounting for 2px border
-                const left = Math.round(centerScreenX - tokenSize / 2 - 2);
-                const top = Math.round(centerScreenY - tokenSize / 2 - 2);
+                // Offset by half token size to get top-left corner (no border offset)
+                const left = Math.round(centerScreenX - tokenSize / 2);
+                const top = Math.round(centerScreenY - tokenSize / 2);
                 
                 draggedToken.style.left = left + 'px';
                 draggedToken.style.top = top + 'px';
