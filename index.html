@@ -6152,8 +6152,15 @@
         
         function resetView() {
             zoom = 1;
-            panX = 0;
-            panY = 0;
+            
+            // Center the viewport on the grid
+            const rect = playspace.getBoundingClientRect();
+            const cellSize = (rect.width / gridSize) * zoom;
+            const gridCenterX = gridSize / 2;
+            const gridCenterY = gridSize / 2;
+            
+            panX = rect.width / 2 - gridCenterX * cellSize;
+            panY = rect.height / 2 - gridCenterY * cellSize;
             
             updateTokenSizes();
             updateTokenPositions();
@@ -8453,6 +8460,16 @@
         // Initialize Discord when page loads
         window.addEventListener('load', () => {
             initializeDiscord();
+            
+            // Center the viewport on the grid
+            const rect = playspace.getBoundingClientRect();
+            const cellSize = (rect.width / gridSize) * zoom;
+            const gridCenterX = gridSize / 2;  // 50
+            const gridCenterY = gridSize / 2;  // 50
+            
+            // Calculate pan to center the grid
+            panX = rect.width / 2 - gridCenterX * cellSize;
+            panY = rect.height / 2 - gridCenterY * cellSize;
             
             // Draw grid on startup since it's enabled by default
             if (gridEnabled) {
