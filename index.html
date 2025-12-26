@@ -4383,11 +4383,11 @@
             
             const apiBase = getTenorApiBase();
             
-            // Build query params matching JamSpace's working format
-            const params = new URLSearchParams({
+            // Build query params for GIFs
+            const gifParams = new URLSearchParams({
                 q: searchTerm,
                 key: TENOR_API_KEY,
-                client_key: 'discord',  // Required for Discord proxy
+                client_key: 'discord',
                 media_filter: 'preview, tinygif, tinygif_transparent',
                 contentfilter: 'medium',
                 ar_range: 'standard',
@@ -4397,17 +4397,40 @@
                 random: 'false'
             });
             
+            // Build query params for stickers (add searchfilter)
+            const stickerParams = new URLSearchParams({
+                q: searchTerm,
+                key: TENOR_API_KEY,
+                client_key: 'discord',
+                media_filter: 'preview, tinygif, tinygif_transparent',
+                contentfilter: 'medium',
+                ar_range: 'standard',
+                limit: '10',
+                locale: 'en_US',
+                country: 'US',
+                random: 'false',
+                searchfilter: 'sticker,-static'  // Sticker-specific filter
+            });
+            
             try {
-                const url = `${apiBase}/search?${params.toString()}`;
-                const response = await fetch(url);
+                // Search both GIFs and stickers
+                const [gifsResponse, stickersResponse] = await Promise.all([
+                    fetch(`${apiBase}/search?${gifParams.toString()}`),
+                    fetch(`${apiBase}/search?${stickerParams.toString()}`)
+                ]);
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                if (!gifsResponse.ok || !stickersResponse.ok) {
+                    throw new Error(`HTTP ${gifsResponse.status}`);
                 }
                 
-                const data = await response.json();
+                const gifsData = await gifsResponse.json();
+                const stickersData = await stickersResponse.json();
                 
-                displayGifResults(data.results || []);
+                // Combine and shuffle results
+                const allResults = [...(gifsData.results || []), ...(stickersData.results || [])];
+                const shuffled = allResults.sort(() => Math.random() - 0.5);
+                
+                displayGifResults(shuffled);
             } catch (error) {
                 console.error('GIF search error:', error);
                 container.innerHTML = `<div class="gif-no-results">Error loading GIFs. Please try again.</div>`;
@@ -4420,26 +4443,48 @@
             
             const apiBase = getTenorApiBase();
             
-            // Build query params matching JamSpace's working format
-            const params = new URLSearchParams({
+            // Build query params for trending GIFs
+            const gifParams = new URLSearchParams({
                 key: TENOR_API_KEY,
-                client_key: 'discord',  // Required for Discord proxy
+                client_key: 'discord',
                 media_filter: 'preview, tinygif, tinygif_transparent',
                 contentfilter: 'medium',
                 ar_range: 'standard',
-                limit: '20',
+                limit: '15',
                 locale: 'en_US',
                 country: 'US',
                 random: 'false'
             });
             
+            // Build query params for trending stickers
+            const stickerParams = new URLSearchParams({
+                key: TENOR_API_KEY,
+                client_key: 'discord',
+                media_filter: 'preview, tinygif, tinygif_transparent',
+                contentfilter: 'medium',
+                ar_range: 'standard',
+                limit: '15',
+                locale: 'en_US',
+                country: 'US',
+                random: 'false',
+                searchfilter: 'sticker,-static'  // Sticker-specific filter
+            });
+            
             try {
-                const url = `${apiBase}/featured?${params.toString()}`;
-                const response = await fetch(url);
+                // Get both trending GIFs and stickers
+                const [gifsResponse, stickersResponse] = await Promise.all([
+                    fetch(`${apiBase}/featured?${gifParams.toString()}`),
+                    fetch(`${apiBase}/featured?${stickerParams.toString()}`)
+                ]);
                 
-                const data = await response.json();
+                const gifsData = await gifsResponse.json();
+                const stickersData = await stickersResponse.json();
                 
-                displayGifResults(data.results || [], true);
+                // Combine and shuffle
+                const allResults = [...(gifsData.results || []), ...(stickersData.results || [])];
+                const shuffled = allResults.sort(() => Math.random() - 0.5).slice(0, 30);
+                
+                displayGifResults(shuffled, true);
             } catch (error) {
                 console.error('Trending GIFs error:', error);
                 container.innerHTML = '<div class="gif-no-results">Error loading trending GIFs.</div>';
