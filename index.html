@@ -7281,8 +7281,8 @@
                 const gridY = parseFloat(draggedToken.dataset.gridY);
                 
                 // Snap center to nearest cell center (X.5 values)
-                const snappedX = Math.round(gridX - 0.5) + 0.51;
-                const snappedY = Math.round(gridY - 0.5) + 0.51;
+                const snappedX = Math.round(gridX - 0.5) + 0.55;
+                const snappedY = Math.round(gridY - 0.5) + 0.55;
                 
                 // Update center position
                 draggedToken.dataset.gridX = snappedX;
