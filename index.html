@@ -8048,6 +8048,19 @@
         // ===== DISCORD INTEGRATION & MULTIPLAYER =====
         
         async function initializeDiscord() {
+            console.log('🚀 initializeDiscord() called - starting Discord integration...');
+            
+            // Validate CLIENT_ID
+            if (DISCORD_CLIENT_ID === 'YOUR_CLIENT_ID_HERE' || !DISCORD_CLIENT_ID) {
+                console.error('❌ DISCORD_CLIENT_ID not configured!');
+                alert('ERROR: Discord Client ID not configured in code! Please set DISCORD_CLIENT_ID to your actual Discord Application ID.');
+                isDiscordMode = false;
+                isHost = true;
+                return;
+            }
+            
+            console.log('✅ Client ID configured:', DISCORD_CLIENT_ID);
+            
             try {
                 // Check if we're running in Discord
                 if (typeof DiscordSDK === 'undefined') {
@@ -8057,11 +8070,11 @@
                     return;
                 }
                 
-                console.log('Initializing Discord SDK...');
+                console.log('✅ DiscordSDK found - initializing...');
                 discordSdk = new DiscordSDK(DISCORD_CLIENT_ID);
                 
                 await discordSdk.ready();
-                console.log('Discord SDK ready');
+                console.log('✅ Discord SDK ready');
                 
                 // Authenticate
                 const { code } = await discordSdk.commands.authorize({
@@ -8102,8 +8115,14 @@
                 console.log('Authenticated as:', myUsername);
                 
                 // Get instance info for debugging
-                const instanceId = await discordSdk.instanceId;
-                const channelId = await discordSdk.channelId;
+                let instanceId = 'unknown';
+                let channelId = 'unknown';
+                try {
+                    instanceId = discordSdk.instanceId || 'N/A';
+                    channelId = discordSdk.channelId || 'N/A';
+                } catch (e) {
+                    console.warn('Could not get instance/channel IDs:', e);
+                }
                 
                 console.log('Instance ID:', instanceId);
                 console.log('Channel ID:', channelId);
@@ -8119,8 +8138,38 @@
                 console.log('Participants:', participants.participants.length);
                 console.log('Participant list:', participants.participants.map(p => p.username).join(', '));
                 
-                // Show debug info overlay
-                showDebugInfo(instanceId, participants);
+                // CRITICAL: Register this as a shared joinable activity!
+                console.log('🎯 Setting activity to make it joinable...');
+                try {
+                    await discordSdk.commands.setActivity({
+                        activity: {
+                            type: 0, // Playing
+                            details: 'Playing Monomyth VTT',
+                            state: `${participants.participants.length} player${participants.participants.length !== 1 ? 's' : ''}`,
+                            party: {
+                                id: instanceId || 'default-party',
+                                size: {
+                                    current_size: participants.participants.length,
+                                    max_size: 10
+                                }
+                            },
+                            instance: true
+                        }
+                    });
+                    console.log('✅ Activity set - session is now joinable!');
+                } catch (activityError) {
+                    console.error('⚠️ Could not set activity:', activityError);
+                    // Continue anyway - not critical
+                }
+                
+                // Show debug info overlay - always show it!
+                try {
+                    showDebugInfo(instanceId, channelId, participants);
+                } catch (e) {
+                    console.error('Error showing debug info:', e);
+                    // Show basic alert instead
+                    alert(`DEBUG: Instance=${instanceId}, Participants=${participants.participants.length}, You=${myUsername}, Host=${isHost}`);
+                }
                 
                 // Update pointer with Discord avatar
                 updateMyPointerAvatar();
@@ -8142,7 +8191,12 @@
                 console.log('Discord integration complete!');
                 
             } catch (error) {
-                console.error('Discord initialization error:', error);
+                console.error('❌ Discord initialization error:', error);
+                console.error('Error stack:', error.stack);
+                
+                // Show error to user
+                alert(`Discord Integration Failed!\n\nError: ${error.message}\n\nCheck browser console (F12) for details.\n\nFalling back to standalone mode.`);
+                
                 // Fallback to standalone mode
                 isDiscordMode = false;
                 isHost = true;
@@ -8191,7 +8245,13 @@
             }
         }
         
-        function showDebugInfo(instanceId, participants) {
+        function showDebugInfo(instanceId, channelId, participants) {
+            // Remove any existing debug panel
+            const existingPanel = document.getElementById('discordDebugPanel');
+            if (existingPanel) {
+                existingPanel.remove();
+            }
+            
             // Create debug overlay
             const debugPanel = document.createElement('div');
             debugPanel.id = 'discordDebugPanel';
@@ -8199,42 +8259,53 @@
                 position: fixed;
                 top: 10px;
                 right: 10px;
-                background: rgba(0, 0, 0, 0.9);
+                background: rgba(0, 0, 0, 0.95);
                 color: #d4af37;
                 padding: 15px;
-                border: 2px solid #d4af37;
+                border: 3px solid #d4af37;
                 border-radius: 8px;
                 font-family: monospace;
                 font-size: 11px;
-                z-index: 10000;
-                max-width: 300px;
-                box-shadow: 0 0 20px rgba(212, 175, 55, 0.4);
+                z-index: 99999;
+                max-width: 350px;
+                box-shadow: 0 0 30px rgba(212, 175, 55, 0.8);
+                backdrop-filter: blur(5px);
             `;
             
+            const participantCount = participants?.participants?.length || 0;
+            const participantList = participants?.participants?.map(p => p.username || p.id).join(', ') || 'None';
+            
             debugPanel.innerHTML = `
-                <div style="font-weight: bold; margin-bottom: 8px; color: #fff; font-size: 12px;">🔍 Discord Instance Debug</div>
-                <div style="margin-bottom: 4px;"><strong>Instance ID:</strong> ${instanceId}</div>
-                <div style="margin-bottom: 4px;"><strong>Your Username:</strong> ${myUsername}</div>
-                <div style="margin-bottom: 4px;"><strong>Your ID:</strong> ${myUserId}</div>
-                <div style="margin-bottom: 4px;"><strong>Role:</strong> ${isHost ? 'HOST 👑' : 'Player'}</div>
-                <div style="margin-bottom: 4px;"><strong>Participants (${participants.participants.length}):</strong></div>
-                <div style="margin-left: 10px; font-size: 10px;">
-                    ${participants.participants.map(p => `• ${p.username}`).join('<br>')}
+                <div style="font-weight: bold; margin-bottom: 10px; color: #fff; font-size: 13px; text-align: center;">🔍 DISCORD SYNC DEBUG</div>
+                <div style="margin-bottom: 5px; padding: 5px; background: rgba(212, 175, 55, 0.1); border-radius: 3px;">
+                    <strong>Instance ID:</strong><br>
+                    <span style="font-size: 9px; word-break: break-all;">${instanceId}</span>
                 </div>
-                <button onclick="document.getElementById('discordDebugPanel').remove()" 
-                        style="margin-top: 10px; padding: 4px 8px; background: #d4af37; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
-                    Close
+                <div style="margin-bottom: 5px; padding: 5px; background: rgba(212, 175, 55, 0.1); border-radius: 3px;">
+                    <strong>Channel ID:</strong><br>
+                    <span style="font-size: 9px; word-break: break-all;">${channelId}</span>
+                </div>
+                <div style="margin-bottom: 4px;"><strong>Your Username:</strong> ${myUsername || 'Unknown'}</div>
+                <div style="margin-bottom: 4px;"><strong>Your ID:</strong><br><span style="font-size: 9px;">${myUserId || 'Unknown'}</span></div>
+                <div style="margin-bottom: 4px; padding: 5px; background: ${isHost ? 'rgba(255, 215, 0, 0.2)' : 'rgba(100, 100, 255, 0.2)'}; border-radius: 3px;">
+                    <strong>Role:</strong> ${isHost ? 'HOST 👑' : 'PLAYER'}
+                </div>
+                <div style="margin-bottom: 4px;"><strong>Connected Participants (${participantCount}):</strong></div>
+                <div style="margin-left: 10px; font-size: 10px; padding: 5px; background: rgba(212, 175, 55, 0.05); border-radius: 3px;">
+                    ${participants?.participants?.map(p => `• ${p.username || 'Unknown'} ${p.id === myUserId ? '(YOU)' : ''}`).join('<br>') || 'No participants found'}
+                </div>
+                <div style="margin-top: 10px; font-size: 10px; color: #ff6b6b; font-weight: bold; text-align: center;">
+                    ${participantCount === 1 ? '⚠️ WARNING: Only 1 participant! You\'re in separate instances!' : '✅ Multiple participants detected'}
+                </div>
+                <button onclick="this.parentElement.remove()" 
+                        style="margin-top: 10px; width: 100%; padding: 6px 8px; background: #d4af37; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">
+                    Close Debug Panel
                 </button>
             `;
             
             document.body.appendChild(debugPanel);
             
-            // Auto-hide after 10 seconds
-            setTimeout(() => {
-                if (debugPanel.parentNode) {
-                    debugPanel.style.opacity = '0.3';
-                }
-            }, 10000);
+            console.log('📊 Debug panel created and displayed');
         }
         
         function applyPlayerRestrictions() {
@@ -8534,22 +8605,85 @@
             console.log('🔄 Participant update:', update);
             console.log('Participants now:', update.participants.map(p => p.username).join(', '));
             
-            // Update debug panel if it exists
-            const debugPanel = document.getElementById('discordDebugPanel');
-            if (debugPanel && discordSdk) {
-                const instanceId = await discordSdk.instanceId;
+            try {
+                // Get fresh instance info
+                let instanceId = 'unknown';
+                let channelId = 'unknown';
+                try {
+                    instanceId = discordSdk.instanceId || 'N/A';
+                    channelId = discordSdk.channelId || 'N/A';
+                } catch (e) {
+                    console.warn('Could not get instance/channel IDs:', e);
+                }
+                
                 const participants = await discordSdk.commands.getInstanceConnectedParticipants();
                 
-                // Remove old panel
-                debugPanel.remove();
+                // Update activity party size
+                console.log('🎯 Updating activity party size...');
+                try {
+                    await discordSdk.commands.setActivity({
+                        activity: {
+                            type: 0,
+                            details: 'Playing Monomyth VTT',
+                            state: `${participants.participants.length} player${participants.participants.length !== 1 ? 's' : ''}`,
+                            party: {
+                                id: instanceId || 'default-party',
+                                size: {
+                                    current_size: participants.participants.length,
+                                    max_size: 10
+                                }
+                            },
+                            instance: true
+                        }
+                    });
+                    console.log('✅ Activity updated with new party size');
+                } catch (activityError) {
+                    console.error('⚠️ Could not update activity:', activityError);
+                }
                 
-                // Show updated panel
-                showDebugInfo(instanceId, participants);
+                // Show updated debug panel
+                showDebugInfo(instanceId, channelId, participants);
+            } catch (e) {
+                console.error('Error updating debug panel:', e);
             }
         }
         
         // Initialize Discord when page loads
         window.addEventListener('load', () => {
+            console.log('🎮 Page loaded - Monomyth VTT starting...');
+            
+            // Show loading indicator
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = 'pageLoadIndicator';
+            loadingDiv.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 0, 0, 0.95);
+                color: #d4af37;
+                padding: 30px 50px;
+                border: 3px solid #d4af37;
+                border-radius: 12px;
+                font-family: Georgia, serif;
+                font-size: 18px;
+                z-index: 999999;
+                text-align: center;
+                box-shadow: 0 0 40px rgba(212, 175, 55, 0.8);
+            `;
+            loadingDiv.innerHTML = `
+                <div style="font-size: 24px; font-weight: bold; margin-bottom: 15px;">⚔️ MONOMYTH VTT ⚔️</div>
+                <div>Initializing Discord Connection...</div>
+                <div style="margin-top: 10px; font-size: 14px; opacity: 0.7;">Please wait...</div>
+            `;
+            document.body.appendChild(loadingDiv);
+            
+            // Remove loading indicator after 3 seconds (Discord should be ready by then)
+            setTimeout(() => {
+                const indicator = document.getElementById('pageLoadIndicator');
+                if (indicator) indicator.remove();
+            }, 3000);
+            
             initializeDiscord();
             
             // Center the viewport on the grid
