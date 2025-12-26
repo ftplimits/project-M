@@ -348,7 +348,7 @@
             position: absolute;
             top: -8px;
             left: -8px;
-            background-color: #8b0000;
+            background-color: #2d5016;
             color: #d4af37;
             border: 2px solid #d4af37;
             border-radius: 6px;
@@ -365,7 +365,7 @@
         }
         
         .token-hp-counter:hover {
-            background-color: #a00000;
+            background-color: #3a6b1e;
         }
         
         .token-condition-emoji {
@@ -2630,15 +2630,11 @@
             
             hpCounter.textContent = currentHP.toString();
             
-            // Color code based on HP value
-            if (currentHP > 20) {
-                hpCounter.style.backgroundColor = '#2d5016'; // Green
-            } else if (currentHP > 10) {
-                hpCounter.style.backgroundColor = '#92400e'; // Orange
-            } else if (currentHP > 0) {
-                hpCounter.style.backgroundColor = '#8b0000'; // Red
+            // Simple color scheme: Green for alive, Red for dead
+            if (currentHP > 0) {
+                hpCounter.style.backgroundColor = '#2d5016'; // Green (alive)
             } else {
-                hpCounter.style.backgroundColor = '#000000'; // Black (dead)
+                hpCounter.style.backgroundColor = '#8b0000'; // Red (dead/zero)
             }
         }
         
