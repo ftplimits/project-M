@@ -8101,6 +8101,13 @@
                 
                 console.log('Authenticated as:', myUsername);
                 
+                // Get instance info for debugging
+                const instanceId = await discordSdk.instanceId;
+                const channelId = await discordSdk.channelId;
+                
+                console.log('Instance ID:', instanceId);
+                console.log('Channel ID:', channelId);
+                
                 // Get participants
                 const participants = await discordSdk.commands.getInstanceConnectedParticipants();
                 
@@ -8110,6 +8117,10 @@
                 
                 console.log('Is host:', isHost);
                 console.log('Participants:', participants.participants.length);
+                console.log('Participant list:', participants.participants.map(p => p.username).join(', '));
+                
+                // Show debug info overlay
+                showDebugInfo(instanceId, participants);
                 
                 // Update pointer with Discord avatar
                 updateMyPointerAvatar();
@@ -8178,6 +8189,52 @@
                                 text-align: center;">${isHost ? 'Host' : myUsername}</div>
                 `;
             }
+        }
+        
+        function showDebugInfo(instanceId, participants) {
+            // Create debug overlay
+            const debugPanel = document.createElement('div');
+            debugPanel.id = 'discordDebugPanel';
+            debugPanel.style.cssText = `
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                background: rgba(0, 0, 0, 0.9);
+                color: #d4af37;
+                padding: 15px;
+                border: 2px solid #d4af37;
+                border-radius: 8px;
+                font-family: monospace;
+                font-size: 11px;
+                z-index: 10000;
+                max-width: 300px;
+                box-shadow: 0 0 20px rgba(212, 175, 55, 0.4);
+            `;
+            
+            debugPanel.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 8px; color: #fff; font-size: 12px;">🔍 Discord Instance Debug</div>
+                <div style="margin-bottom: 4px;"><strong>Instance ID:</strong> ${instanceId}</div>
+                <div style="margin-bottom: 4px;"><strong>Your Username:</strong> ${myUsername}</div>
+                <div style="margin-bottom: 4px;"><strong>Your ID:</strong> ${myUserId}</div>
+                <div style="margin-bottom: 4px;"><strong>Role:</strong> ${isHost ? 'HOST 👑' : 'Player'}</div>
+                <div style="margin-bottom: 4px;"><strong>Participants (${participants.participants.length}):</strong></div>
+                <div style="margin-left: 10px; font-size: 10px;">
+                    ${participants.participants.map(p => `• ${p.username}`).join('<br>')}
+                </div>
+                <button onclick="document.getElementById('discordDebugPanel').remove()" 
+                        style="margin-top: 10px; padding: 4px 8px; background: #d4af37; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                    Close
+                </button>
+            `;
+            
+            document.body.appendChild(debugPanel);
+            
+            // Auto-hide after 10 seconds
+            setTimeout(() => {
+                if (debugPanel.parentNode) {
+                    debugPanel.style.opacity = '0.3';
+                }
+            }, 10000);
         }
         
         function applyPlayerRestrictions() {
@@ -8473,10 +8530,22 @@
             }
         }
         
-        function handleParticipantUpdate(update) {
-            console.log('Participant update:', update);
-            // Handle players joining/leaving
-            // Could auto-assign avatars here
+        async function handleParticipantUpdate(update) {
+            console.log('🔄 Participant update:', update);
+            console.log('Participants now:', update.participants.map(p => p.username).join(', '));
+            
+            // Update debug panel if it exists
+            const debugPanel = document.getElementById('discordDebugPanel');
+            if (debugPanel && discordSdk) {
+                const instanceId = await discordSdk.instanceId;
+                const participants = await discordSdk.commands.getInstanceConnectedParticipants();
+                
+                // Remove old panel
+                debugPanel.remove();
+                
+                // Show updated panel
+                showDebugInfo(instanceId, participants);
+            }
         }
         
         // Initialize Discord when page loads
