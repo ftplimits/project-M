@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monomyth VTT</title>
     
-    <!-- Discord SDK is injected by Discord Activities - no script tag needed -->
+    <!-- Try loading Discord Embedded App SDK from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk@1.2.0/output/discord.js"></script>
     
     <style>
         * {
@@ -8045,6 +8046,9 @@
         
         async function initializeDiscord() {
             console.log('🚀 initializeDiscord() called - starting Discord integration...');
+            console.log('🔍 Checking for DiscordSDK availability...');
+            console.log('window.DiscordSDK:', typeof window.DiscordSDK);
+            console.log('window.discord:', typeof window.discord);
             
             // Validate CLIENT_ID
             if (DISCORD_CLIENT_ID === 'YOUR_CLIENT_ID_HERE' || !DISCORD_CLIENT_ID) {
@@ -8057,36 +8061,41 @@
             
             console.log('✅ Client ID configured:', DISCORD_CLIENT_ID);
             
-            // Check immediately first
-            if (typeof DiscordSDK !== 'undefined') {
-                console.log('✅ DiscordSDK found immediately!');
-            } else {
-                console.log('⏳ DiscordSDK not found yet, waiting...');
-                
-                // Wait for DiscordSDK to be injected by Discord (up to 10 seconds)
-                let sdkWaitAttempts = 0;
-                const maxAttempts = 100; // 100 * 100ms = 10 seconds
-                
-                while (typeof DiscordSDK === 'undefined' && sdkWaitAttempts < maxAttempts) {
-                    if (sdkWaitAttempts % 10 === 0) { // Log every second instead of every 100ms
-                        console.log(`⏳ Waiting for DiscordSDK... ${sdkWaitAttempts * 100}ms elapsed`);
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    sdkWaitAttempts++;
+            // Wait for SDK to load from CDN or Discord injection
+            let sdkWaitAttempts = 0;
+            const maxAttempts = 100; // 100 * 100ms = 10 seconds
+            
+            while (typeof DiscordSDK === 'undefined' && typeof window.discord === 'undefined' && sdkWaitAttempts < maxAttempts) {
+                if (sdkWaitAttempts === 0) {
+                    console.log('⏳ Waiting for DiscordSDK to load...');
                 }
+                if (sdkWaitAttempts % 10 === 0 && sdkWaitAttempts > 0) {
+                    console.log(`⏳ Still waiting... ${sdkWaitAttempts * 100}ms elapsed`);
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+                sdkWaitAttempts++;
             }
             
             try {
-                // Check if we're running in Discord
-                if (typeof DiscordSDK === 'undefined') {
+                // Check which SDK loaded
+                let SDK = window.DiscordSDK || window.discord?.DiscordSDK;
+                
+                if (typeof DiscordSDK !== 'undefined') {
+                    console.log('✅ DiscordSDK found (global)');
+                    SDK = DiscordSDK;
+                } else if (typeof window.discord !== 'undefined') {
+                    console.log('✅ Discord SDK found (window.discord)');
+                    SDK = window.discord.DiscordSDK;
+                } else {
                     console.log('❌ DiscordSDK not available after 10 seconds - standalone mode');
+                    console.log('Available on window:', Object.keys(window).filter(k => k.toLowerCase().includes('discord')));
                     isDiscordMode = false;
                     isHost = true; // Solo mode = always host
                     return;
                 }
                 
-                console.log('✅ DiscordSDK found - initializing...');
-                discordSdk = new DiscordSDK(DISCORD_CLIENT_ID);
+                console.log('✅ DiscordSDK constructor available - initializing...');
+                discordSdk = new SDK(DISCORD_CLIENT_ID);
                 
                 await discordSdk.ready();
                 console.log('✅ Discord SDK ready');
