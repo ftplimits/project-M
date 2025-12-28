@@ -124,7 +124,7 @@
     
     <script>
         // Configuration - REPLACE WITH YOUR CLIENT ID
-        const CLIENT_ID = 'YOUR_CLIENT_ID_HERE';
+        const CLIENT_ID = '1454709204358008875';
 
         // State management
         let discordSdk = null;
@@ -142,6 +142,12 @@
             updateStatus('Connecting to Discord...');
             
             try {
+                // Configure URL mappings for Discord's proxy
+                DiscordSDK.patchUrlMappings([{
+                    prefix: "/",
+                    target: "ftplimits.github.io/project-m"
+                }]);
+                
                 // SDK is loaded from discord-sdk.js as global DiscordSDK object
                 discordSdk = new DiscordSDK.DiscordSDK(CLIENT_ID);
                 
