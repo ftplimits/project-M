@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Node modules (if you add build tools later)
+node_modules/
+
+# Logs
+*.log
