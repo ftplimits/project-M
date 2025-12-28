@@ -119,10 +119,10 @@
         </div>
     </div>
 
-    <script type="module">
-        // Import Discord Embedded App SDK
-        import { DiscordSDK } from 'https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk@1.4.0/+esm';
-
+    <!-- Discord SDK loaded from same domain (CSP-safe) -->
+    <script src="./discord-sdk.js"></script>
+    
+    <script>
         // Configuration - REPLACE WITH YOUR CLIENT ID
         const CLIENT_ID = 'YOUR_CLIENT_ID_HERE';
 
@@ -142,7 +142,8 @@
             updateStatus('Connecting to Discord...');
             
             try {
-                discordSdk = new DiscordSDK(CLIENT_ID);
+                // SDK is loaded from discord-sdk.js as global DiscordSDK object
+                discordSdk = new DiscordSDK.DiscordSDK(CLIENT_ID);
                 
                 // Wait for Discord client to be ready
                 await discordSdk.ready();
@@ -157,9 +158,6 @@
                     scope: ['identify', 'guilds']
                 });
 
-                // Exchange code for access token
-                // Note: In production, this should go through your backend
-                // For now, we'll use a mock authentication
                 updateStatus('Authenticated! Setting up...');
 
                 // Get channel and guild info
@@ -187,12 +185,10 @@
         }
 
         // Simple multiplayer using BroadcastChannel (works for same browser instance)
-        // In production, you'd use WebRTC, WebSocket, or a service like Playroom
         let bc = null;
 
         function initMultiplayer() {
             // Use BroadcastChannel for local testing
-            // This will only work for multiple tabs in the same browser
             bc = new BroadcastChannel(`discord-activity-${channelId}`);
 
             bc.onmessage = (event) => {
@@ -294,7 +290,7 @@
         }
 
         // Start the app
-        if (CLIENT_ID === '1454709204358008875') {
+        if (CLIENT_ID === 'YOUR_CLIENT_ID_HERE') {
             updateStatus('⚠️ Please set your Discord Client ID in the code');
         } else {
             initDiscord();
