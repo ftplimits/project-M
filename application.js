@@ -31,14 +31,9 @@ async function initDiscord() {
         await discordSdk.ready();
         updateStatus('Discord connected! Authenticating...');
 
-        // Get authorization code
-        const { code } = await discordSdk.commands.authorize({
-            client_id: CLIENT_ID,
-            response_type: 'code',
-            state: '',
-            prompt: 'none',
-            scope: ['identify', 'guilds'],
-            redirect_uri: '/.proxy'
+        // Authenticate - this handles the full OAuth flow for Activities
+        auth = await discordSdk.commands.authenticate({
+            scope: ['identify', 'guilds']
         });
 
         updateStatus('Authenticated! Setting up...');
