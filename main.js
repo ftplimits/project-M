@@ -1,130 +1,163 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    <title>Discord Activity Test</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        #app {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 40px;
-            max-width: 800px;
-            width: 100%;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        }
-        h1 {
-            margin-bottom: 20px;
-            font-size: 2em;
-            text-align: center;
-        }
-        #status {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-family: 'Courier New', monospace;
-        }
-        .status-item {
-            margin: 5px 0;
-        }
-        #users {
-            margin-top: 20px;
-        }
-        .user {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 10px 15px;
-            margin: 10px 0;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.3);
-        }
-        .user-name {
-            font-weight: bold;
-        }
-        #test-sync {
-            margin-top: 20px;
-            padding: 20px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 10px;
-        }
-        button {
-            background: #5865F2;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin: 5px;
-            transition: background 0.3s;
-        }
-        button:hover {
-            background: #4752C4;
-        }
-        #sync-counter {
-            font-size: 2em;
-            text-align: center;
-            margin: 20px 0;
-        }
-    </style>
-</head>
-<body>
-    <div id="app">
-        <h1>🎭 Discord Activity Test</h1>
-        <div id="status">
-            <div class="status-item">Status: <span id="connection-status">Initializing...</span></div>
-            <div class="status-item">Channel: <span id="channel-id">-</span></div>
-            <div class="status-item">Guild: <span id="guild-id">-</span></div>
-            <div class="status-item">User: <span id="user-info">-</span></div>
-        </div>
+// Discord Activity Test Application
+// Configuration
+const CLIENT_ID = '1454709204358008875';
 
-        <div id="users">
-            <h3>Connected Users:</h3>
-            <div id="user-list"></div>
-        </div>
+// State management
+let discordSdk = null;
+let channelId = null;
+let guildId = null;
+let connectedUsers = new Map();
+let sharedState = {
+    counter: 0,
+    users: []
+};
 
-        <div id="test-sync">
-            <h3>Multiplayer Sync Test</h3>
-            <div id="sync-counter">0</div>
-            <div style="text-align: center;">
-                <button id="increment">Increment</button>
-                <button id="decrement">Decrement</button>
-                <button id="reset">Reset</button>
-            </div>
-        </div>
-    </div>
+// Initialize Discord SDK
+async function initDiscord() {
+    updateStatus('Connecting to Discord...');
+    
+    try {
+        // Configure URL mappings for Discord's proxy
+        DiscordSDK.patchUrlMappings([{
+            prefix: "/",
+            target: "ftplimits.github.io/project-m"
+        }]);
+        
+        // SDK is loaded from discord-sdk.js as global DiscordSDK object
+        discordSdk = new DiscordSDK.DiscordSDK(CLIENT_ID);
+        
+        // Wait for Discord client to be ready
+        await discordSdk.ready();
+        updateStatus('Discord connected! Getting channel info...');
 
-    <!-- Discord SDK loaded from same domain (CSP-safe) -->
-    <script src="./discord-sdk.js?v=2"></script>
-    <!-- App code in external file (Discord strips inline scripts) -->
-    <script src="./main.js?v=3"></script>
-</body>
-</html>
+        // Activities are pre-authenticated - just get channel directly
+        const channel = await discordSdk.commands.getChannel();
+        channelId = channel.id;
+        guildId = channel.guild_id;
+
+        // Update UI
+        document.getElementById('channel-id').textContent = channelId;
+        document.getElementById('guild-id').textContent = guildId || 'DM';
+
+        // Get current user info
+        const currentUser = await discordSdk.commands.getInstanceConnectedParticipants();
+        updateUserInfo(currentUser);
+
+        updateStatus('Ready!');
+
+        // Initialize multiplayer
+        initMultiplayer();
+
+    } catch (error) {
+        console.error('Discord initialization error:', error);
+        updateStatus('Error: ' + error.message);
+    }
+}
+
+// Simple multiplayer using BroadcastChannel (works for same browser instance)
+let bc = null;
+
+function initMultiplayer() {
+    // Use BroadcastChannel for local testing
+    bc = new BroadcastChannel(`discord-activity-${channelId}`);
+
+    bc.onmessage = (event) => {
+        handleRemoteMessage(event.data);
+    };
+
+    // Announce presence
+    broadcastMessage({
+        type: 'user-join',
+        userId: 'local-user',
+        username: 'Test User'
+    });
+
+    // Set up sync controls
+    document.getElementById('increment').onclick = () => {
+        sharedState.counter++;
+        updateCounter();
+        broadcastMessage({ type: 'counter-update', value: sharedState.counter });
+    };
+
+    document.getElementById('decrement').onclick = () => {
+        sharedState.counter--;
+        updateCounter();
+        broadcastMessage({ type: 'counter-update', value: sharedState.counter });
+    };
+
+    document.getElementById('reset').onclick = () => {
+        sharedState.counter = 0;
+        updateCounter();
+        broadcastMessage({ type: 'counter-update', value: sharedState.counter });
+    };
+}
+
+function broadcastMessage(data) {
+    if (bc) {
+        bc.postMessage(data);
+    }
+}
+
+function handleRemoteMessage(data) {
+    switch(data.type) {
+        case 'user-join':
+            connectedUsers.set(data.userId, {
+                id: data.userId,
+                username: data.username
+            });
+            updateUserList();
+            // Send current state to new user
+            broadcastMessage({ type: 'state-sync', state: sharedState });
+            break;
+
+        case 'user-leave':
+            connectedUsers.delete(data.userId);
+            updateUserList();
+            break;
+
+        case 'counter-update':
+            sharedState.counter = data.value;
+            updateCounter();
+            break;
+
+        case 'state-sync':
+            sharedState = data.state;
+            updateCounter();
+            break;
+    }
+}
+
+function updateStatus(message) {
+    document.getElementById('connection-status').textContent = message;
+}
+
+function updateUserInfo(participants) {
+    const userInfo = participants?.participants?.[0] || { username: 'Unknown' };
+    document.getElementById('user-info').textContent = userInfo.username;
+}
+
+function updateUserList() {
+    const userListEl = document.getElementById('user-list');
+    userListEl.innerHTML = '';
+    
+    connectedUsers.forEach(user => {
+        const userEl = document.createElement('div');
+        userEl.className = 'user';
+        userEl.innerHTML = `
+            <div class="user-avatar"></div>
+            <div class="user-name">${user.username}</div>
+        `;
+        userListEl.appendChild(userEl);
+    });
+
+    if (connectedUsers.size === 0) {
+        userListEl.innerHTML = '<div style="opacity: 0.5; text-align: center; padding: 20px;">No other users connected</div>';
+    }
+}
+
+function updateCounter() {
+    document.getElementById('sync-counter').textContent = sharedState.counter;
+}
+
+// Start the app
+initDiscord();
