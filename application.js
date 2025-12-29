@@ -4,7 +4,6 @@ const CLIENT_ID = '1454709204358008875';
 
 // State management
 let discordSdk = null;
-let auth = null;
 let channelId = null;
 let guildId = null;
 let connectedUsers = new Map();
@@ -29,16 +28,9 @@ async function initDiscord() {
         
         // Wait for Discord client to be ready
         await discordSdk.ready();
-        updateStatus('Discord connected! Authenticating...');
+        updateStatus('Discord connected! Getting channel info...');
 
-        // Authenticate - this handles the full OAuth flow for Activities
-        auth = await discordSdk.commands.authenticate({
-            scope: ['identify', 'guilds']
-        });
-
-        updateStatus('Authenticated! Setting up...');
-
-        // Get channel and guild info
+        // Activities are pre-authenticated - just get channel directly
         const channel = await discordSdk.commands.getChannel();
         channelId = channel.id;
         guildId = channel.guild_id;
@@ -76,8 +68,8 @@ function initMultiplayer() {
     // Announce presence
     broadcastMessage({
         type: 'user-join',
-        userId: auth?.user?.id || 'local-user',
-        username: auth?.user?.username || 'Test User'
+        userId: 'local-user',
+        username: 'Test User'
     });
 
     // Set up sync controls
