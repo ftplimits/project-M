@@ -37,7 +37,8 @@ async function initDiscord() {
             response_type: 'code',
             state: '',
             prompt: 'none',
-            scope: ['identify', 'guilds']
+            scope: ['identify', 'guilds'],
+            redirect_uri: '/.proxy'
         });
 
         updateStatus('Authenticated! Setting up...');
