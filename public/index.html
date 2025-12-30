@@ -84,26 +84,28 @@
                 // Initialize Discord SDK
                 await discordSdk.ready();
                 console.log('✓ Discord SDK ready');
-
-                // Authorize with rpc scope for Activities
-                await discordSdk.commands.authorize({
-                    client_id: CLIENT_ID,
-                    response_type: 'code',
-                    state: '',
-                    prompt: 'none',
-                    scope: ['rpc']
+                console.log('SDK Context:', {
+                    channelId: discordSdk.channelId,
+                    guildId: discordSdk.guildId,
+                    instanceId: discordSdk.instanceId
                 });
-                console.log('✓ Authorized');
 
-                // Activities have implicit authorization - go straight to getting data
-                const channel = await discordSdk.commands.getChannel();
-                const instance = await discordSdk.commands.getInstanceConnectedParticipants();
+                // Try getting instance data directly (Activities may have implicit auth)
+                try {
+                    const instance = await discordSdk.commands.getInstanceConnectedParticipants();
+                    console.log('✓ Got instance participants:', instance);
+                } catch (err) {
+                    console.log('⚠️ Could not get participants (requires auth):', err.message);
+                }
                 
-                console.log('Channel:', channel);
-                console.log('Instance:', instance);
+                const channelId = discordSdk.channelId;
+                const guildId = discordSdk.guildId;
+                
+                console.log('Using Channel ID:', channelId);
+                console.log('Using Guild ID:', guildId);
 
                 // Use channel ID as room ID for multiplayer
-                roomId = channel.id;
+                roomId = channelId;
 
                 // Connect to Socket.IO
                 socket = io();
@@ -116,13 +118,13 @@
                 socket.on('player-joined', (data) => {
                     console.log('Player joined:', data.playerId);
                     players.set(data.playerId, { id: data.playerId, name: 'Player' });
-                    updateUI(channel, data.playerCount);
+                    updateUI({ id: channelId, name: `Channel ${channelId}` }, data.playerCount);
                 });
 
                 socket.on('player-left', (data) => {
                     console.log('Player left:', data.playerId);
                     players.delete(data.playerId);
-                    updateUI(channel, data.playerCount);
+                    updateUI({ id: channelId, name: `Channel ${channelId}` }, data.playerCount);
                 });
 
                 socket.on('game-state', (data) => {
@@ -131,7 +133,7 @@
                 });
 
                 // Initial UI update
-                updateUI(channel, instance.participants.length);
+                updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
 
             } catch (error) {
                 console.error('❌ Error:', error);
