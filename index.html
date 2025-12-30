@@ -13116,7 +13116,8 @@ var DiscordSDK = (function (exports) {
     <!-- Application Logic -->
     <script>
         const CLIENT_ID = '1454709204358008875';
-        const discordSdk = new window.DiscordSDK(CLIENT_ID);
+        // SDK exports as DiscordSDK.DiscordSDK
+        const discordSdk = new DiscordSDK.DiscordSDK(CLIENT_ID);
 
         async function init() {
             console.log('🎮 Initializing Discord Activity...');
