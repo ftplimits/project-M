@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+
+# NOTE: We DO commit dist/ for GitHub Pages deployment
+# !dist/
