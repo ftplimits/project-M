@@ -85,15 +85,7 @@
                 await discordSdk.ready();
                 console.log('✓ Discord SDK ready');
 
-                // Authorize (RPC auth for Activities)
-                await discordSdk.commands.authorize({
-                    client_id: CLIENT_ID,
-                    response_type: 'code',
-                    state: '',
-                    prompt: 'none'
-                });
-                console.log('✓ Authorized');
-
+                // Activities have implicit authorization - go straight to getting data
                 const channel = await discordSdk.commands.getChannel();
                 const instance = await discordSdk.commands.getInstanceConnectedParticipants();
                 
