@@ -85,11 +85,15 @@
                 await discordSdk.ready();
                 console.log('✓ Discord SDK ready');
 
-                // Authenticate to get access to channel info
-                await discordSdk.commands.authenticate({
-                    access_token: null
+                // Authorize with empty scopes (no OAuth popup for basic access)
+                await discordSdk.commands.authorize({
+                    client_id: CLIENT_ID,
+                    response_type: 'code',
+                    state: '',
+                    prompt: 'none',
+                    scope: []
                 });
-                console.log('✓ Authenticated');
+                console.log('✓ Authorized');
 
                 const channel = await discordSdk.commands.getChannel();
                 const instance = await discordSdk.commands.getInstanceConnectedParticipants();
