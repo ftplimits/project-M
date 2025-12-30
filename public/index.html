@@ -85,13 +85,12 @@
                 await discordSdk.ready();
                 console.log('✓ Discord SDK ready');
 
-                // Authorize with empty scopes (no OAuth popup for basic access)
+                // Authorize (RPC auth for Activities)
                 await discordSdk.commands.authorize({
                     client_id: CLIENT_ID,
                     response_type: 'code',
                     state: '',
-                    prompt: 'none',
-                    scope: []
+                    prompt: 'none'
                 });
                 console.log('✓ Authorized');
 
