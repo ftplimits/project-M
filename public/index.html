@@ -3,128 +3,151 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    <title>Discord Activity Test</title>
+    <title>Monomyth VTT</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             min-height: 100vh;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
             padding: 20px;
         }
         #app {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 40px;
-            max-width: 800px;
+            text-align: center;
+            max-width: 600px;
             width: 100%;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
         h1 {
+            font-size: 48px;
             margin-bottom: 20px;
-            font-size: 2em;
-            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
-        #status {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-family: 'Courier New', monospace;
-        }
-        .status-item {
-            margin: 5px 0;
-        }
-        #users {
+        .info {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 30px;
             margin-top: 20px;
         }
-        .user {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 10px 15px;
+        .info p {
+            font-size: 18px;
             margin: 10px 0;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            line-height: 1.6;
         }
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.3);
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            background: rgba(67, 181, 129, 0.3);
+            border-radius: 20px;
+            font-size: 14px;
+            margin-top: 10px;
         }
-        .user-name {
-            font-weight: bold;
-        }
-        #test-sync {
+        .player-list {
             margin-top: 20px;
-            padding: 20px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 10px;
-        }
-        button {
-            background: #5865F2;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin: 5px;
-            transition: background 0.3s;
-        }
-        button:hover {
-            background: #4752C4;
-        }
-        #sync-counter {
-            font-size: 2em;
-            text-align: center;
-            margin: 20px 0;
+            padding: 15px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
         }
     </style>
 </head>
 <body>
     <div id="app">
-        <h1>🎭 Discord Activity Test</h1>
-        <div id="status">
-            <div class="status-item">Status: <span id="connection-status">Initializing...</span></div>
-            <div class="status-item">Channel: <span id="channel-id">-</span></div>
-            <div class="status-item">Guild: <span id="guild-id">-</span></div>
-            <div class="status-item">User: <span id="user-info">-</span></div>
-        </div>
-
-        <div id="users">
-            <h3>Connected Users:</h3>
-            <div id="user-list"></div>
-        </div>
-
-        <div id="test-sync">
-            <h3>Multiplayer Sync Test</h3>
-            <div id="sync-counter">0</div>
-            <div style="text-align: center;">
-                <button id="increment">Increment</button>
-                <button id="decrement">Decrement</button>
-                <button id="reset">Reset</button>
-            </div>
+        <h1>🎲 Monomyth VTT</h1>
+        <div class="info">
+            <p>Connecting to Discord...</p>
         </div>
     </div>
 
-    <!-- Discord SDK loaded from same domain (CSP-safe) -->
-    <script src="./discord-sdk.js?v=2"></script>
-    <!-- App code in external file (Discord strips inline scripts) -->
-    <script src="./activity-1767063963.js"></script>
+    <!-- Discord SDK (served from same origin by backend) -->
+    <script src="/discord-sdk.js"></script>
+    
+    <!-- Socket.IO for multiplayer -->
+    <script src="/socket.io/socket.io.js"></script>
+
+    <!-- Application Logic -->
+    <script>
+        const CLIENT_ID = '1455487225490837526';
+        const discordSdk = new DiscordSDK.DiscordSDK(CLIENT_ID);
+        
+        let socket;
+        let roomId;
+        const players = new Map();
+
+        async function init() {
+            console.log('🎮 Initializing Monomyth VTT...');
+            
+            try {
+                // Initialize Discord SDK
+                await discordSdk.ready();
+                console.log('✓ Discord SDK ready');
+
+                const channel = await discordSdk.commands.getChannel();
+                const instance = await discordSdk.commands.getInstanceConnectedParticipants();
+                
+                console.log('Channel:', channel);
+                console.log('Instance:', instance);
+
+                // Use channel ID as room ID for multiplayer
+                roomId = channel.id;
+
+                // Connect to Socket.IO
+                socket = io();
+                
+                socket.on('connect', () => {
+                    console.log('✓ Connected to server');
+                    socket.emit('join-room', roomId);
+                });
+
+                socket.on('player-joined', (data) => {
+                    console.log('Player joined:', data.playerId);
+                    players.set(data.playerId, { id: data.playerId, name: 'Player' });
+                    updateUI(channel, data.playerCount);
+                });
+
+                socket.on('player-left', (data) => {
+                    console.log('Player left:', data.playerId);
+                    players.delete(data.playerId);
+                    updateUI(channel, data.playerCount);
+                });
+
+                socket.on('game-state', (data) => {
+                    // Handle game state updates from other players
+                    console.log('Game state update:', data);
+                });
+
+                // Initial UI update
+                updateUI(channel, instance.participants.length);
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                document.querySelector('.info').innerHTML = `
+                    <p style="color: #ff6b6b;">Error: ${error.message}</p>
+                    <p style="font-size: 14px; margin-top: 10px;">Check console for details</p>
+                `;
+            }
+        }
+
+        function updateUI(channel, playerCount) {
+            const playerList = Array.from(players.values())
+                .map(p => `<div>👤 ${p.name}</div>`)
+                .join('');
+
+            document.querySelector('.info').innerHTML = `
+                <div class="status">✓ Connected</div>
+                <p><strong>Channel:</strong> ${channel.name || 'Unknown'}</p>
+                <p><strong>Players Online:</strong> ${playerCount}</p>
+                ${playerList ? `<div class="player-list">${playerList}</div>` : ''}
+                <p style="margin-top: 20px; font-size: 14px; opacity: 0.8;">
+                    Ready to start your adventure!
+                </p>
+            `;
+        }
+
+        init();
+    </script>
 </body>
 </html>
