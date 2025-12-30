@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Discord Activity Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        #app {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 2em;
+            text-align: center;
+        }
+        #status {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-family: 'Courier New', monospace;
+        }
+        .status-item {
+            margin: 5px 0;
+        }
+        #users {
+            margin-top: 20px;
+        }
+        .user {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 10px 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .user-name {
+            font-weight: bold;
+        }
+        #test-sync {
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+        button {
+            background: #5865F2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #4752C4;
+        }
+        #sync-counter {
+            font-size: 2em;
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>🎭 Discord Activity Test</h1>
+        <div id="status">
+            <div class="status-item">Status: <span id="connection-status">Initializing...</span></div>
+            <div class="status-item">Channel: <span id="channel-id">-</span></div>
+            <div class="status-item">Guild: <span id="guild-id">-</span></div>
+            <div class="status-item">User: <span id="user-info">-</span></div>
+        </div>
+
+        <div id="users">
+            <h3>Connected Users:</h3>
+            <div id="user-list"></div>
+        </div>
+
+        <div id="test-sync">
+            <h3>Multiplayer Sync Test</h3>
+            <div id="sync-counter">0</div>
+            <div style="text-align: center;">
+                <button id="increment">Increment</button>
+                <button id="decrement">Decrement</button>
+                <button id="reset">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Discord SDK loaded from same domain (CSP-safe) -->
+    <script src="./discord-sdk.js?v=2"></script>
+    <!-- App code in external file (Discord strips inline scripts) -->
+    <script src="./activity-1767063963.js"></script>
+</body>
+</html>
