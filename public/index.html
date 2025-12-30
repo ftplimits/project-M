@@ -85,6 +85,12 @@
                 await discordSdk.ready();
                 console.log('✓ Discord SDK ready');
 
+                // Authenticate to get access to channel info
+                await discordSdk.commands.authenticate({
+                    access_token: null
+                });
+                console.log('✓ Authenticated');
+
                 const channel = await discordSdk.commands.getChannel();
                 const instance = await discordSdk.commands.getInstanceConnectedParticipants();
                 
