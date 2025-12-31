@@ -18,69 +18,136 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static('public'));
 app.use(express.json());
 
-// Track active rooms and players
+// Track active rooms
 const rooms = new Map();
+
+// Initialize room with host tracking
+function initRoom(roomId) {
+    if (!rooms.has(roomId)) {
+        rooms.set(roomId, {
+            host: null, // First player socket ID
+            players: new Map(), // socketId -> { name, socket }
+            pendingPlayers: new Map(), // socketId -> { name, socket }
+            images: new Map(),
+            avatars: new Map(),
+            hostAvatar: null
+        });
+    }
+    return rooms.get(roomId);
+}
 
 io.on('connection', (socket) => {
     console.log('Player connected:', socket.id);
     let currentRoom = null;
+    let isAdmitted = false;
 
-    socket.on('join-room', (roomId) => {
+    // Player requests to join
+    socket.on('request-join', (data) => {
+        const { roomId, playerName } = data;
         currentRoom = roomId;
-        socket.join(roomId);
         
-        if (!rooms.has(roomId)) {
-            rooms.set(roomId, {
-                players: new Set(),
-                images: new Map(),
-                avatars: new Map(),
-                hostAvatar: null
+        const room = initRoom(roomId);
+        
+        // First player becomes host and is auto-admitted
+        if (!room.host) {
+            room.host = socket.id;
+            room.players.set(socket.id, { name: playerName, socket: socket });
+            socket.join(roomId);
+            isAdmitted = true;
+            
+            console.log(`${socket.id} is now host of room ${roomId}`);
+            
+            // Send admission confirmation
+            socket.emit('admitted', {
+                isHost: true,
+                players: Array.from(room.players.entries()).map(([sid, p]) => ({
+                    socketId: sid,
+                    name: p.name
+                }))
             });
+        } else {
+            // Subsequent players need host approval
+            room.pendingPlayers.set(socket.id, { name: playerName, socket: socket });
+            
+            console.log(`${socket.id} requesting to join room ${roomId}`);
+            
+            // Notify host
+            const hostSocket = room.players.get(room.host)?.socket;
+            if (hostSocket) {
+                hostSocket.emit('join-request', {
+                    socketId: socket.id,
+                    playerName: playerName
+                });
+            }
         }
+    });
+    
+    // Host admits a player
+    socket.on('admit-player', (data) => {
+        if (!currentRoom) return;
+        const room = rooms.get(currentRoom);
+        if (!room || room.host !== socket.id) return; // Only host can admit
         
-        const room = rooms.get(roomId);
-        room.players.add(socket.id);
-
-        // Notify room of new player
-        io.to(roomId).emit('player-joined', {
-            playerId: socket.id,
-            playerCount: room.players.size
+        const pendingPlayer = room.pendingPlayers.get(data.socketId);
+        if (!pendingPlayer) return;
+        
+        // Move from pending to active players
+        room.players.set(data.socketId, pendingPlayer);
+        room.pendingPlayers.delete(data.socketId);
+        
+        // Join the socket.io room
+        pendingPlayer.socket.join(currentRoom);
+        
+        console.log(`Host admitted ${data.socketId} to room ${currentRoom}`);
+        
+        // Tell the player they're admitted
+        pendingPlayer.socket.emit('admitted', {
+            isHost: false,
+            players: Array.from(room.players.entries()).map(([sid, p]) => ({
+                socketId: sid,
+                name: p.name
+            }))
         });
         
-        // Send existing images to new player
-        room.images.forEach((imageData, imageId) => {
-            socket.emit('image-added', imageData);
+        // Notify all players (including the host)
+        socket.to(currentRoom).emit('player-joined', {
+            socketId: data.socketId,
+            name: pendingPlayer.name
         });
+    });
+    
+    // Host denies a player
+    socket.on('deny-player', (data) => {
+        if (!currentRoom) return;
+        const room = rooms.get(currentRoom);
+        if (!room || room.host !== socket.id) return; // Only host can deny
         
-        // Send existing avatars to new player
-        if (room.avatars) {
-            room.avatars.forEach((avatarData, avatarId) => {
-                socket.emit('avatar-added', avatarData);
-            });
-        }
+        const pendingPlayer = room.pendingPlayers.get(data.socketId);
+        if (!pendingPlayer) return;
         
-        // Send existing host avatar to new player
-        if (room.hostAvatar) {
-            socket.emit('host-avatar-added', { src: room.hostAvatar });
-        }
-
-        console.log(`Player ${socket.id} joined room ${roomId}`);
+        room.pendingPlayers.delete(data.socketId);
+        
+        console.log(`Host denied ${data.socketId} from room ${currentRoom}`);
+        
+        // Tell the player they're denied
+        pendingPlayer.socket.emit('denied');
     });
 
-    // Dice roll handler
-    socket.on('dice-roll', (data) => {
+    // Dice rolling
+    socket.on('roll-die', (data) => {
         if (!currentRoom) return;
         
-        // Broadcast to all other players in room
-        socket.to(currentRoom).emit('dice-roll', {
-            ...data,
+        // Broadcast to all players including sender
+        io.to(currentRoom).emit('dice-roll', {
+            sides: data.sides,
+            result: data.result,
             playerId: socket.id
         });
         
         console.log(`Player ${socket.id} rolled D${data.sides}: ${data.result}`);
     });
 
-    // Image upload handler
+    // Image upload and movement
     socket.on('add-image', (data) => {
         if (!currentRoom) return;
         
@@ -89,26 +156,53 @@ io.on('connection', (socket) => {
             room.images.set(data.id, data);
         }
         
-        // Broadcast to all other players in room
+        // Broadcast to all other players
         socket.to(currentRoom).emit('image-added', data);
         
         console.log(`Player ${socket.id} added image ${data.id}`);
     });
 
-    // Avatar upload handler
+    socket.on('move-image', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room && room.images.has(data.id)) {
+            const img = room.images.get(data.id);
+            img.x = data.x;
+            img.y = data.y;
+        }
+        
+        // Broadcast to all other players
+        socket.to(currentRoom).emit('image-moved', data);
+    });
+
+    // Avatar upload and movement
     socket.on('add-avatar', (data) => {
         if (!currentRoom) return;
         
         const room = rooms.get(currentRoom);
         if (room) {
-            if (!room.avatars) room.avatars = new Map();
             room.avatars.set(data.id, data);
         }
         
-        // Broadcast to all other players in room
+        // Broadcast to all other players
         socket.to(currentRoom).emit('avatar-added', data);
         
         console.log(`Player ${socket.id} added avatar ${data.id}`);
+    });
+
+    socket.on('move-avatar', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room && room.avatars.has(data.id)) {
+            const avatar = room.avatars.get(data.id);
+            avatar.x = data.x;
+            avatar.y = data.y;
+        }
+        
+        // Broadcast to all other players
+        socket.to(currentRoom).emit('avatar-moved', data);
     });
 
     // Host avatar upload handler
@@ -152,8 +246,6 @@ io.on('connection', (socket) => {
         
         // Broadcast to all other players in room
         socket.to(currentRoom).emit('avatar-activated', data);
-        
-        console.log(`Avatar ${data.avatarId} activated: ${data.active}`);
     });
 
     // Avatar removal handler
@@ -166,40 +258,45 @@ io.on('connection', (socket) => {
         console.log(`Avatar ${data.avatarId} removed`);
     });
 
-    // Image movement handler
-    socket.on('move-image', (data) => {
-        if (!currentRoom) return;
-        
-        const room = rooms.get(currentRoom);
-        if (room && room.images.has(data.id)) {
-            const imageData = room.images.get(data.id);
-            imageData.x = data.x;
-            imageData.y = data.y;
-        }
-        
-        // Broadcast to all other players in room
-        socket.to(currentRoom).emit('image-moved', data);
-    });
-
-    socket.on('game-state', (data) => {
-        // Broadcast game state to all players in room except sender
-        socket.to(data.roomId).emit('game-state', data);
-    });
-
     socket.on('disconnect', () => {
         // Remove player from all rooms
         rooms.forEach((room, roomId) => {
+            // Remove from active players
             if (room.players && room.players.has(socket.id)) {
+                const wasHost = room.host === socket.id;
                 room.players.delete(socket.id);
+                
+                // Notify remaining players
                 io.to(roomId).emit('player-left', {
-                    playerId: socket.id,
-                    playerCount: room.players.size
+                    socketId: socket.id
                 });
+                
+                // Handle host leaving
+                if (wasHost && room.players.size > 0) {
+                    // Transfer host to next player
+                    const newHost = room.players.keys().next().value;
+                    room.host = newHost;
+                    console.log(`Host transferred to ${newHost} in room ${roomId}`);
+                    
+                    // Notify new host
+                    const newHostSocket = room.players.get(newHost)?.socket;
+                    if (newHostSocket) {
+                        newHostSocket.emit('you-are-host');
+                        // Mark them as host
+                        io.to(roomId).emit('host-changed', { newHost: newHost });
+                    }
+                }
                 
                 // Clean up empty rooms
                 if (room.players.size === 0) {
                     rooms.delete(roomId);
+                    console.log(`Room ${roomId} deleted (empty)`);
                 }
+            }
+            
+            // Remove from pending players
+            if (room.pendingPlayers && room.pendingPlayers.has(socket.id)) {
+                room.pendingPlayers.delete(socket.id);
             }
         });
         console.log('Player disconnected:', socket.id);
@@ -208,5 +305,5 @@ io.on('connection', (socket) => {
 
 httpServer.listen(PORT, () => {
     console.log(`🎮 Monomyth VTT server running on port ${PORT}`);
-    console.log(`📍 http://localhost:${PORT}`);
+    console.log(`📡 Admit/Deny system enabled`);
 });
