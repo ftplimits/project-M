@@ -32,7 +32,8 @@ io.on('connection', (socket) => {
             rooms.set(roomId, {
                 players: new Set(),
                 images: new Map(),
-                avatars: new Map()
+                avatars: new Map(),
+                hostAvatar: null
             });
         }
         
@@ -55,6 +56,11 @@ io.on('connection', (socket) => {
             room.avatars.forEach((avatarData, avatarId) => {
                 socket.emit('avatar-added', avatarData);
             });
+        }
+        
+        // Send existing host avatar to new player
+        if (room.hostAvatar) {
+            socket.emit('host-avatar-added', { src: room.hostAvatar });
         }
 
         console.log(`Player ${socket.id} joined room ${roomId}`);
@@ -102,6 +108,21 @@ io.on('connection', (socket) => {
         socket.to(currentRoom).emit('avatar-added', data);
         
         console.log(`Player ${socket.id} added avatar ${data.id}`);
+    });
+
+    // Host avatar upload handler
+    socket.on('add-host-avatar', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room) {
+            room.hostAvatar = data.src;
+        }
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('host-avatar-added', data);
+        
+        console.log(`Player ${socket.id} added host avatar`);
     });
 
     // Image movement handler
