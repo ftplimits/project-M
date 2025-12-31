@@ -16,6 +16,33 @@ const PORT = process.env.PORT || 3000;
 
 // Serve static files from public directory
 app.use(express.static('public'));
+app.use(express.json());
+
+// Discord OAuth token exchange endpoint
+app.post('/discord-token', async (req, res) => {
+    const { code } = req.body;
+    
+    try {
+        const response = await fetch('https://discord.com/api/oauth2/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                client_id: process.env.DISCORD_CLIENT_ID || '1455487225490837526',
+                client_secret: process.env.DISCORD_CLIENT_SECRET,
+                grant_type: 'authorization_code',
+                code: code,
+            }),
+        });
+        
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error('OAuth token exchange error:', error);
+        res.status(500).json({ error: 'Token exchange failed' });
+    }
+});
 
 // Track active rooms and players
 const rooms = new Map();
@@ -123,6 +150,36 @@ io.on('connection', (socket) => {
         socket.to(currentRoom).emit('host-avatar-added', data);
         
         console.log(`Player ${socket.id} added host avatar`);
+    });
+
+    // Avatar assignment handler
+    socket.on('avatar-assigned', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-assigned', data);
+        
+        console.log(`Avatar ${data.avatarId} assigned to user ${data.userId}`);
+    });
+
+    // Avatar voice toggle handler
+    socket.on('avatar-voice-toggle', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-voice-toggle', data);
+        
+        console.log(`Avatar ${data.avatarId} voice activation: ${data.enabled}`);
+    });
+
+    // Avatar removal handler
+    socket.on('avatar-removed', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-removed', data);
+        
+        console.log(`Avatar ${data.avatarId} removed`);
     });
 
     // Image movement handler
