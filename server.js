@@ -285,6 +285,16 @@ io.on('connection', (socket) => {
         
         console.log(`Avatar ${data.avatarId} named: ${data.name}`);
     });
+    
+    // Avatar lock handler
+    socket.on('avatar-lock-toggle', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-lock-toggle', data);
+        
+        console.log(`Avatar ${data.avatarId} lock: ${data.locked}`);
+    });
 
     socket.on('disconnect', () => {
         // Remove player from all rooms
