@@ -48,6 +48,57 @@
             letter-spacing: 1px;
             z-index: 100;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+            min-width: 180px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .info-badge:hover {
+            border-color: var(--accent-red);
+        }
+        
+        .info-badge-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            color: var(--accent-gold);
+        }
+        
+        .player-list {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            text-transform: none;
+            letter-spacing: normal;
+        }
+        
+        .info-badge.expanded .player-list {
+            max-height: 400px;
+        }
+        
+        .player-item {
+            padding: 6px 8px;
+            margin: 4px 0;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .player-item.host::before {
+            content: '👑';
+            font-size: 12px;
+        }
+        
+        .player-item.pending {
+            opacity: 0.6;
+            border: 1px dashed var(--accent-gold);
         }
         
         .info-badge div {
@@ -217,34 +268,11 @@
         }
         
         .avatar-token.speaking {
-            border-color: #00ff00;
-            box-shadow: 0 0 30px rgba(0, 255, 0, 0.8);
-            animation: speakPulse 0.5s ease-in-out infinite;
-        }
-        
-        @keyframes speakPulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-        
-        .avatar-token .hotkey-badge {
-            position: absolute;
-            bottom: -5px;
-            right: -5px;
-            background: var(--accent-gold);
-            color: #000;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-            border: 2px solid var(--bg-primary);
-            pointer-events: none;
-            text-transform: uppercase;
-        }
-        
-        .avatar-token .hotkey-badge.disabled {
-            background: var(--text-secondary);
-            opacity: 0.5;
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 40px rgba(212, 175, 55, 0.9);
+            transform: translateY(-15px);
+            transition: all 0.3s ease-out;
+            z-index: 30;
         }
         
         .avatar-token.dragging {
@@ -296,8 +324,11 @@
         }
         
         .host-avatar.speaking {
-            border-color: #00ff00;
-            box-shadow: 0 0 50px rgba(0, 255, 0, 0.9);
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 50px rgba(212, 175, 55, 0.9);
+            transform: translateY(-25px);
+            transition: all 0.3s ease-out;
+            animation: none;
         }
         
         .host-avatar.dragging {
@@ -311,26 +342,6 @@
             height: 100%;
             border-radius: 50%;
             pointer-events: none;
-        }
-        
-        .host-avatar .hotkey-badge {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            background: var(--accent-red);
-            color: #fff;
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 14px;
-            font-weight: bold;
-            border: 2px solid var(--accent-gold);
-            pointer-events: none;
-            text-transform: uppercase;
-        }
-        
-        .host-avatar .hotkey-badge.disabled {
-            background: var(--text-secondary);
-            opacity: 0.5;
         }
         
         /* Avatar Context Menu */
@@ -465,6 +476,18 @@
             </div>
         </div>
         
+        <!-- Admit/Deny Modal -->
+        <div id="admit-modal" class="modal-overlay">
+            <div class="modal-dialog">
+                <div class="modal-title">🚪 Player Requesting Entry</div>
+                <div class="modal-content" id="admit-content"></div>
+                <div class="modal-buttons">
+                    <button class="modal-button" id="admit-button">✓ Admit</button>
+                    <button class="modal-button cancel" id="deny-button">✗ Deny</button>
+                </div>
+            </div>
+        </div>
+        
         <!-- Hidden file inputs -->
         <input type="file" id="player-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
         <input type="file" id="host-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
@@ -474,9 +497,12 @@
         <div id="dice-notification" class="dice-notification"></div>
         
         <!-- Info Badge -->
-        <div class="info-badge">
-            <div id="channel-info">Connecting...</div>
-            <div id="player-count">Players: 0</div>
+        <div class="info-badge" id="info-badge">
+            <div class="info-badge-header">
+                <div id="channel-info">Connecting...</div>
+                <div id="player-count">0</div>
+            </div>
+            <div class="player-list" id="player-list"></div>
         </div>
         
         <!-- The Stage -->
@@ -492,7 +518,10 @@
         
         let socket;
         let roomId;
-        let players = new Map();
+        let players = new Map(); // socketId -> playerName
+        let isHost = false;
+        let mySocketId = null;
+        let pendingPlayer = null;
         
         // Image tracking
         let images = new Map();
@@ -523,6 +552,13 @@
                 
                 console.log('Using Channel ID:', channelId);
                 console.log('Using Guild ID:', guildId);
+                
+                // Suppress Discord SDK message channel errors (harmless)
+                window.addEventListener('unhandledrejection', (event) => {
+                    if (event.reason?.message?.includes('message channel closed')) {
+                        event.preventDefault();
+                    }
+                });
 
                 // Use channel ID as room ID for multiplayer
                 roomId = channelId;
@@ -532,19 +568,58 @@
                 
                 socket.on('connect', () => {
                     console.log('✓ Connected to server');
-                    socket.emit('join-room', roomId);
+                    mySocketId = socket.id;
+                    
+                    // Request to join room
+                    socket.emit('request-join', { 
+                        roomId: roomId,
+                        playerName: 'Player'
+                    });
                 });
-
+                
+                // Host receives join requests
+                socket.on('join-request', (data) => {
+                    showAdmitDenyModal(data.playerName, data.socketId);
+                });
+                
+                // Player gets admitted
+                socket.on('admitted', (data) => {
+                    console.log('✓ Admitted to room');
+                    isHost = data.isHost;
+                    
+                    // Update player list
+                    players.clear();
+                    data.players.forEach(p => {
+                        players.set(p.socketId, p.name);
+                    });
+                    updatePlayerList();
+                    
+                    const channel = { id: channelId, name: `Channel ${channelId}` };
+                    updateUI(channel, players.size);
+                });
+                
+                // Player gets denied
+                socket.on('denied', () => {
+                    showModal(
+                        'Access Denied',
+                        'The host has denied your entry to this session.',
+                        [{ text: 'OK', class: 'cancel' }]
+                    );
+                });
+                
+                // When a new player joins
                 socket.on('player-joined', (data) => {
-                    console.log('Player joined:', data.playerId);
-                    players.set(data.playerId, { id: data.playerId, name: 'Player' });
-                    updateUI({ id: channelId, name: `Channel ${channelId}` }, data.playerCount);
+                    console.log('Player joined:', data.name);
+                    players.set(data.socketId, data.name);
+                    updatePlayerList();
+                    updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
                 });
 
                 socket.on('player-left', (data) => {
-                    console.log('Player left:', data.playerId);
-                    players.delete(data.playerId);
-                    updateUI({ id: channelId, name: `Channel ${channelId}` }, data.playerCount);
+                    console.log('Player left:', data.socketId);
+                    players.delete(data.socketId);
+                    updatePlayerList();
+                    updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
                 });
 
                 socket.on('dice-roll', (data) => {
@@ -611,7 +686,6 @@
                         key: data.key,
                         enabled: data.enabled
                     });
-                    updateHotkeyBadge(data.avatarId);
                 });
 
                 socket.on('hotkey-toggled', (data) => {
@@ -621,7 +695,6 @@
                             ...hotkeyData,
                             enabled: data.enabled
                         });
-                        updateHotkeyBadge(data.avatarId);
                     }
                 });
 
@@ -729,6 +802,13 @@
             document.getElementById('player-avatar-input').addEventListener('change', handlePlayerAvatarUpload);
             document.getElementById('host-avatar-input').addEventListener('change', handleHostAvatarUpload);
             document.getElementById('scene-image-input').addEventListener('change', handleImageUpload);
+            
+            // Info badge click to toggle player list
+            document.getElementById('info-badge').addEventListener('click', togglePlayerList);
+            
+            // Admit/Deny button listeners
+            document.getElementById('admit-button').addEventListener('click', handleAdmit);
+            document.getElementById('deny-button').addEventListener('click', handleDeny);
             
             // Global hotkey listener
             document.addEventListener('keydown', handleHotkeyPress);
@@ -858,9 +938,6 @@
                     enabled: true
                 });
                 
-                // Update badge
-                updateHotkeyBadge(currentContextAvatarId);
-                
                 // Broadcast assignment
                 if (socket) {
                     socket.emit('hotkey-assigned', {
@@ -908,9 +985,6 @@
                 enabled: newState
             });
             
-            // Update badge
-            updateHotkeyBadge(currentContextAvatarId);
-            
             // Broadcast toggle
             if (socket) {
                 socket.emit('hotkey-toggled', {
@@ -920,30 +994,6 @@
             }
             
             document.getElementById('avatar-context-menu').classList.remove('active');
-        }
-        
-        function updateHotkeyBadge(avatarId) {
-            const avatarData = avatars.get(avatarId);
-            if (!avatarData) return;
-            
-            const hotkeyData = avatarHotkeys.get(avatarId);
-            
-            // Remove existing badge
-            const existingBadge = avatarData.element.querySelector('.hotkey-badge');
-            if (existingBadge) {
-                existingBadge.remove();
-            }
-            
-            // Add new badge if hotkey exists
-            if (hotkeyData?.key) {
-                const badge = document.createElement('div');
-                badge.className = 'hotkey-badge';
-                if (!hotkeyData.enabled) {
-                    badge.classList.add('disabled');
-                }
-                badge.textContent = hotkeyData.key;
-                avatarData.element.appendChild(badge);
-            }
         }
         
         function removeAvatar() {
@@ -963,6 +1013,66 @@
             }
             
             document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        // ===== PLAYER LIST & ADMIT/DENY =====
+        function updatePlayerList() {
+            const playerListEl = document.getElementById('player-list');
+            const playerCountEl = document.getElementById('player-count');
+            
+            playerCountEl.textContent = players.size;
+            
+            playerListEl.innerHTML = '';
+            players.forEach((name, socketId) => {
+                const item = document.createElement('div');
+                item.className = 'player-item';
+                if (socketId === players.keys().next().value) {
+                    // First player is host
+                    item.classList.add('host');
+                }
+                item.textContent = name || 'Player';
+                playerListEl.appendChild(item);
+            });
+        }
+        
+        function togglePlayerList() {
+            const infoBadge = document.getElementById('info-badge');
+            infoBadge.classList.toggle('expanded');
+        }
+        
+        function showAdmitDenyModal(playerName, socketId) {
+            const modal = document.getElementById('admit-modal');
+            const content = document.getElementById('admit-content');
+            
+            content.innerHTML = `
+                <p style="font-size: 16px; margin: 15px 0;">
+                    <strong>${playerName || 'A player'}</strong> wants to join the session.
+                </p>
+                <p style="font-size: 14px; color: var(--text-secondary);">
+                    Allow them to enter?
+                </p>
+            `;
+            
+            modal.classList.add('active');
+            
+            // Store pending player
+            pendingPlayer = { name: playerName, socketId: socketId };
+        }
+        
+        function handleAdmit() {
+            if (!pendingPlayer) return;
+            
+            socket.emit('admit-player', { socketId: pendingPlayer.socketId });
+            document.getElementById('admit-modal').classList.remove('active');
+            pendingPlayer = null;
+        }
+        
+        function handleDeny() {
+            if (!pendingPlayer) return;
+            
+            socket.emit('deny-player', { socketId: pendingPlayer.socketId });
+            document.getElementById('admit-modal').classList.remove('active');
+            pendingPlayer = null;
         }
         
         function handleVoiceStateUpdate(voiceState) {
