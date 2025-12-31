@@ -257,6 +257,24 @@ io.on('connection', (socket) => {
         
         console.log(`Avatar ${data.avatarId} removed`);
     });
+    
+    // Avatar flip handler
+    socket.on('avatar-flipped', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-flipped', data);
+    });
+    
+    // Avatar alternate image handler
+    socket.on('avatar-alternate-set', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-alternate-set', data);
+        
+        console.log(`Avatar ${data.avatarId} alternate image set`);
+    });
 
     socket.on('disconnect', () => {
         // Remove player from all rooms
