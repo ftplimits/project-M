@@ -227,6 +227,26 @@
             50% { transform: scale(1.05); }
         }
         
+        .avatar-token .hotkey-badge {
+            position: absolute;
+            bottom: -5px;
+            right: -5px;
+            background: var(--accent-gold);
+            color: #000;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            border: 2px solid var(--bg-primary);
+            pointer-events: none;
+            text-transform: uppercase;
+        }
+        
+        .avatar-token .hotkey-badge.disabled {
+            background: var(--text-secondary);
+            opacity: 0.5;
+        }
+        
         .avatar-token.dragging {
             opacity: 0.9;
             z-index: 1000;
@@ -238,22 +258,6 @@
             height: 200px;
             border-radius: 6px;
             pointer-events: none;
-        }
-        
-        .avatar-token .discord-avatar {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            border: 2px solid var(--accent-gold);
-            margin-top: -25px;
-            background: var(--bg-panel);
-            pointer-events: none;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .avatar-token .discord-avatar.hidden {
-            display: none;
         }
         
         /* Host Avatar - Special Styling */
@@ -309,20 +313,24 @@
             pointer-events: none;
         }
         
-        .host-avatar .discord-avatar {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            border: 3px solid var(--accent-red);
-            margin-top: -30px;
-            background: var(--bg-panel);
+        .host-avatar .hotkey-badge {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: var(--accent-red);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            border: 2px solid var(--accent-gold);
             pointer-events: none;
-            position: relative;
-            z-index: 1;
+            text-transform: uppercase;
         }
         
-        .host-avatar .discord-avatar.hidden {
-            display: none;
+        .host-avatar .hotkey-badge.disabled {
+            background: var(--text-secondary);
+            opacity: 0.5;
         }
         
         /* Avatar Context Menu */
@@ -416,38 +424,6 @@
             background: var(--text-secondary);
             color: #000;
         }
-        
-        .player-select-list {
-            max-height: 300px;
-            overflow-y: auto;
-            margin: 15px 0;
-        }
-        
-        .player-select-item {
-            padding: 12px;
-            margin: 5px 0;
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .player-select-item:hover {
-            border-color: var(--accent-gold);
-            background: var(--accent-gold);
-            color: #000;
-        }
-        
-        .player-select-item img {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            border: 2px solid var(--accent-gold);
-        }
     </style>
 </head>
 <body>
@@ -474,8 +450,8 @@
         
         <!-- Avatar Context Menu -->
         <div id="avatar-context-menu" class="avatar-context-menu">
-            <div class="context-item" data-action="assign-player">👤 Assign Player</div>
-            <div class="context-item" data-action="toggle-voice">🎤 Voice Activation</div>
+            <div class="context-item" data-action="assign-hotkey">⌨️ Assign Activation Key</div>
+            <div class="context-item" data-action="toggle-activation">🔄 Enable Activation</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="remove-avatar">🗑️ Remove Avatar</div>
         </div>
@@ -524,10 +500,9 @@
         let draggedImage = null;
         let dragOffset = { x: 0, y: 0 };
         
-        // Discord integration
-        let discordParticipants = new Map(); // userId -> participant data
-        let avatarAssignments = new Map(); // avatarId -> userId
-        let voiceStates = new Map(); // userId -> speaking state
+        // Hotkey activation system
+        let avatarHotkeys = new Map(); // avatarId -> { key, enabled }
+        let activeAvatars = new Set(); // Currently glowing avatars
 
         // Initialize
         (async function init() {
@@ -542,79 +517,6 @@
                     guildId: discordSdk.guildId,
                     instanceId: discordSdk.instanceId
                 });
-
-                // Try to get participant data
-                try {
-                    console.log('Attempting to get participant data...');
-                    
-                    // Try without OAuth first - might work for Activities
-                    try {
-                        const participants = await discordSdk.commands.getInstanceConnectedParticipants();
-                        console.log('✓ Got participants without OAuth:', participants);
-                        
-                        // Store participant data
-                        participants.participants.forEach(p => {
-                            discordParticipants.set(p.id, {
-                                id: p.id,
-                                username: p.username,
-                                avatar: p.avatar,
-                                global_name: p.global_name
-                            });
-                        });
-                        
-                        console.log('✅ Discord integration active!');
-                        console.log(`📋 ${discordParticipants.size} participants available`);
-                        
-                    } catch (noAuthError) {
-                        console.log('⚠️ Participants require auth, attempting OAuth...');
-                        
-                        // If that fails, try with OAuth
-                        const { code } = await discordSdk.commands.authorize({
-                            client_id: CLIENT_ID,
-                            response_type: 'code',
-                            state: '',
-                            prompt: 'none',
-                            scope: ['identify', 'guilds', 'guilds.members.read']
-                        });
-                        
-                        console.log('✓ Got authorization code');
-                        
-                        // For Activities, authenticate with the code
-                        await discordSdk.commands.authenticate({ access_token: code });
-                        console.log('✓ Authenticated with code');
-                        
-                        // Try getting participants again
-                        const participants = await discordSdk.commands.getInstanceConnectedParticipants();
-                        console.log('✓ Got participants after auth:', participants);
-                        
-                        participants.participants.forEach(p => {
-                            discordParticipants.set(p.id, {
-                                id: p.id,
-                                username: p.username,
-                                avatar: p.avatar,
-                                global_name: p.global_name
-                            });
-                        });
-                        
-                        console.log('✅ OAuth complete! Discord integration active.');
-                        console.log(`📋 ${discordParticipants.size} participants available`);
-                    }
-                    
-                    // Subscribe to voice state updates if we have participants
-                    if (discordParticipants.size > 0) {
-                        try {
-                            await discordSdk.subscribe('VOICE_STATE_UPDATE', handleVoiceStateUpdate);
-                            console.log('✓ Subscribed to voice state updates');
-                        } catch (voiceError) {
-                            console.log('⚠️ Could not subscribe to voice updates:', voiceError.message);
-                        }
-                    }
-                    
-                } catch (authError) {
-                    console.warn('⚠️ Discord integration failed:', authError.message);
-                    console.log('Continuing without Discord avatars/voice features');
-                    // App continues to work, just without Discord integration
-                }
                 
                 const channelId = discordSdk.channelId;
                 const guildId = discordSdk.guildId;
@@ -670,6 +572,9 @@
                     const existingHost = document.querySelector('.host-avatar');
                     if (existingHost) {
                         existingHost.remove();
+                        avatars.delete('host');
+                        avatarHotkeys.delete('host');
+                        activeAvatars.delete('host');
                     }
                     
                     const canvas = document.getElementById('canvas');
@@ -681,11 +586,6 @@
                     characterImg.className = 'character-portrait';
                     characterImg.src = data.src;
                     hostAvatar.appendChild(characterImg);
-                    
-                    // Discord avatar placeholder
-                    const discordImg = document.createElement('img');
-                    discordImg.className = 'discord-avatar hidden';
-                    hostAvatar.appendChild(discordImg);
                     
                     // Add drag handlers
                     hostAvatar.addEventListener('mousedown', (e) => {
@@ -702,30 +602,39 @@
                     canvas.appendChild(hostAvatar);
                     
                     avatars.set('host', {
-                        element: hostAvatar,
-                        voiceEnabled: false,
-                        assignedUser: null
+                        element: hostAvatar
                     });
                 });
 
-                socket.on('avatar-assigned', (data) => {
-                    const avatarData = avatars.get(data.avatarId);
-                    if (!avatarData) return;
-                    
-                    avatarData.assignedUser = data.userId;
-                    avatarAssignments.set(data.avatarId, data.userId);
-                    
-                    const discordAvatar = avatarData.element.querySelector('.discord-avatar');
-                    if (discordAvatar && data.avatar) {
-                        discordAvatar.src = `https://cdn.discordapp.com/avatars/${data.userId}/${data.avatar}.png?size=128`;
-                        discordAvatar.classList.remove('hidden');
+                socket.on('hotkey-assigned', (data) => {
+                    avatarHotkeys.set(data.avatarId, {
+                        key: data.key,
+                        enabled: data.enabled
+                    });
+                    updateHotkeyBadge(data.avatarId);
+                });
+
+                socket.on('hotkey-toggled', (data) => {
+                    const hotkeyData = avatarHotkeys.get(data.avatarId);
+                    if (hotkeyData) {
+                        avatarHotkeys.set(data.avatarId, {
+                            ...hotkeyData,
+                            enabled: data.enabled
+                        });
+                        updateHotkeyBadge(data.avatarId);
                     }
                 });
 
-                socket.on('avatar-voice-toggle', (data) => {
+                socket.on('avatar-activated', (data) => {
                     const avatarData = avatars.get(data.avatarId);
-                    if (avatarData) {
-                        avatarData.voiceEnabled = data.enabled;
+                    if (!avatarData) return;
+                    
+                    if (data.active) {
+                        activeAvatars.add(data.avatarId);
+                        avatarData.element.classList.add('speaking');
+                    } else {
+                        activeAvatars.delete(data.avatarId);
+                        avatarData.element.classList.remove('speaking');
                     }
                 });
 
@@ -734,7 +643,8 @@
                     if (avatarData) {
                         avatarData.element.remove();
                         avatars.delete(data.avatarId);
-                        avatarAssignments.delete(data.avatarId);
+                        avatarHotkeys.delete(data.avatarId);
+                        activeAvatars.delete(data.avatarId);
                     }
                 });
 
@@ -805,10 +715,10 @@
                     } else if (action === 'add-scene-image') {
                         document.getElementById('scene-image-input').click();
                         contextMenu.classList.remove('active');
-                    } else if (action === 'assign-player') {
-                        assignPlayerToAvatar();
-                    } else if (action === 'toggle-voice') {
-                        toggleVoiceActivation();
+                    } else if (action === 'assign-hotkey') {
+                        assignHotkeyToAvatar();
+                    } else if (action === 'toggle-activation') {
+                        toggleActivation();
                     } else if (action === 'remove-avatar') {
                         removeAvatar();
                     }
@@ -819,6 +729,56 @@
             document.getElementById('player-avatar-input').addEventListener('change', handlePlayerAvatarUpload);
             document.getElementById('host-avatar-input').addEventListener('change', handleHostAvatarUpload);
             document.getElementById('scene-image-input').addEventListener('change', handleImageUpload);
+            
+            // Global hotkey listener
+            document.addEventListener('keydown', handleHotkeyPress);
+            document.addEventListener('keyup', handleHotkeyRelease);
+        }
+        
+        function handleHotkeyPress(e) {
+            // Don't trigger if typing in an input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            const key = e.key.toUpperCase();
+            
+            // Find avatars with this hotkey
+            avatarHotkeys.forEach((hotkeyData, avatarId) => {
+                if (hotkeyData.key === key && hotkeyData.enabled && !activeAvatars.has(avatarId)) {
+                    activateAvatar(avatarId, true);
+                }
+            });
+        }
+        
+        function handleHotkeyRelease(e) {
+            const key = e.key.toUpperCase();
+            
+            // Deactivate avatars with this hotkey
+            avatarHotkeys.forEach((hotkeyData, avatarId) => {
+                if (hotkeyData.key === key && activeAvatars.has(avatarId)) {
+                    activateAvatar(avatarId, false);
+                }
+            });
+        }
+        
+        function activateAvatar(avatarId, active) {
+            const avatarData = avatars.get(avatarId);
+            if (!avatarData) return;
+            
+            if (active) {
+                activeAvatars.add(avatarId);
+                avatarData.element.classList.add('speaking');
+            } else {
+                activeAvatars.delete(avatarId);
+                avatarData.element.classList.remove('speaking');
+            }
+            
+            // Broadcast activation state
+            if (socket) {
+                socket.emit('avatar-activated', {
+                    avatarId: avatarId,
+                    active: active
+                });
+            }
         }
         
         let currentContextAvatarId = null;
@@ -856,112 +816,134 @@
         function showAvatarContextMenu(e, avatarId, isHost = false) {
             currentContextAvatarId = avatarId;
             const menu = document.getElementById('avatar-context-menu');
+            
+            // Update toggle text based on current state
+            const toggleItem = menu.querySelector('[data-action="toggle-activation"]');
+            const hotkeyData = avatarHotkeys.get(avatarId);
+            const isEnabled = hotkeyData?.enabled || false;
+            toggleItem.textContent = isEnabled ? '✓ Activation Enabled' : '○ Activation Disabled';
+            
             menu.style.left = e.clientX + 'px';
             menu.style.top = e.clientY + 'px';
             menu.classList.add('active');
         }
         
-        function assignPlayerToAvatar() {
+        function assignHotkeyToAvatar() {
+            if (!currentContextAvatarId) return;
+            
+            const content = document.createElement('div');
+            content.innerHTML = `
+                <p style="margin-bottom: 15px;">Press any key to assign as activation hotkey...</p>
+                <p style="font-size: 14px; color: var(--text-secondary);">ESC to cancel</p>
+            `;
+            
+            showModal('Assign Activation Key', content, []);
+            
+            // Capture next keypress
+            const handleKeyCapture = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                if (e.key === 'Escape') {
+                    document.getElementById('modal-overlay').classList.remove('active');
+                    document.removeEventListener('keydown', handleKeyCapture);
+                    return;
+                }
+                
+                const key = e.key.toUpperCase();
+                
+                // Store hotkey assignment
+                avatarHotkeys.set(currentContextAvatarId, {
+                    key: key,
+                    enabled: true
+                });
+                
+                // Update badge
+                updateHotkeyBadge(currentContextAvatarId);
+                
+                // Broadcast assignment
+                if (socket) {
+                    socket.emit('hotkey-assigned', {
+                        avatarId: currentContextAvatarId,
+                        key: key,
+                        enabled: true
+                    });
+                }
+                
+                document.getElementById('modal-overlay').classList.remove('active');
+                document.removeEventListener('keydown', handleKeyCapture);
+                
+                showModal(
+                    'Hotkey Assigned',
+                    `Activation key set to: <strong>${key}</strong>`,
+                    [{ text: 'OK', class: 'cancel' }]
+                );
+            };
+            
+            document.addEventListener('keydown', handleKeyCapture);
+            document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        function toggleActivation() {
             if (!currentContextAvatarId) return;
             
             const avatarData = avatars.get(currentContextAvatarId);
             if (!avatarData) return;
             
-            const participants = Array.from(discordParticipants.values());
+            const hotkeyData = avatarHotkeys.get(currentContextAvatarId);
+            const newState = !hotkeyData?.enabled;
             
-            if (participants.length === 0) {
+            if (!hotkeyData) {
                 showModal(
-                    'No Players Available',
-                    'Discord OAuth may have failed. No participants available to assign.',
+                    'No Hotkey Assigned',
+                    'Please assign an activation key first.',
                     [{ text: 'OK', class: 'cancel' }]
                 );
+                document.getElementById('avatar-context-menu').classList.remove('active');
                 return;
             }
             
-            // Create player selection list
-            const listContainer = document.createElement('div');
-            listContainer.className = 'player-select-list';
-            
-            participants.forEach(p => {
-                const item = document.createElement('div');
-                item.className = 'player-select-item';
-                
-                if (p.avatar) {
-                    const avatar = document.createElement('img');
-                    avatar.src = `https://cdn.discordapp.com/avatars/${p.id}/${p.avatar}.png?size=64`;
-                    item.appendChild(avatar);
-                }
-                
-                const name = document.createElement('span');
-                name.textContent = p.global_name || p.username;
-                item.appendChild(name);
-                
-                item.onclick = () => {
-                    assignPlayer(p);
-                    document.getElementById('modal-overlay').classList.remove('active');
-                };
-                
-                listContainer.appendChild(item);
+            avatarHotkeys.set(currentContextAvatarId, {
+                ...hotkeyData,
+                enabled: newState
             });
             
-            showModal(
-                'Assign Player',
-                listContainer,
-                [{ text: 'Cancel', class: 'cancel' }]
-            );
+            // Update badge
+            updateHotkeyBadge(currentContextAvatarId);
             
-            document.getElementById('avatar-context-menu').classList.remove('active');
-        }
-        
-        function assignPlayer(participant) {
-            const avatarData = avatars.get(currentContextAvatarId);
-            if (!avatarData) return;
-            
-            avatarData.assignedUser = participant.id;
-            avatarAssignments.set(currentContextAvatarId, participant.id);
-            
-            // Update Discord avatar
-            const discordAvatar = avatarData.element.querySelector('.discord-avatar');
-            if (discordAvatar && participant.avatar) {
-                discordAvatar.src = `https://cdn.discordapp.com/avatars/${participant.id}/${participant.avatar}.png?size=128`;
-                discordAvatar.classList.remove('hidden');
-            }
-            
-            // Broadcast assignment
+            // Broadcast toggle
             if (socket) {
-                socket.emit('avatar-assigned', {
+                socket.emit('hotkey-toggled', {
                     avatarId: currentContextAvatarId,
-                    userId: participant.id,
-                    username: participant.global_name || participant.username,
-                    avatar: participant.avatar
-                });
-            }
-        }
-        
-        function toggleVoiceActivation() {
-            if (!currentContextAvatarId) return;
-            
-            const avatarData = avatars.get(currentContextAvatarId);
-            if (!avatarData) return;
-            
-            avatarData.voiceEnabled = !avatarData.voiceEnabled;
-            
-            const status = avatarData.voiceEnabled ? 'enabled' : 'disabled';
-            showModal(
-                'Voice Activation',
-                `Voice activation ${status} for this avatar.`,
-                [{ text: 'OK', class: 'cancel' }]
-            );
-            
-            // Broadcast voice toggle
-            if (socket) {
-                socket.emit('avatar-voice-toggle', {
-                    avatarId: currentContextAvatarId,
-                    enabled: avatarData.voiceEnabled
+                    enabled: newState
                 });
             }
             
             document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        function updateHotkeyBadge(avatarId) {
+            const avatarData = avatars.get(avatarId);
+            if (!avatarData) return;
+            
+            const hotkeyData = avatarHotkeys.get(avatarId);
+            
+            // Remove existing badge
+            const existingBadge = avatarData.element.querySelector('.hotkey-badge');
+            if (existingBadge) {
+                existingBadge.remove();
+            }
+            
+            // Add new badge if hotkey exists
+            if (hotkeyData?.key) {
+                const badge = document.createElement('div');
+                badge.className = 'hotkey-badge';
+                if (!hotkeyData.enabled) {
+                    badge.classList.add('disabled');
+                }
+                badge.textContent = hotkeyData.key;
+                avatarData.element.appendChild(badge);
+            }
         }
         
         function removeAvatar() {
@@ -972,7 +954,8 @@
             
             avatarData.element.remove();
             avatars.delete(currentContextAvatarId);
-            avatarAssignments.delete(currentContextAvatarId);
+            avatarHotkeys.delete(currentContextAvatarId);
+            activeAvatars.delete(currentContextAvatarId);
             
             // Broadcast removal
             if (socket) {
@@ -983,21 +966,7 @@
         }
         
         function handleVoiceStateUpdate(voiceState) {
-            const userId = voiceState.user.id;
-            const isSpeaking = voiceState.voice_state?.self_mute === false && voiceState.voice_state?.self_deaf === false;
-            
-            voiceStates.set(userId, isSpeaking);
-            
-            // Find avatars assigned to this user with voice enabled
-            avatars.forEach((data, avatarId) => {
-                if (data.assignedUser === userId && data.voiceEnabled) {
-                    if (isSpeaking) {
-                        data.element.classList.add('speaking');
-                    } else {
-                        data.element.classList.remove('speaking');
-                    }
-                }
-            });
+            // Deprecated - using hotkeys instead
         }
 
         // ===== DICE ROLLING =====
@@ -1035,6 +1004,9 @@
             const existingHost = document.querySelector('.host-avatar');
             if (existingHost) {
                 existingHost.remove();
+                avatars.delete('host');
+                avatarHotkeys.delete('host');
+                activeAvatars.delete('host');
             }
             
             const reader = new FileReader();
@@ -1048,11 +1020,6 @@
                 characterImg.className = 'character-portrait';
                 characterImg.src = e.target.result;
                 hostAvatar.appendChild(characterImg);
-                
-                // Discord avatar placeholder (hidden until assigned)
-                const discordImg = document.createElement('img');
-                discordImg.className = 'discord-avatar hidden';
-                hostAvatar.appendChild(discordImg);
                 
                 // Add drag handlers
                 hostAvatar.addEventListener('mousedown', (e) => {
@@ -1072,9 +1039,7 @@
                 
                 // Store host avatar data
                 avatars.set('host', {
-                    element: hostAvatar,
-                    voiceEnabled: false,
-                    assignedUser: null
+                    element: hostAvatar
                 });
                 
                 // Broadcast to other players
@@ -1155,11 +1120,6 @@
             characterImg.src = src;
             avatar.appendChild(characterImg);
             
-            // Discord avatar placeholder (hidden until assigned)
-            const discordImg = document.createElement('img');
-            discordImg.className = 'discord-avatar hidden';
-            avatar.appendChild(discordImg);
-            
             // Add drag handlers
             avatar.addEventListener('mousedown', (e) => {
                 if (e.button === 0) { // Left click
@@ -1180,9 +1140,7 @@
                 x, 
                 y, 
                 width: avatarSize, 
-                height: avatarSize,
-                voiceEnabled: false,
-                assignedUser: null
+                height: avatarSize
             });
         }
 
