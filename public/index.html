@@ -726,6 +726,16 @@
 
                 socket.on('image-added', (data) => {
                     addImageToCanvas(data.id, data.src, data.x, data.y, data.width, data.height, false);
+                    
+                    // Lock image if specified
+                    if (data.locked) {
+                        hardLockedAvatars.add(data.id);
+                        const imageData = images.get(data.id);
+                        if (imageData) {
+                            imageData.element.style.cursor = 'not-allowed';
+                            imageData.element.style.opacity = '0.9';
+                        }
+                    }
                 });
 
                 socket.on('image-moved', (data) => {
@@ -989,16 +999,22 @@
                         contextMenu.classList.remove('active');
                     } else if (action === 'assign-hotkey') {
                         assignHotkeyToAvatar();
+                        avatarContextMenu.classList.remove('active');
                     } else if (action === 'toggle-activation') {
                         toggleActivation();
+                        avatarContextMenu.classList.remove('active');
                     } else if (action === 'set-alternate') {
                         setAlternateImage();
+                        avatarContextMenu.classList.remove('active');
                     } else if (action === 'set-name') {
                         setName();
+                        avatarContextMenu.classList.remove('active');
                     } else if (action === 'toggle-lock') {
                         toggleLock();
+                        avatarContextMenu.classList.remove('active');
                     } else if (action === 'remove-avatar') {
                         removeAvatar();
+                        avatarContextMenu.classList.remove('active');
                     }
                 });
             });
@@ -1484,7 +1500,8 @@
                     x: data.x || parseInt(data.element.style.left),
                     y: data.y || parseInt(data.element.style.top),
                     width: data.width || parseInt(data.element.style.width),
-                    height: data.height || parseInt(data.element.style.height)
+                    height: data.height || parseInt(data.element.style.height),
+                    locked: hardLockedAvatars.has(imageId)
                 });
             });
             
@@ -1535,6 +1552,16 @@
                     if (sessionData.images) {
                         sessionData.images.forEach(imgData => {
                             addImageToCanvas(imgData.id, imgData.src, imgData.x, imgData.y, imgData.width, imgData.height, true);
+                            
+                            // Restore lock state
+                            if (imgData.locked) {
+                                hardLockedAvatars.add(imgData.id);
+                                const imageData = images.get(imgData.id);
+                                if (imageData) {
+                                    imageData.element.style.cursor = 'not-allowed';
+                                    imageData.element.style.opacity = '0.9';
+                                }
+                            }
                         });
                     }
                     
@@ -2049,21 +2076,42 @@
                 const img = new Image();
                 img.onload = () => {
                     const id = Date.now().toString();
-                    const maxSize = 200;
-                    const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-                    const width = img.width * scale;
-                    const height = img.height * scale;
-                    
-                    // Place in center of canvas
                     const canvas = document.getElementById('canvas');
-                    const x = (canvas.clientWidth - width) / 2;
-                    const y = (canvas.clientHeight - height) / 2;
+                    const canvasWidth = canvas.clientWidth;
+                    const canvasHeight = canvas.clientHeight;
+                    
+                    // Calculate dimensions to fill canvas while maintaining aspect ratio
+                    const imgAspect = img.width / img.height;
+                    const canvasAspect = canvasWidth / canvasHeight;
+                    
+                    let width, height;
+                    if (imgAspect > canvasAspect) {
+                        // Image is wider than canvas - fit to width
+                        width = canvasWidth;
+                        height = canvasWidth / imgAspect;
+                    } else {
+                        // Image is taller than canvas - fit to height
+                        height = canvasHeight;
+                        width = canvasHeight * imgAspect;
+                    }
+                    
+                    // Center the image
+                    const x = (canvasWidth - width) / 2;
+                    const y = (canvasHeight - height) / 2;
                     
                     addImageToCanvas(id, e.target.result, x, y, width, height, true);
                     
+                    // Auto-lock scene images
+                    hardLockedAvatars.add(id);
+                    const imageData = images.get(id);
+                    if (imageData) {
+                        imageData.element.style.cursor = 'not-allowed';
+                        imageData.element.style.opacity = '0.9';
+                    }
+                    
                     // Broadcast to other players
                     if (socket) {
-                        socket.emit('add-image', { id, src: e.target.result, x, y, width, height });
+                        socket.emit('add-image', { id, src: e.target.result, x, y, width, height, locked: true });
                     }
                 };
                 img.src = e.target.result;
