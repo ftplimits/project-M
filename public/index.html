@@ -565,6 +565,11 @@
                         body: JSON.stringify({ code })
                     });
                     
+                    if (!tokenResponse.ok) {
+                        const errorData = await tokenResponse.json();
+                        throw new Error(errorData.details || errorData.error || 'Token exchange failed');
+                    }
+                    
                     const { access_token } = await tokenResponse.json();
                     console.log('✓ Got access token');
                     
@@ -589,8 +594,12 @@
                     // Subscribe to voice state updates
                     discordSdk.subscribe('VOICE_STATE_UPDATE', handleVoiceStateUpdate);
                     
+                    console.log('✅ OAuth complete! Discord integration active.');
+                    
                 } catch (authError) {
-                    console.warn('⚠️ OAuth failed, continuing without Discord integration:', authError.message);
+                    console.warn('⚠️ OAuth failed:', authError.message);
+                    console.log('Continuing without Discord integration (avatars/voice disabled)');
+                    console.log('To enable: Set DISCORD_CLIENT_SECRET in Render environment variables');
                     // Continue without Discord participant data
                 }
                 
