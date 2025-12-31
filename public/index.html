@@ -1,166 +1,126 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monomyth VTT</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        #app {
-            text-align: center;
-            max-width: 600px;
-            width: 100%;
-        }
-        h1 {
-            font-size: 48px;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-        .info {
-            background: rgba(255,255,255,0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 12px;
-            padding: 30px;
-            margin-top: 20px;
-        }
-        .info p {
-            font-size: 18px;
-            margin: 10px 0;
-            line-height: 1.6;
-        }
-        .status {
-            display: inline-block;
-            padding: 8px 16px;
-            background: rgba(67, 181, 129, 0.3);
-            border-radius: 20px;
-            font-size: 14px;
-            margin-top: 10px;
-        }
-        .player-list {
-            margin-top: 20px;
-            padding: 15px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-        }
-    </style>
-</head>
-<body>
-    <div id="app">
-        <h1>🎲 Monomyth VTT</h1>
-        <div class="info">
-            <p>Connecting to Discord...</p>
-        </div>
-    </div>
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
 
-    <!-- Discord SDK (served from same origin by backend) -->
-    <script src="/discord-sdk.js"></script>
-    
-    <!-- Socket.IO for multiplayer -->
-    <script src="/socket.io/socket.io.js"></script>
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
 
-    <!-- Application Logic -->
-    <script>
-        const CLIENT_ID = '1455487225490837526';
-        const discordSdk = new DiscordSDK.DiscordSDK(CLIENT_ID);
+const PORT = process.env.PORT || 3000;
+
+// Serve static files from public directory
+app.use(express.static('public'));
+
+// Track active rooms and players
+const rooms = new Map();
+
+io.on('connection', (socket) => {
+    console.log('Player connected:', socket.id);
+    let currentRoom = null;
+
+    socket.on('join-room', (roomId) => {
+        currentRoom = roomId;
+        socket.join(roomId);
         
-        let socket;
-        let roomId;
-        const players = new Map();
+        if (!rooms.has(roomId)) {
+            rooms.set(roomId, {
+                players: new Set(),
+                images: new Map()
+            });
+        }
+        
+        const room = rooms.get(roomId);
+        room.players.add(socket.id);
 
-        async function init() {
-            console.log('🎮 Initializing Monomyth VTT...');
-            
-            try {
-                // Initialize Discord SDK
-                await discordSdk.ready();
-                console.log('✓ Discord SDK ready');
-                console.log('SDK Context:', {
-                    channelId: discordSdk.channelId,
-                    guildId: discordSdk.guildId,
-                    instanceId: discordSdk.instanceId
+        // Notify room of new player
+        io.to(roomId).emit('player-joined', {
+            playerId: socket.id,
+            playerCount: room.players.size
+        });
+        
+        // Send existing images to new player
+        room.images.forEach((imageData, imageId) => {
+            socket.emit('image-added', imageData);
+        });
+
+        console.log(`Player ${socket.id} joined room ${roomId}`);
+    });
+
+    // Dice roll handler
+    socket.on('dice-roll', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('dice-roll', {
+            ...data,
+            playerId: socket.id
+        });
+        
+        console.log(`Player ${socket.id} rolled D${data.sides}: ${data.result}`);
+    });
+
+    // Image upload handler
+    socket.on('add-image', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room) {
+            room.images.set(data.id, data);
+        }
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('image-added', data);
+        
+        console.log(`Player ${socket.id} added image ${data.id}`);
+    });
+
+    // Image movement handler
+    socket.on('move-image', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room && room.images.has(data.id)) {
+            const imageData = room.images.get(data.id);
+            imageData.x = data.x;
+            imageData.y = data.y;
+        }
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('image-moved', data);
+    });
+
+    socket.on('game-state', (data) => {
+        // Broadcast game state to all players in room except sender
+        socket.to(data.roomId).emit('game-state', data);
+    });
+
+    socket.on('disconnect', () => {
+        // Remove player from all rooms
+        rooms.forEach((room, roomId) => {
+            if (room.players && room.players.has(socket.id)) {
+                room.players.delete(socket.id);
+                io.to(roomId).emit('player-left', {
+                    playerId: socket.id,
+                    playerCount: room.players.size
                 });
-
-                // Try getting instance data directly (Activities may have implicit auth)
-                try {
-                    const instance = await discordSdk.commands.getInstanceConnectedParticipants();
-                    console.log('✓ Got instance participants:', instance);
-                } catch (err) {
-                    console.log('⚠️ Could not get participants (requires auth):', err.message);
+                
+                // Clean up empty rooms
+                if (room.players.size === 0) {
+                    rooms.delete(roomId);
                 }
-                
-                const channelId = discordSdk.channelId;
-                const guildId = discordSdk.guildId;
-                
-                console.log('Using Channel ID:', channelId);
-                console.log('Using Guild ID:', guildId);
-
-                // Use channel ID as room ID for multiplayer
-                roomId = channelId;
-
-                // Connect to Socket.IO
-                socket = io();
-                
-                socket.on('connect', () => {
-                    console.log('✓ Connected to server');
-                    socket.emit('join-room', roomId);
-                });
-
-                socket.on('player-joined', (data) => {
-                    console.log('Player joined:', data.playerId);
-                    players.set(data.playerId, { id: data.playerId, name: 'Player' });
-                    updateUI({ id: channelId, name: `Channel ${channelId}` }, data.playerCount);
-                });
-
-                socket.on('player-left', (data) => {
-                    console.log('Player left:', data.playerId);
-                    players.delete(data.playerId);
-                    updateUI({ id: channelId, name: `Channel ${channelId}` }, data.playerCount);
-                });
-
-                socket.on('game-state', (data) => {
-                    // Handle game state updates from other players
-                    console.log('Game state update:', data);
-                });
-
-                // Initial UI update
-                updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
-
-            } catch (error) {
-                console.error('❌ Error:', error);
-                document.querySelector('.info').innerHTML = `
-                    <p style="color: #ff6b6b;">Error: ${error.message}</p>
-                    <p style="font-size: 14px; margin-top: 10px;">Check console for details</p>
-                `;
             }
-        }
+        });
+        console.log('Player disconnected:', socket.id);
+    });
+});
 
-        function updateUI(channel, playerCount) {
-            const playerList = Array.from(players.values())
-                .map(p => `<div>👤 ${p.name}</div>`)
-                .join('');
-
-            document.querySelector('.info').innerHTML = `
-                <div class="status">✓ Connected</div>
-                <p><strong>Channel:</strong> ${channel.name || 'Unknown'}</p>
-                <p><strong>Players Online:</strong> ${playerCount}</p>
-                ${playerList ? `<div class="player-list">${playerList}</div>` : ''}
-                <p style="margin-top: 20px; font-size: 14px; opacity: 0.8;">
-                    Ready to start your adventure!
-                </p>
-            `;
-        }
-
-        init();
-    </script>
-</body>
-</html>
+httpServer.listen(PORT, () => {
+    console.log(`🎮 Monomyth VTT server running on port ${PORT}`);
+    console.log(`📍 http://localhost:${PORT}`);
+});
