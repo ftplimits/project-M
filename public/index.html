@@ -1,2470 +1,357 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monomyth VTT - Discord Activity</title>
-    <!-- Socket.IO served by our server -->
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="discord-sdk.js"></script>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        :root {
-            --bg-primary: #1a1a1a;
-            --bg-secondary: #2d2d2d;
-            --bg-panel: #252525;
-            --accent-gold: #d4af37;
-            --accent-red: #8b0000;
-            --text-primary: #e0e0e0;
-            --text-secondary: #a0a0a0;
-            --border-color: #3d3d3d;
-        }
-        
-        body {
-            font-family: 'Times New Roman', Times, serif;
-            background: #1a1a1a; /* Dark grey letterbox background */
-            color: var(--text-primary);
-            overflow: hidden;
-            margin: 0;
-            padding: 0;
-        }
-        
-        .container {
-            width: 100vw;
-            height: 100vh;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #1a1a1a;
-        }
-        
-        /* Fixed aspect ratio wrapper for consistent board size */
-        .canvas-wrapper {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            max-width: 177.78vh; /* 16:9 aspect ratio (100vh * 16/9) */
-            max-height: 56.25vw; /* 16:9 aspect ratio (100vw * 9/16) */
-        }
-        
-        /* Info Badge - Top Right */
-        .info-badge {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: var(--bg-panel);
-            border: 2px solid var(--accent-gold);
-            border-radius: 4px;
-            padding: 12px 16px;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            z-index: 100;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-            min-width: 180px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .info-badge:hover {
-            border-color: var(--accent-red);
-        }
-        
-        .info-badge-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-weight: bold;
-            color: var(--accent-gold);
-        }
-        
-        .player-list {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid var(--border-color);
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out;
-            text-transform: none;
-            letter-spacing: normal;
-        }
-        
-        .info-badge.expanded .player-list {
-            max-height: 400px;
-        }
-        
-        .player-item {
-            padding: 6px 8px;
-            margin: 4px 0;
-            background: var(--bg-secondary);
-            border-radius: 4px;
-            font-size: 11px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .player-item.host::before {
-            content: '👑';
-            font-size: 12px;
-        }
-        
-        .player-item.pending {
-            opacity: 0.6;
-            border: 1px dashed var(--accent-gold);
-        }
-        
-        .info-badge div {
-            margin: 4px 0;
-            color: var(--text-secondary);
-        }
-        
-        /* Context Menu */
-        .context-menu {
-            position: absolute;
-            background: var(--bg-panel);
-            border: 2px solid var(--accent-gold);
-            border-radius: 4px;
-            padding: 8px 0;
-            min-width: 200px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
-            display: none;
-            z-index: 10000;
-        }
-        
-        .context-menu.active {
-            display: block;
-        }
-        
-        .context-item {
-            padding: 10px 16px;
-            cursor: pointer;
-            color: var(--text-primary);
-            font-size: 14px;
-            transition: all 0.2s;
-            position: relative;
-        }
-        
-        .context-item:hover {
-            background: var(--accent-gold);
-            color: #000;
-        }
-        
-        .context-divider {
-            height: 1px;
-            background: var(--border-color);
-            margin: 4px 0;
-        }
-        
-        .submenu {
-            display: none;
-            position: absolute;
-            left: 100%;
-            top: 0;
-            background: var(--bg-panel);
-            border: 2px solid var(--accent-gold);
-            border-radius: 4px;
-            padding: 8px 0;
-            min-width: 120px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
-        }
-        
-        .context-item:hover > .submenu {
-            display: block;
-        }
-        
-        /* Dice Notification */
-        .dice-notification {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(0);
-            background: var(--bg-panel);
-            border: 3px solid var(--accent-gold);
-            border-radius: 8px;
-            padding: 30px 50px;
-            text-align: center;
-            z-index: 9999;
-            box-shadow: 0 0 40px rgba(212, 175, 55, 0.6);
-            pointer-events: none;
-            transition: transform 0.3s ease;
-        }
-        
-        .dice-notification.show {
-            transform: translate(-50%, -50%) scale(1);
-        }
-        
-        .dice-notification .result-value {
-            font-size: 72px;
-            font-weight: bold;
-            color: var(--accent-gold);
-            text-shadow: 0 0 20px rgba(212, 175, 55, 0.8);
-        }
-        
-        .dice-notification .result-label {
-            font-size: 18px;
-            color: var(--text-secondary);
-            margin-top: 10px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-        
-        /* Canvas Area - The Stage */
-        .canvas-area {
-            width: 100%;
-            height: 100%;
-            position: relative;
-            background: radial-gradient(ellipse at center, #2a2a2a 0%, var(--bg-primary) 70%);
-            overflow: hidden;
-        }
-        
-        /* Board Header */
-        .board-header {
-            position: absolute;
-            top: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 48px;
-            font-weight: bold;
-            color: var(--accent-gold);
-            text-align: center;
-            text-shadow: 
-                0 0 20px rgba(212, 175, 55, 0.8),
-                0 0 40px rgba(212, 175, 55, 0.5),
-                3px 3px 6px rgba(0, 0, 0, 0.9);
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            z-index: 60;
-            cursor: pointer;
-            padding: 20px 40px;
-            background: linear-gradient(180deg, 
-                rgba(26, 26, 26, 0.95) 0%, 
-                rgba(26, 26, 26, 0.85) 50%,
-                rgba(26, 26, 26, 0.7) 100%);
-            border: 3px solid var(--accent-gold);
-            border-radius: 8px;
-            box-shadow: 
-                0 0 30px rgba(212, 175, 55, 0.6),
-                inset 0 0 20px rgba(0, 0, 0, 0.5);
-            max-width: 80%;
-            word-wrap: break-word;
-            user-select: none;
-        }
-        
-        .board-header:empty {
-            display: none;
-        }
-        
-        .board-header:hover {
-            color: #fff;
-            border-color: var(--accent-red);
-            text-shadow: 
-                0 0 30px rgba(255, 255, 255, 0.9),
-                0 0 50px rgba(212, 175, 55, 0.7),
-                3px 3px 6px rgba(0, 0, 0, 0.9);
-        }
-        
-        /* Stage floor effect */
-        .canvas-area::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 40%;
-            background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.3) 100%);
-            pointer-events: none;
-        }
-        
-        .image-token {
-            position: absolute;
-            cursor: move;
-            border: 12px solid var(--accent-gold);
-            border-radius: 8px;
-            transition: border-color 0.2s, transform 0.2s;
-            user-select: none;
-            z-index: 10;
-            box-shadow: 
-                0 0 0 3px var(--bg-primary),
-                0 0 30px rgba(212, 175, 55, 0.4),
-                inset 0 0 40px rgba(0, 0, 0, 0.3);
-            background: var(--bg-secondary);
-        }
-        
-        .image-token:hover {
-            border-color: var(--accent-gold);
-        }
-        
-        .image-token.dragging {
-            opacity: 0.8;
-            z-index: 1000;
-        }
-        }
-        
-        .image-token img {
-            display: block;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            object-fit: cover;
-            object-position: center;
-            border-radius: 2px;
-        }
-        
-        /* Player Avatars */
-        .avatar-token {
-            position: absolute;
-            cursor: move;
-            border: 3px solid var(--accent-gold);
-            border-radius: 8px;
-            transition: all 0.3s, transform 0.6s ease-in-out;
-            user-select: none;
-            z-index: 20;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        
-        .avatar-token.flipped {
-            transform: scaleX(-1);
-        }
-        
-        .avatar-token:hover {
-            border-color: var(--accent-red);
-            transform: scale(1.1) translateY(-5px);
-            box-shadow: 0 8px 20px rgba(212, 175, 55, 0.4);
-            z-index: 30;
-        }
-        
-        .avatar-token.flipped:hover {
-            transform: scaleX(-1) scale(1.1) translateY(-5px);
-        }
-        
-        .avatar-token.speaking {
-            border-color: var(--accent-gold);
-            box-shadow: 0 0 40px rgba(212, 175, 55, 0.9);
-            transform: translateY(-15px);
-            transition: all 0.3s ease-out;
-            z-index: 30;
-        }
-        
-        .avatar-token.speaking.flipped {
-            transform: scaleX(-1) translateY(-15px);
-        }
-        
-        .avatar-token.dragging {
-            opacity: 0.9;
-            z-index: 1000;
-            transform: scale(1.15);
-        }
-        
-        .avatar-token .character-portrait {
-            width: 200px;
-            height: 250px;
-            border-radius: 6px;
-            pointer-events: none;
-            object-fit: cover;
-            object-position: center;
-        }
-        
-        .avatar-name-banner {
-            position: absolute;
-            bottom: -35px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--accent-red);
-            color: #fff;
-            padding: 6px 16px;
-            border-radius: 4px;
-            font-size: 14px;
-            font-weight: bold;
-            text-align: center;
-            white-space: nowrap;
-            border: 2px solid var(--accent-gold);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
-            min-width: 100px;
-            cursor: text;
-            font-family: 'Times New Roman', Times, serif;
-        }
-        
-        .avatar-token.flipped .avatar-name-banner {
-            transform: translateX(-50%) scaleX(-1);
-        }
-        
-        .avatar-name-banner:empty::before {
-            content: 'Unnamed';
-            opacity: 0.6;
-        }
-        
-        .host-avatar .avatar-name-banner {
-            bottom: -45px;
-            font-size: 16px;
-            padding: 8px 20px;
-        }
-        
-        .host-avatar.flipped .avatar-name-banner {
-            transform: translateX(-50%) scaleX(-1);
-        }
-        
-        /* Host Avatar - Special Styling */
-        .host-avatar {
-            position: absolute;
-            top: 80px;
-            left: 40px;
-            width: 240px;
-            height: 240px;
-            border: 4px solid var(--accent-red);
-            border-radius: 50%;
-            box-shadow: 0 0 30px rgba(139, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.8);
-            z-index: 50;
-            cursor: move;
-            user-select: none;
-            animation: float 4s ease-in-out infinite;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.6s ease-in-out;
-        }
-        
-        .host-avatar.flipped {
-            transform: scaleX(-1);
-        }
-        
-        @keyframes float {
-            0%, 100% {
-                transform: translateY(0px);
-            }
-            50% {
-                transform: translateY(-20px);
-            }
-        }
-        
-        @keyframes floatFlipped {
-            0%, 100% {
-                transform: scaleX(-1) translateY(0px);
-            }
-            50% {
-                transform: scaleX(-1) translateY(-20px);
-            }
-        }
-        
-        .host-avatar.flipped {
-            animation: floatFlipped 4s ease-in-out infinite;
-        }
-        
-        .host-avatar:hover {
-            border-color: var(--accent-gold);
-            box-shadow: 0 0 40px rgba(212, 175, 55, 0.8), 0 4px 12px rgba(0, 0, 0, 0.8);
-            animation-play-state: paused;
-        }
-        
-        .host-avatar.speaking {
-            border-color: var(--accent-gold);
-            box-shadow: 0 0 50px rgba(212, 175, 55, 0.9);
-            transform: translateY(-25px);
-            transition: all 0.3s ease-out;
-            animation: none;
-        }
-        
-        .host-avatar.speaking.flipped {
-            transform: scaleX(-1) translateY(-25px);
-            animation: none;
-        }
-        
-        .host-avatar.dragging {
-            opacity: 0.9;
-            animation: none;
-            z-index: 1000;
-        }
-        
-        .host-avatar .character-portrait {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            pointer-events: none;
-        }
-        
-        /* Avatar Context Menu */
-        .avatar-context-menu {
-            position: absolute;
-            background: var(--bg-panel);
-            border: 2px solid var(--accent-gold);
-            border-radius: 4px;
-            padding: 8px 0;
-            min-width: 180px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
-            display: none;
-            z-index: 10001;
-        }
-        
-        .avatar-context-menu.active {
-            display: block;
-        }
-        
-        /* Custom Modal Dialog */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 20000;
-        }
-        
-        .modal-overlay.active {
-            display: flex;
-        }
-        
-        .modal-dialog {
-            background: var(--bg-panel);
-            border: 3px solid var(--accent-gold);
-            border-radius: 8px;
-            padding: 30px;
-            max-width: 400px;
-            width: 90%;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
-        }
-        
-        .modal-title {
-            font-size: 20px;
-            color: var(--accent-gold);
-            margin-bottom: 20px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .modal-content {
-            margin-bottom: 20px;
-            color: var(--text-primary);
-            line-height: 1.6;
-        }
-        
-        .modal-buttons {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-        }
-        
-        .modal-button {
-            padding: 10px 20px;
-            border: 2px solid var(--accent-gold);
-            background: var(--bg-secondary);
-            color: var(--accent-gold);
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-            text-transform: uppercase;
-            transition: all 0.2s;
-        }
-        
-        .modal-button:hover {
-            background: var(--accent-gold);
-            color: #000;
-        }
-        
-        .modal-button.cancel {
-            border-color: var(--text-secondary);
-            color: var(--text-secondary);
-        }
-        
-        .modal-button.cancel:hover {
-            background: var(--text-secondary);
-            color: #000;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <!-- Context Menu -->
-        <div id="context-menu" class="context-menu">
-            <div class="context-item" data-action="dice-submenu">
-                🎲 Roll Dice →
-                <div class="submenu">
-                    <div class="context-item" data-action="roll" data-sides="4">D4</div>
-                    <div class="context-item" data-action="roll" data-sides="6">D6</div>
-                    <div class="context-item" data-action="roll" data-sides="8">D8</div>
-                    <div class="context-item" data-action="roll" data-sides="10">D10</div>
-                    <div class="context-item" data-action="roll" data-sides="12">D12</div>
-                    <div class="context-item" data-action="roll" data-sides="20">D20</div>
-                    <div class="context-item" data-action="roll" data-sides="100">D100</div>
-                </div>
-            </div>
-            <div class="context-divider"></div>
-            <div class="context-item" data-action="add-player-avatar">🎭 Add Player Avatar</div>
-            <div class="context-item" data-action="add-host-avatar">👑 Add Host Avatar</div>
-            <div class="context-item" data-action="add-scene-image">🖼️ Add Scene Image</div>
-            <div class="context-item" data-action="set-board-header">📜 Set Board Header</div>
-            <div class="context-divider"></div>
-            <div class="context-item" data-action="save-session">💾 Save Session</div>
-            <div class="context-item" data-action="load-session">📂 Load Session</div>
-        </div>
-        
-        <!-- Avatar Context Menu -->
-        <div id="avatar-context-menu" class="avatar-context-menu">
-            <div class="context-item" data-action="assign-hotkey">⌨️ Assign Activation Key</div>
-            <div class="context-item" data-action="toggle-activation">🔄 Enable Activation</div>
-            <div class="context-item" data-action="set-alternate">🎭 Set Alternate Image</div>
-            <div class="context-item" data-action="set-name">📛 Set Name</div>
-            <div class="context-item" data-action="toggle-lock">🔒 Hard Lock</div>
-            <div class="context-divider"></div>
-            <div class="context-item" data-action="remove-avatar">🗑️ Remove Avatar</div>
-        </div>
-        
-        <!-- Modal Dialog -->
-        <div id="modal-overlay" class="modal-overlay">
-            <div class="modal-dialog">
-                <div class="modal-title" id="modal-title">Modal</div>
-                <div class="modal-content" id="modal-content"></div>
-                <div class="modal-buttons" id="modal-buttons"></div>
-            </div>
-        </div>
-        
-        <!-- Admit/Deny Modal -->
-        <div id="admit-modal" class="modal-overlay">
-            <div class="modal-dialog">
-                <div class="modal-title">🚪 Player Requesting Entry</div>
-                <div class="modal-content" id="admit-content"></div>
-                <div class="modal-buttons">
-                    <button class="modal-button" id="admit-button">✓ Admit</button>
-                    <button class="modal-button cancel" id="deny-button">✗ Deny</button>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Hidden file inputs -->
-        <input type="file" id="player-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
-        <input type="file" id="host-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
-        <input type="file" id="scene-image-input" accept="image/*" style="display: none;">
-        <input type="file" id="alternate-image-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
-        <input type="file" id="load-session-input" accept="application/json,.json" style="display: none;">
-        
-        <!-- Dice Result Notification -->
-        <div id="dice-notification" class="dice-notification"></div>
-        
-        <!-- Info Badge -->
-        <div class="info-badge" id="info-badge">
-            <div class="info-badge-header">
-                <div id="channel-info">Connecting...</div>
-                <div id="player-count">0</div>
-            </div>
-            <div class="player-list" id="player-list"></div>
-        </div>
-        
-        <!-- The Stage - Fixed 16:9 aspect ratio wrapper -->
-        <div class="canvas-wrapper">
-            <div class="canvas-area" id="canvas">
-                <!-- Board Header -->
-                <div class="board-header" id="board-header"></div>
-                <!-- Images and avatars will be added here -->
-            </div>
-        </div>
-    </div>
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
 
-    <script>
-        const CLIENT_ID = '1455487225490837526';
-        // The discord-sdk.js exports as: DiscordSDK.DiscordSDK
-        const discordSdk = new DiscordSDK.DiscordSDK(CLIENT_ID);
-        
-        let socket;
-        let roomId;
-        let players = new Map(); // socketId -> playerName
-        let isHost = false;
-        let mySocketId = null;
-        let pendingPlayer = null;
-        
-        // Image tracking
-        let images = new Map();
-        let avatars = new Map(); // Track player avatars separately
-        let draggedImage = null;
-        let dragOffset = { x: 0, y: 0 };
-        
-        // Hotkey activation system
-        let avatarHotkeys = new Map(); // avatarId -> { key, enabled }
-        let activeAvatars = new Set(); // Currently glowing avatars
-        
-        // Grid snapping system (5 rows x 10 columns)
-        const GRID_ROWS = 5;
-        const GRID_COLS = 10;
-        let snapGrid = { rows: [], cols: [] };
-        
-        // Hard lock system
-        let hardLockedAvatars = new Set(); // Avatar IDs that are locked
-        
-        // Autoflip system
-        let autoflipInterval = null;
-        
-        // Alternate images
-        let currentContextAvatarId = null;
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
 
-        // Initialize
-        (async function init() {
-            console.log('🎭 Initializing Monomyth VTT...');
+const PORT = process.env.PORT || 3000;
+
+// Serve static files from public directory
+app.use(express.static('public'));
+app.use(express.json());
+
+// Track active rooms
+const rooms = new Map();
+
+// Initialize room with host tracking
+function initRoom(roomId) {
+    if (!rooms.has(roomId)) {
+        rooms.set(roomId, {
+            host: null, // First player socket ID
+            players: new Map(), // socketId -> { name, socket }
+            pendingPlayers: new Map(), // socketId -> { name, socket }
+            images: new Map(),
+            avatars: new Map(),
+            hostAvatar: null
+        });
+    }
+    return rooms.get(roomId);
+}
+
+io.on('connection', (socket) => {
+    console.log('Player connected:', socket.id);
+    let currentRoom = null;
+    let isAdmitted = false;
+
+    // Player requests to join
+    socket.on('request-join', (data) => {
+        const { roomId, playerName } = data;
+        currentRoom = roomId;
+        
+        const room = initRoom(roomId);
+        
+        // First player becomes host and is auto-admitted
+        if (!room.host) {
+            room.host = socket.id;
+            room.players.set(socket.id, { name: playerName, socket: socket });
+            socket.join(roomId);
+            isAdmitted = true;
             
-            try {
-                // Initialize Discord SDK
-                await discordSdk.ready();
-                console.log('✓ Discord SDK ready');
-                console.log('SDK Context:', {
-                    channelId: discordSdk.channelId,
-                    guildId: discordSdk.guildId,
-                    instanceId: discordSdk.instanceId
-                });
-                
-                const channelId = discordSdk.channelId;
-                const guildId = discordSdk.guildId;
-                
-                console.log('Using Channel ID:', channelId);
-                console.log('Using Guild ID:', guildId);
-                
-                // Suppress Discord SDK message channel errors (harmless)
-                window.addEventListener('unhandledrejection', (event) => {
-                    if (event.reason?.message?.includes('message channel closed')) {
-                        event.preventDefault();
-                    }
-                });
-
-                // Use channel ID as room ID for multiplayer
-                roomId = channelId;
-
-                // Connect to Socket.IO
-                socket = io();
-                
-                socket.on('connect', () => {
-                    console.log('✓ Connected to server');
-                    mySocketId = socket.id;
-                    
-                    // Request to join room
-                    socket.emit('request-join', { 
-                        roomId: roomId,
-                        playerName: 'Player'
-                    });
-                });
-                
-                // Host receives join requests
-                socket.on('join-request', (data) => {
-                    showAdmitDenyModal(data.playerName, data.socketId);
-                });
-                
-                // Player gets admitted
-                socket.on('admitted', (data) => {
-                    console.log('✓ Admitted to room');
-                    isHost = data.isHost;
-                    
-                    // Update player list
-                    players.clear();
-                    data.players.forEach(p => {
-                        players.set(p.socketId, p.name);
-                    });
-                    updatePlayerList();
-                    
-                    const channel = { id: channelId, name: `Channel ${channelId}` };
-                    updateUI(channel, players.size);
-                });
-                
-                // Player gets denied
-                socket.on('denied', () => {
-                    showModal(
-                        'Access Denied',
-                        'The host has denied your entry to this session.',
-                        [{ text: 'OK', class: 'cancel' }]
-                    );
-                });
-                
-                // When a new player joins
-                socket.on('player-joined', (data) => {
-                    console.log('Player joined:', data.name);
-                    players.set(data.socketId, data.name);
-                    updatePlayerList();
-                    updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
-                });
-
-                socket.on('player-left', (data) => {
-                    console.log('Player left:', data.socketId);
-                    players.delete(data.socketId);
-                    updatePlayerList();
-                    updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
-                });
-
-                socket.on('dice-roll', (data) => {
-                    displayDiceResult(data.sides, data.result, data.playerId);
-                });
-
-                socket.on('image-added', (data) => {
-                    addImageToCanvas(data.id, data.src, data.x, data.y, data.width, data.height, false);
-                    
-                    // Lock image if specified
-                    if (data.locked) {
-                        hardLockedAvatars.add(data.id);
-                        const imageData = images.get(data.id);
-                        if (imageData) {
-                            imageData.element.style.cursor = 'not-allowed';
-                            imageData.element.style.opacity = '0.9';
-                        }
-                    }
-                });
-
-                socket.on('image-moved', (data) => {
-                    moveImage(data.id, data.x, data.y, false);
-                });
-
-                socket.on('avatar-added', (data) => {
-                    addAvatarToStage(data.id, data.src, false);
-                });
-
-                socket.on('avatar-moved', (data) => {
-                    moveImage(data.id, data.x, data.y, false);
-                });
-
-                socket.on('host-avatar-added', (data) => {
-                    // Remove existing host avatar if any
-                    const existingHost = document.querySelector('.host-avatar');
-                    if (existingHost) {
-                        existingHost.remove();
-                        avatars.delete('host');
-                        avatarHotkeys.delete('host');
-                        activeAvatars.delete('host');
-                    }
-                    
-                    const canvas = document.getElementById('canvas');
-                    const hostAvatar = document.createElement('div');
-                    hostAvatar.className = 'host-avatar';
-                    hostAvatar.dataset.id = 'host';
-                    
-                    const characterImg = document.createElement('img');
-                    characterImg.className = 'character-portrait';
-                    characterImg.src = data.src;
-                    hostAvatar.appendChild(characterImg);
-                    
-                    // Add drag handlers
-                    hostAvatar.addEventListener('mousedown', (e) => {
-                        if (e.button === 0) startDrag(e);
-                    });
-                    
-                    // Add right-click handler
-                    hostAvatar.addEventListener('contextmenu', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        showAvatarContextMenu(e, 'host', true);
-                    });
-                    
-                    canvas.appendChild(hostAvatar);
-                    
-                    avatars.set('host', {
-                        element: hostAvatar
-                    });
-                });
-
-                socket.on('hotkey-assigned', (data) => {
-                    avatarHotkeys.set(data.avatarId, {
-                        key: data.key,
-                        enabled: data.enabled
-                    });
-                });
-
-                socket.on('hotkey-toggled', (data) => {
-                    const hotkeyData = avatarHotkeys.get(data.avatarId);
-                    if (hotkeyData) {
-                        avatarHotkeys.set(data.avatarId, {
-                            ...hotkeyData,
-                            enabled: data.enabled
-                        });
-                    }
-                });
-
-                socket.on('avatar-activated', (data) => {
-                    const avatarData = avatars.get(data.avatarId);
-                    if (!avatarData) return;
-                    
-                    const portraitImg = avatarData.element.querySelector('.character-portrait');
-                    
-                    if (data.active) {
-                        activeAvatars.add(data.avatarId);
-                        avatarData.element.classList.add('speaking');
-                        
-                        // Swap to alternate image if available
-                        if (avatarData.alternateImage && portraitImg) {
-                            if (!avatarData.originalImage) {
-                                avatarData.originalImage = portraitImg.src;
-                            }
-                            portraitImg.src = avatarData.alternateImage;
-                        }
-                    } else {
-                        activeAvatars.delete(data.avatarId);
-                        avatarData.element.classList.remove('speaking');
-                        
-                        // Swap back to original image
-                        if (avatarData.originalImage && portraitImg) {
-                            portraitImg.src = avatarData.originalImage;
-                        }
-                    }
-                });
-                
-                socket.on('avatar-flipped', (data) => {
-                    const avatarData = avatars.get(data.avatarId);
-                    if (!avatarData) return;
-                    
-                    if (data.flipped) {
-                        avatarData.element.classList.add('flipped');
-                    } else {
-                        avatarData.element.classList.remove('flipped');
-                    }
-                });
-                
-                socket.on('avatar-alternate-set', (data) => {
-                    const avatarData = avatars.get(data.avatarId);
-                    if (!avatarData) return;
-                    
-                    avatarData.alternateImage = data.alternateSrc;
-                });
-                
-                socket.on('avatar-name-set', (data) => {
-                    const avatarData = avatars.get(data.avatarId);
-                    if (!avatarData) return;
-                    
-                    let nameBanner = avatarData.element.querySelector('.avatar-name-banner');
-                    if (nameBanner) {
-                        nameBanner.textContent = data.name;
-                    }
-                });
-                
-                socket.on('avatar-lock-toggle', (data) => {
-                    const avatarData = avatars.get(data.avatarId);
-                    if (!avatarData) return;
-                    
-                    if (data.locked) {
-                        hardLockedAvatars.add(data.avatarId);
-                        avatarData.element.style.cursor = 'not-allowed';
-                        avatarData.element.style.opacity = '0.9';
-                    } else {
-                        hardLockedAvatars.delete(data.avatarId);
-                        avatarData.element.style.cursor = 'move';
-                        avatarData.element.style.opacity = '1';
-                    }
-                });
-                
-                socket.on('board-header-update', (data) => {
-                    const header = document.getElementById('board-header');
-                    if (header) {
-                        header.textContent = data.text;
-                    }
-                });
-
-                socket.on('avatar-removed', (data) => {
-                    const avatarData = avatars.get(data.avatarId);
-                    if (avatarData) {
-                        avatarData.element.remove();
-                        avatars.delete(data.avatarId);
-                        avatarHotkeys.delete(data.avatarId);
-                        activeAvatars.delete(data.avatarId);
-                    }
-                });
-
-                // Initial UI update
-                updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
-
-                // Setup event listeners (CSP doesn't allow inline handlers)
-                setupEventListeners();
-                
-                // Setup board header editing
-                setupBoardHeaderEditing();
-                
-                // Initialize snap grid
-                calculateSnapGrid();
-                
-                // Recalculate grid on window resize
-                window.addEventListener('resize', calculateSnapGrid);
-                
-                // Start autoflip timer
-                startAutoflip();
-
-            } catch (error) {
-                console.error('❌ Error:', error);
-                document.getElementById('channel-info').innerHTML = `
-                    <p style="color: #ff6b6b;">Error: ${error.message}</p>
-                `;
-            }
-        })();
-
-        function updateUI(channel, playerCount) {
-            document.getElementById('channel-info').textContent = `Channel: ${channel.name || channel.id}`;
-            document.getElementById('player-count').textContent = `Players: ${playerCount}`;
-        }
-
-        function setupEventListeners() {
-            const canvas = document.getElementById('canvas');
-            const contextMenu = document.getElementById('context-menu');
-            const avatarContextMenu = document.getElementById('avatar-context-menu');
+            console.log(`${socket.id} is now host of room ${roomId}`);
             
-            // Right-click context menu
-            canvas.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                // Close avatar menu if open
-                avatarContextMenu.classList.remove('active');
-                
-                // Show menu temporarily to get dimensions
-                contextMenu.style.display = 'block';
-                const menuRect = contextMenu.getBoundingClientRect();
-                
-                // Calculate position with boundary checking
-                let left = e.clientX;
-                let top = e.clientY;
-                
-                // Check right edge
-                if (left + menuRect.width > window.innerWidth) {
-                    left = window.innerWidth - menuRect.width - 10;
-                }
-                
-                // Check bottom edge
-                if (top + menuRect.height > window.innerHeight) {
-                    top = window.innerHeight - menuRect.height - 10;
-                }
-                
-                // Check left edge
-                if (left < 0) {
-                    left = 10;
-                }
-                
-                // Check top edge
-                if (top < 0) {
-                    top = 10;
-                }
-                
-                contextMenu.style.left = left + 'px';
-                contextMenu.style.top = top + 'px';
-                contextMenu.classList.add('active');
+            // Send admission confirmation
+            socket.emit('admitted', {
+                isHost: true,
+                players: Array.from(room.players.entries()).map(([sid, p]) => ({
+                    socketId: sid,
+                    name: p.name
+                }))
             });
+        } else {
+            // Subsequent players need host approval
+            room.pendingPlayers.set(socket.id, { name: playerName, socket: socket });
             
-            // Close context menus on left click
-            document.addEventListener('click', () => {
-                contextMenu.classList.remove('active');
-                avatarContextMenu.classList.remove('active');
-            });
+            console.log(`${socket.id} requesting to join room ${roomId}`);
             
-            // Close modal when clicking overlay (not dialog)
-            document.getElementById('modal-overlay').addEventListener('click', (e) => {
-                if (e.target.id === 'modal-overlay') {
-                    e.target.classList.remove('active');
-                }
-            });
-            
-            // Context menu actions
-            document.querySelectorAll('.context-item').forEach(item => {
-                item.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const action = item.dataset.action;
-                    const sides = item.dataset.sides;
-                    
-                    if (action === 'roll' && sides) {
-                        rollDie(parseInt(sides));
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'add-player-avatar') {
-                        document.getElementById('player-avatar-input').click();
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'add-host-avatar') {
-                        document.getElementById('host-avatar-input').click();
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'add-scene-image') {
-                        document.getElementById('scene-image-input').click();
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'set-board-header') {
-                        setBoardHeader();
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'save-session') {
-                        saveSession();
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'load-session') {
-                        loadSession();
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'assign-hotkey') {
-                        assignHotkeyToAvatar();
-                        avatarContextMenu.classList.remove('active');
-                    } else if (action === 'toggle-activation') {
-                        toggleActivation();
-                        avatarContextMenu.classList.remove('active');
-                    } else if (action === 'set-alternate') {
-                        setAlternateImage();
-                        avatarContextMenu.classList.remove('active');
-                    } else if (action === 'set-name') {
-                        setName();
-                        avatarContextMenu.classList.remove('active');
-                    } else if (action === 'toggle-lock') {
-                        toggleLock();
-                        avatarContextMenu.classList.remove('active');
-                    } else if (action === 'remove-avatar') {
-                        removeAvatar();
-                        avatarContextMenu.classList.remove('active');
-                    }
-                });
-            });
-            
-            // File input listeners
-            document.getElementById('player-avatar-input').addEventListener('change', handlePlayerAvatarUpload);
-            document.getElementById('host-avatar-input').addEventListener('change', handleHostAvatarUpload);
-            document.getElementById('scene-image-input').addEventListener('change', handleImageUpload);
-            document.getElementById('alternate-image-input').addEventListener('change', handleAlternateImageUpload);
-            document.getElementById('load-session-input').addEventListener('change', handleLoadSession);
-            
-            // Info badge click to toggle player list
-            document.getElementById('info-badge').addEventListener('click', togglePlayerList);
-            
-            // Admit/Deny button listeners
-            document.getElementById('admit-button').addEventListener('click', handleAdmit);
-            document.getElementById('deny-button').addEventListener('click', handleDeny);
-            
-            // Global hotkey listener
-            document.addEventListener('keydown', handleHotkeyPress);
-            document.addEventListener('keyup', handleHotkeyRelease);
-        }
-        
-        function handleHotkeyPress(e) {
-            // Don't trigger if typing in an input
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-            
-            const key = e.key.toUpperCase();
-            
-            // Find avatars with this hotkey
-            avatarHotkeys.forEach((hotkeyData, avatarId) => {
-                if (hotkeyData.key === key && hotkeyData.enabled && !activeAvatars.has(avatarId)) {
-                    activateAvatar(avatarId, true);
-                }
-            });
-        }
-        
-        function handleHotkeyRelease(e) {
-            const key = e.key.toUpperCase();
-            
-            // Deactivate avatars with this hotkey
-            avatarHotkeys.forEach((hotkeyData, avatarId) => {
-                if (hotkeyData.key === key && activeAvatars.has(avatarId)) {
-                    activateAvatar(avatarId, false);
-                }
-            });
-        }
-        
-        function activateAvatar(avatarId, active) {
-            const avatarData = avatars.get(avatarId);
-            if (!avatarData) return;
-            
-            const portraitImg = avatarData.element.querySelector('.character-portrait');
-            
-            if (active) {
-                activeAvatars.add(avatarId);
-                avatarData.element.classList.add('speaking');
-                
-                // Swap to alternate image if available
-                if (avatarData.alternateImage && portraitImg) {
-                    // Store original if not already stored
-                    if (!avatarData.originalImage) {
-                        avatarData.originalImage = portraitImg.src;
-                    }
-                    portraitImg.src = avatarData.alternateImage;
-                }
-            } else {
-                activeAvatars.delete(avatarId);
-                avatarData.element.classList.remove('speaking');
-                
-                // Swap back to original image
-                if (avatarData.originalImage && portraitImg) {
-                    portraitImg.src = avatarData.originalImage;
-                }
-            }
-            
-            // Broadcast activation state
-            if (socket) {
-                socket.emit('avatar-activated', {
-                    avatarId: avatarId,
-                    active: active
+            // Notify host
+            const hostSocket = room.players.get(room.host)?.socket;
+            if (hostSocket) {
+                hostSocket.emit('join-request', {
+                    socketId: socket.id,
+                    playerName: playerName
                 });
             }
         }
+    });
+    
+    // Host admits a player
+    socket.on('admit-player', (data) => {
+        if (!currentRoom) return;
+        const room = rooms.get(currentRoom);
+        if (!room || room.host !== socket.id) return; // Only host can admit
         
-        function showModal(title, content, buttons) {
-            const overlay = document.getElementById('modal-overlay');
-            const modalTitle = document.getElementById('modal-title');
-            const modalContent = document.getElementById('modal-content');
-            const modalButtons = document.getElementById('modal-buttons');
-            
-            modalTitle.textContent = title;
-            
-            if (typeof content === 'string') {
-                modalContent.innerHTML = content;
-            } else {
-                modalContent.innerHTML = '';
-                modalContent.appendChild(content);
-            }
-            
-            modalButtons.innerHTML = '';
-            buttons.forEach(btn => {
-                const button = document.createElement('button');
-                button.className = `modal-button ${btn.class || ''}`;
-                button.textContent = btn.text;
-                button.onclick = () => {
-                    overlay.classList.remove('active');
-                    if (btn.onClick) btn.onClick();
-                };
-                modalButtons.appendChild(button);
-            });
-            
-            overlay.classList.add('active');
-        }
+        const pendingPlayer = room.pendingPlayers.get(data.socketId);
+        if (!pendingPlayer) return;
         
-        function showAvatarContextMenu(e, avatarId, isHost = false) {
-            currentContextAvatarId = avatarId;
-            const menu = document.getElementById('avatar-context-menu');
-            
-            // Update toggle text based on current state
-            const toggleItem = menu.querySelector('[data-action="toggle-activation"]');
-            const hotkeyData = avatarHotkeys.get(avatarId);
-            const isEnabled = hotkeyData?.enabled || false;
-            toggleItem.textContent = isEnabled ? '✓ Activation Enabled' : '○ Activation Disabled';
-            
-            // Update lock text based on current state
-            const lockItem = menu.querySelector('[data-action="toggle-lock"]');
-            const isLocked = hardLockedAvatars.has(avatarId);
-            lockItem.textContent = isLocked ? '🔓 Unlock' : '🔒 Hard Lock';
-            
-            // Show menu temporarily to get dimensions
-            menu.style.display = 'block';
-            const menuRect = menu.getBoundingClientRect();
-            
-            // Calculate position with boundary checking
-            let left = e.clientX;
-            let top = e.clientY;
-            
-            // Check right edge
-            if (left + menuRect.width > window.innerWidth) {
-                left = window.innerWidth - menuRect.width - 10;
-            }
-            
-            // Check bottom edge
-            if (top + menuRect.height > window.innerHeight) {
-                top = window.innerHeight - menuRect.height - 10;
-            }
-            
-            // Check left edge
-            if (left < 0) {
-                left = 10;
-            }
-            
-            // Check top edge
-            if (top < 0) {
-                top = 10;
-            }
-            
-            menu.style.left = left + 'px';
-            menu.style.top = top + 'px';
-            menu.classList.add('active');
-        }
+        // Move from pending to active players
+        room.players.set(data.socketId, pendingPlayer);
+        room.pendingPlayers.delete(data.socketId);
         
-        function assignHotkeyToAvatar() {
-            if (!currentContextAvatarId) return;
-            
-            const content = document.createElement('div');
-            content.innerHTML = `
-                <p style="margin-bottom: 15px;">Press any key to assign as activation hotkey...</p>
-                <p style="font-size: 14px; color: var(--text-secondary);">ESC to cancel</p>
-            `;
-            
-            showModal('Assign Activation Key', content, []);
-            
-            // Capture next keypress
-            const handleKeyCapture = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                if (e.key === 'Escape') {
-                    document.getElementById('modal-overlay').classList.remove('active');
-                    document.removeEventListener('keydown', handleKeyCapture);
-                    return;
-                }
-                
-                const key = e.key.toUpperCase();
-                
-                // Store hotkey assignment
-                avatarHotkeys.set(currentContextAvatarId, {
-                    key: key,
-                    enabled: true
-                });
-                
-                // Broadcast assignment
-                if (socket) {
-                    socket.emit('hotkey-assigned', {
-                        avatarId: currentContextAvatarId,
-                        key: key,
-                        enabled: true
-                    });
-                }
-                
-                document.getElementById('modal-overlay').classList.remove('active');
-                document.removeEventListener('keydown', handleKeyCapture);
-                
-                showModal(
-                    'Hotkey Assigned',
-                    `Activation key set to: <strong>${key}</strong>`,
-                    [{ text: 'OK', class: 'cancel' }]
-                );
-            };
-            
-            document.addEventListener('keydown', handleKeyCapture);
-            document.getElementById('avatar-context-menu').classList.remove('active');
-        }
+        // Join the socket.io room
+        pendingPlayer.socket.join(currentRoom);
         
-        function toggleActivation() {
-            if (!currentContextAvatarId) return;
-            
-            const avatarData = avatars.get(currentContextAvatarId);
-            if (!avatarData) return;
-            
-            const hotkeyData = avatarHotkeys.get(currentContextAvatarId);
-            const newState = !hotkeyData?.enabled;
-            
-            if (!hotkeyData) {
-                showModal(
-                    'No Hotkey Assigned',
-                    'Please assign an activation key first.',
-                    [{ text: 'OK', class: 'cancel' }]
-                );
-                document.getElementById('avatar-context-menu').classList.remove('active');
-                return;
-            }
-            
-            avatarHotkeys.set(currentContextAvatarId, {
-                ...hotkeyData,
-                enabled: newState
-            });
-            
-            // Broadcast toggle
-            if (socket) {
-                socket.emit('hotkey-toggled', {
-                    avatarId: currentContextAvatarId,
-                    enabled: newState
-                });
-            }
-            
-            document.getElementById('avatar-context-menu').classList.remove('active');
-        }
+        console.log(`Host admitted ${data.socketId} to room ${currentRoom}`);
         
-        function removeAvatar() {
-            if (!currentContextAvatarId) return;
-            
-            const avatarData = avatars.get(currentContextAvatarId);
-            if (!avatarData) return;
-            
-            avatarData.element.remove();
-            avatars.delete(currentContextAvatarId);
-            avatarHotkeys.delete(currentContextAvatarId);
-            activeAvatars.delete(currentContextAvatarId);
-            
-            // Broadcast removal
-            if (socket) {
-                socket.emit('avatar-removed', { avatarId: currentContextAvatarId });
-            }
-            
-            document.getElementById('avatar-context-menu').classList.remove('active');
-        }
+        // Tell the player they're admitted
+        pendingPlayer.socket.emit('admitted', {
+            isHost: false,
+            players: Array.from(room.players.entries()).map(([sid, p]) => ({
+                socketId: sid,
+                name: p.name
+            }))
+        });
         
-        function setAlternateImage() {
-            if (!currentContextAvatarId) return;
-            
-            // Store which avatar we're setting alternate for
-            document.getElementById('alternate-image-input').dataset.avatarId = currentContextAvatarId;
-            document.getElementById('alternate-image-input').click();
-            document.getElementById('avatar-context-menu').classList.remove('active');
-        }
+        // Notify all players (including the host)
+        socket.to(currentRoom).emit('player-joined', {
+            socketId: data.socketId,
+            name: pendingPlayer.name
+        });
+    });
+    
+    // Host denies a player
+    socket.on('deny-player', (data) => {
+        if (!currentRoom) return;
+        const room = rooms.get(currentRoom);
+        if (!room || room.host !== socket.id) return; // Only host can deny
         
-        function handleAlternateImageUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const avatarId = event.target.dataset.avatarId;
-            if (!avatarId) return;
-            
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const avatarData = avatars.get(avatarId);
-                if (!avatarData) return;
-                
-                // Store alternate image
-                avatarData.alternateImage = e.target.result;
-                
-                // Broadcast to other players
-                if (socket) {
-                    socket.emit('avatar-alternate-set', {
-                        avatarId: avatarId,
-                        alternateSrc: e.target.result
-                    });
-                }
-                
-                showModal(
-                    'Alternate Image Set',
-                    'Avatar will swap to this image when activated!',
-                    [{ text: 'OK', class: 'cancel' }]
-                );
-            };
-            reader.readAsDataURL(file);
-            
-            // Reset input
-            event.target.value = '';
-        }
+        const pendingPlayer = room.pendingPlayers.get(data.socketId);
+        if (!pendingPlayer) return;
         
-        function setName() {
-            if (!currentContextAvatarId) return;
-            
-            const avatarData = avatars.get(currentContextAvatarId);
-            if (!avatarData) return;
-            
-            // Check if name banner already exists
-            let nameBanner = avatarData.element.querySelector('.avatar-name-banner');
-            
-            if (!nameBanner) {
-                // Create name banner
-                nameBanner = document.createElement('div');
-                nameBanner.className = 'avatar-name-banner';
-                nameBanner.contentEditable = false;
-                
-                // Double-click to edit
-                nameBanner.addEventListener('dblclick', (e) => {
-                    e.stopPropagation();
-                    nameBanner.contentEditable = true;
-                    nameBanner.focus();
-                    
-                    // Select all text
-                    const range = document.createRange();
-                    range.selectNodeContents(nameBanner);
-                    const sel = window.getSelection();
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                });
-                
-                // Save on blur or Enter
-                nameBanner.addEventListener('blur', () => {
-                    nameBanner.contentEditable = false;
-                    const name = nameBanner.textContent.trim();
-                    
-                    // Broadcast name change
-                    if (socket) {
-                        socket.emit('avatar-name-set', {
-                            avatarId: currentContextAvatarId,
-                            name: name
-                        });
-                    }
-                });
-                
-                nameBanner.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        nameBanner.blur();
-                    } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        nameBanner.blur();
-                    }
-                });
-                
-                avatarData.element.appendChild(nameBanner);
-            }
-            
-            // Focus and enable editing
-            nameBanner.contentEditable = true;
-            nameBanner.focus();
-            
-            // Select all text if not empty
-            if (nameBanner.textContent) {
-                const range = document.createRange();
-                range.selectNodeContents(nameBanner);
-                const sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(range);
-            }
-            
-            document.getElementById('avatar-context-menu').classList.remove('active');
-        }
+        room.pendingPlayers.delete(data.socketId);
         
-        function toggleLock() {
-            if (!currentContextAvatarId) return;
-            
-            const avatarData = avatars.get(currentContextAvatarId);
-            if (!avatarData) return;
-            
-            const isLocked = hardLockedAvatars.has(currentContextAvatarId);
-            
-            if (isLocked) {
-                hardLockedAvatars.delete(currentContextAvatarId);
-                avatarData.element.style.cursor = 'move';
-                avatarData.element.style.opacity = '1';
-            } else {
-                hardLockedAvatars.add(currentContextAvatarId);
-                avatarData.element.style.cursor = 'not-allowed';
-                avatarData.element.style.opacity = '0.9';
-            }
-            
-            // Broadcast lock state
-            if (socket) {
-                socket.emit('avatar-lock-toggle', {
-                    avatarId: currentContextAvatarId,
-                    locked: !isLocked
-                });
-            }
-            
-            document.getElementById('avatar-context-menu').classList.remove('active');
-        }
+        console.log(`Host denied ${data.socketId} from room ${currentRoom}`);
         
-        // ===== BOARD HEADER =====
-        function setBoardHeader() {
-            showModal(
-                'Set Board Header',
-                '<input type="text" id="header-input" placeholder="Enter board header..." style="width: 100%; padding: 10px; font-size: 16px; font-family: \'Times New Roman\', Times, serif; background: var(--bg-secondary); color: var(--text-primary); border: 2px solid var(--accent-gold); border-radius: 4px;">',
-                [
-                    { 
-                        text: 'Set Header', 
-                        class: '', 
-                        callback: () => {
-                            const input = document.getElementById('header-input');
-                            const headerText = input ? input.value.trim() : '';
-                            updateBoardHeader(headerText);
-                        }
-                    },
-                    { text: 'Cancel', class: 'cancel' }
-                ]
-            );
-            
-            // Focus input after modal opens
-            setTimeout(() => {
-                const input = document.getElementById('header-input');
-                if (input) {
-                    const currentHeader = document.getElementById('board-header');
-                    if (currentHeader) {
-                        input.value = currentHeader.textContent;
-                    }
-                    input.focus();
-                    input.select();
-                }
-            }, 100);
-        }
-        
-        function updateBoardHeader(text) {
-            const header = document.getElementById('board-header');
-            if (!header) return;
-            
-            header.textContent = text;
-            
-            // Broadcast to other players
-            if (socket) {
-                socket.emit('board-header-update', { text: text });
-            }
-        }
-        
-        function setupBoardHeaderEditing() {
-            const header = document.getElementById('board-header');
-            if (!header) return;
-            
-            // Double-click to edit
-            header.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                setBoardHeader();
-            });
-        }
-        
-        // ===== SESSION SAVE/LOAD =====
-        function saveSession() {
-            const sessionData = {
-                version: "1.0",
-                channelId: roomId,
-                savedAt: new Date().toISOString(),
-                boardHeader: document.getElementById('board-header')?.textContent || '',
-                avatars: [],
-                hostAvatar: null,
-                images: []
-            };
-            
-            // Save player avatars
-            avatars.forEach((data, avatarId) => {
-                if (avatarId === 'host') return; // Skip host, handle separately
-                
-                const portraitImg = data.element.querySelector('.character-portrait');
-                const nameBanner = data.element.querySelector('.avatar-name-banner');
-                const hotkeyData = avatarHotkeys.get(avatarId);
-                
-                const avatarSave = {
-                    id: avatarId,
-                    src: portraitImg ? portraitImg.src : null,
-                    alternateSrc: data.alternateImage || null,
-                    originalSrc: data.originalImage || null,
-                    x: data.x || parseInt(data.element.style.left),
-                    y: data.y || parseInt(data.element.style.top),
-                    width: data.width || 200,
-                    height: data.height || 250,
-                    name: nameBanner ? nameBanner.textContent : '',
-                    flipped: data.element.classList.contains('flipped'),
-                    locked: hardLockedAvatars.has(avatarId),
-                    hotkey: hotkeyData ? {
-                        key: hotkeyData.key,
-                        enabled: hotkeyData.enabled
-                    } : null
-                };
-                
-                sessionData.avatars.push(avatarSave);
-            });
-            
-            // Save host avatar
-            const hostData = avatars.get('host');
-            if (hostData) {
-                const portraitImg = hostData.element.querySelector('.character-portrait');
-                const nameBanner = hostData.element.querySelector('.avatar-name-banner');
-                const hotkeyData = avatarHotkeys.get('host');
-                
-                sessionData.hostAvatar = {
-                    src: portraitImg ? portraitImg.src : null,
-                    alternateSrc: hostData.alternateImage || null,
-                    originalSrc: hostData.originalImage || null,
-                    name: nameBanner ? nameBanner.textContent : '',
-                    flipped: hostData.element.classList.contains('flipped'),
-                    locked: hardLockedAvatars.has('host'),
-                    hotkey: hotkeyData ? {
-                        key: hotkeyData.key,
-                        enabled: hotkeyData.enabled
-                    } : null
-                };
-            }
-            
-            // Save scene images
-            images.forEach((data, imageId) => {
-                const imgElement = data.element.querySelector('img');
-                sessionData.images.push({
-                    id: imageId,
-                    src: imgElement ? imgElement.src : data.src,
-                    x: data.x || parseInt(data.element.style.left),
-                    y: data.y || parseInt(data.element.style.top),
-                    width: data.width || parseInt(data.element.style.width),
-                    height: data.height || parseInt(data.element.style.height),
-                    locked: hardLockedAvatars.has(imageId)
-                });
-            });
-            
-            // Create download
-            const dataStr = JSON.stringify(sessionData, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(dataBlob);
-            
-            const downloadLink = document.createElement('a');
-            downloadLink.href = url;
-            downloadLink.download = `monomyth-session-${new Date().toISOString().split('T')[0]}.json`;
-            downloadLink.click();
-            
-            URL.revokeObjectURL(url);
-            
-            console.log('✓ Session saved:', sessionData);
-        }
-        
-        function loadSession() {
-            document.getElementById('load-session-input').click();
-        }
-        
-        function handleLoadSession(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const sessionData = JSON.parse(e.target.result);
-                    
-                    console.log('Loading session:', sessionData);
-                    
-                    // Clear existing state
-                    avatars.forEach((data, id) => {
-                        data.element.remove();
-                    });
-                    avatars.clear();
-                    avatarHotkeys.clear();
-                    activeAvatars.clear();
-                    
-                    images.forEach((data) => {
-                        data.element.remove();
-                    });
-                    images.clear();
-                    
-                    // Restore board header
-                    if (sessionData.boardHeader) {
-                        const header = document.getElementById('board-header');
-                        if (header) {
-                            header.textContent = sessionData.boardHeader;
-                        }
-                    }
-                    
-                    // Load scene images first (background)
-                    if (sessionData.images) {
-                        sessionData.images.forEach(imgData => {
-                            addImageToCanvas(imgData.id, imgData.src, imgData.x, imgData.y, imgData.width, imgData.height, true);
-                            
-                            // Restore lock state
-                            if (imgData.locked) {
-                                hardLockedAvatars.add(imgData.id);
-                                const imageData = images.get(imgData.id);
-                                if (imageData) {
-                                    imageData.element.style.cursor = 'not-allowed';
-                                    imageData.element.style.opacity = '0.9';
-                                }
-                            }
-                        });
-                    }
-                    
-                    // Load player avatars
-                    if (sessionData.avatars) {
-                        sessionData.avatars.forEach(avatarData => {
-                            // Create avatar element
-                            const canvas = document.getElementById('canvas');
-                            const avatar = document.createElement('div');
-                            avatar.className = 'avatar-token';
-                            avatar.style.left = avatarData.x + 'px';
-                            avatar.style.top = avatarData.y + 'px';
-                            avatar.dataset.id = avatarData.id;
-                            
-                            if (avatarData.flipped) {
-                                avatar.classList.add('flipped');
-                            }
-                            
-                            const characterImg = document.createElement('img');
-                            characterImg.className = 'character-portrait';
-                            characterImg.src = avatarData.src;
-                            avatar.appendChild(characterImg);
-                            
-                            // Add name banner if exists
-                            if (avatarData.name) {
-                                const nameBanner = document.createElement('div');
-                                nameBanner.className = 'avatar-name-banner';
-                                nameBanner.textContent = avatarData.name;
-                                nameBanner.contentEditable = false;
-                                
-                                // Add double-click editing
-                                nameBanner.addEventListener('dblclick', (e) => {
-                                    e.stopPropagation();
-                                    nameBanner.contentEditable = true;
-                                    nameBanner.focus();
-                                    const range = document.createRange();
-                                    range.selectNodeContents(nameBanner);
-                                    const sel = window.getSelection();
-                                    sel.removeAllRanges();
-                                    sel.addRange(range);
-                                });
-                                
-                                nameBanner.addEventListener('blur', () => {
-                                    nameBanner.contentEditable = false;
-                                    if (socket) {
-                                        socket.emit('avatar-name-set', {
-                                            avatarId: avatarData.id,
-                                            name: nameBanner.textContent.trim()
-                                        });
-                                    }
-                                });
-                                
-                                nameBanner.addEventListener('keydown', (e) => {
-                                    if (e.key === 'Enter' || e.key === 'Escape') {
-                                        e.preventDefault();
-                                        nameBanner.blur();
-                                    }
-                                });
-                                
-                                avatar.appendChild(nameBanner);
-                            }
-                            
-                            // Add drag handlers
-                            avatar.addEventListener('mousedown', (e) => {
-                                if (e.button === 0) startDrag(e);
-                            });
-                            
-                            // Add right-click handler
-                            avatar.addEventListener('contextmenu', (e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                showAvatarContextMenu(e, avatarData.id);
-                            });
-                            
-                            canvas.appendChild(avatar);
-                            
-                            // Store avatar data
-                            avatars.set(avatarData.id, {
-                                element: avatar,
-                                x: avatarData.x,
-                                y: avatarData.y,
-                                width: avatarData.width,
-                                height: avatarData.height,
-                                alternateImage: avatarData.alternateSrc,
-                                originalImage: avatarData.originalSrc
-                            });
-                            
-                            // Restore hotkey
-                            if (avatarData.hotkey) {
-                                avatarHotkeys.set(avatarData.id, {
-                                    key: avatarData.hotkey.key,
-                                    enabled: avatarData.hotkey.enabled
-                                });
-                            }
-                            
-                            // Restore lock state
-                            if (avatarData.locked) {
-                                hardLockedAvatars.add(avatarData.id);
-                                const storedAvatar = avatars.get(avatarData.id);
-                                if (storedAvatar) {
-                                    storedAvatar.element.style.cursor = 'not-allowed';
-                                    storedAvatar.element.style.opacity = '0.9';
-                                }
-                            }
-                        });
-                    }
-                    
-                    // Load host avatar
-                    if (sessionData.hostAvatar) {
-                        const hostData = sessionData.hostAvatar;
-                        const canvas = document.getElementById('canvas');
-                        const hostAvatar = document.createElement('div');
-                        hostAvatar.className = 'host-avatar';
-                        hostAvatar.dataset.id = 'host';
-                        
-                        if (hostData.flipped) {
-                            hostAvatar.classList.add('flipped');
-                        }
-                        
-                        const characterImg = document.createElement('img');
-                        characterImg.className = 'character-portrait';
-                        characterImg.src = hostData.src;
-                        hostAvatar.appendChild(characterImg);
-                        
-                        // Add name banner if exists
-                        if (hostData.name) {
-                            const nameBanner = document.createElement('div');
-                            nameBanner.className = 'avatar-name-banner';
-                            nameBanner.textContent = hostData.name;
-                            nameBanner.contentEditable = false;
-                            
-                            nameBanner.addEventListener('dblclick', (e) => {
-                                e.stopPropagation();
-                                nameBanner.contentEditable = true;
-                                nameBanner.focus();
-                                const range = document.createRange();
-                                range.selectNodeContents(nameBanner);
-                                const sel = window.getSelection();
-                                sel.removeAllRanges();
-                                sel.addRange(range);
-                            });
-                            
-                            nameBanner.addEventListener('blur', () => {
-                                nameBanner.contentEditable = false;
-                                if (socket) {
-                                    socket.emit('avatar-name-set', {
-                                        avatarId: 'host',
-                                        name: nameBanner.textContent.trim()
-                                    });
-                                }
-                            });
-                            
-                            nameBanner.addEventListener('keydown', (e) => {
-                                if (e.key === 'Enter' || e.key === 'Escape') {
-                                    e.preventDefault();
-                                    nameBanner.blur();
-                                }
-                            });
-                            
-                            hostAvatar.appendChild(nameBanner);
-                        }
-                        
-                        // Add drag handlers
-                        hostAvatar.addEventListener('mousedown', (e) => {
-                            if (e.button === 0) startDrag(e);
-                        });
-                        
-                        // Add right-click handler
-                        hostAvatar.addEventListener('contextmenu', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            showAvatarContextMenu(e, 'host', true);
-                        });
-                        
-                        canvas.appendChild(hostAvatar);
-                        
-                        avatars.set('host', {
-                            element: hostAvatar,
-                            alternateImage: hostData.alternateSrc,
-                            originalImage: hostData.originalSrc
-                        });
-                        
-                        // Restore hotkey
-                        if (hostData.hotkey) {
-                            avatarHotkeys.set('host', {
-                                key: hostData.hotkey.key,
-                                enabled: hostData.hotkey.enabled
-                            });
-                        }
-                        
-                        // Restore lock state
-                        if (hostData.locked) {
-                            hardLockedAvatars.add('host');
-                            const storedHost = avatars.get('host');
-                            if (storedHost) {
-                                storedHost.element.style.cursor = 'not-allowed';
-                                storedHost.element.style.opacity = '0.9';
-                            }
-                        }
-                    }
-                    
-                    showModal(
-                        'Session Loaded',
-                        `Loaded session from ${new Date(sessionData.savedAt).toLocaleString()}`,
-                        [{ text: 'OK', class: 'cancel' }]
-                    );
-                    
-                    console.log('✓ Session loaded successfully');
-                    
-                } catch (error) {
-                    console.error('Failed to load session:', error);
-                    showModal(
-                        'Load Failed',
-                        'Failed to load session file. Please check the file is valid.',
-                        [{ text: 'OK', class: 'cancel' }]
-                    );
-                }
-            };
-            
-            reader.readAsText(file);
-            event.target.value = '';
-        }
-        
-        // ===== AUTOFLIP SYSTEM =====
-        function startAutoflip() {
-            function scheduleNextFlip() {
-                // Random interval between 8-16 seconds
-                const interval = Math.random() * 8000 + 8000;
-                
-                autoflipInterval = setTimeout(() => {
-                    flipRandomAvatar();
-                    scheduleNextFlip();
-                }, interval);
-            }
-            
-            scheduleNextFlip();
-        }
-        
-        function flipRandomAvatar() {
-            const avatarIds = Array.from(avatars.keys());
-            if (avatarIds.length === 0) return;
-            
-            // Pick random avatar
-            const randomId = avatarIds[Math.floor(Math.random() * avatarIds.length)];
-            const avatarData = avatars.get(randomId);
-            if (!avatarData) return;
-            
-            // Toggle flip
-            const isFlipped = avatarData.element.classList.contains('flipped');
-            
-            if (isFlipped) {
-                avatarData.element.classList.remove('flipped');
-            } else {
-                avatarData.element.classList.add('flipped');
-            }
-            
-            // Broadcast flip
-            if (socket) {
-                socket.emit('avatar-flipped', {
-                    avatarId: randomId,
-                    flipped: !isFlipped
-                });
-            }
-        }
-        
-        // ===== PLAYER LIST & ADMIT/DENY =====
-        function updatePlayerList() {
-            const playerListEl = document.getElementById('player-list');
-            const playerCountEl = document.getElementById('player-count');
-            
-            playerCountEl.textContent = players.size;
-            
-            playerListEl.innerHTML = '';
-            players.forEach((name, socketId) => {
-                const item = document.createElement('div');
-                item.className = 'player-item';
-                if (socketId === players.keys().next().value) {
-                    // First player is host
-                    item.classList.add('host');
-                }
-                item.textContent = name || 'Player';
-                playerListEl.appendChild(item);
-            });
-        }
-        
-        function togglePlayerList() {
-            const infoBadge = document.getElementById('info-badge');
-            infoBadge.classList.toggle('expanded');
-        }
-        
-        function showAdmitDenyModal(playerName, socketId) {
-            const modal = document.getElementById('admit-modal');
-            const content = document.getElementById('admit-content');
-            
-            content.innerHTML = `
-                <p style="font-size: 16px; margin: 15px 0;">
-                    <strong>${playerName || 'A player'}</strong> wants to join the session.
-                </p>
-                <p style="font-size: 14px; color: var(--text-secondary);">
-                    Allow them to enter?
-                </p>
-            `;
-            
-            modal.classList.add('active');
-            
-            // Store pending player
-            pendingPlayer = { name: playerName, socketId: socketId };
-        }
-        
-        function handleAdmit() {
-            if (!pendingPlayer) return;
-            
-            socket.emit('admit-player', { socketId: pendingPlayer.socketId });
-            document.getElementById('admit-modal').classList.remove('active');
-            pendingPlayer = null;
-        }
-        
-        function handleDeny() {
-            if (!pendingPlayer) return;
-            
-            socket.emit('deny-player', { socketId: pendingPlayer.socketId });
-            document.getElementById('admit-modal').classList.remove('active');
-            pendingPlayer = null;
-        }
-        
-        function handleVoiceStateUpdate(voiceState) {
-            // Deprecated - using hotkeys instead
-        }
+        // Tell the player they're denied
+        pendingPlayer.socket.emit('denied');
+    });
 
-        // ===== DICE ROLLING =====
-        function rollDie(sides) {
-            const result = Math.floor(Math.random() * sides) + 1;
-            displayDiceResult(sides, result);
-            
-            // Broadcast to other players
-            if (socket) {
-                socket.emit('dice-roll', { sides, result });
-            }
-        }
+    // Dice rolling
+    socket.on('roll-die', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all players including sender
+        io.to(currentRoom).emit('dice-roll', {
+            sides: data.sides,
+            result: data.result,
+            playerId: socket.id
+        });
+        
+        console.log(`Player ${socket.id} rolled D${data.sides}: ${data.result}`);
+    });
 
-        function displayDiceResult(sides, result, playerId = 'You') {
-            const notification = document.getElementById('dice-notification');
-            
-            notification.innerHTML = `
-                <div class="result-value">${result}</div>
-                <div class="result-label">D${sides} • ${playerId}</div>
-            `;
-            
-            notification.classList.add('show');
-            
-            setTimeout(() => {
-                notification.classList.remove('show');
-            }, 2000);
-        }
-
-        // ===== IMAGE UPLOAD & MOVEMENT =====
-        function handleHostAvatarUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            // Remove existing host avatar if any
-            const existingHost = document.querySelector('.host-avatar');
-            if (existingHost) {
-                existingHost.remove();
-                avatars.delete('host');
-                avatarHotkeys.delete('host');
-                activeAvatars.delete('host');
-            }
-            
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const canvas = document.getElementById('canvas');
-                const hostAvatar = document.createElement('div');
-                hostAvatar.className = 'host-avatar';
-                hostAvatar.dataset.id = 'host';
-                
-                const characterImg = document.createElement('img');
-                characterImg.className = 'character-portrait';
-                characterImg.src = e.target.result;
-                hostAvatar.appendChild(characterImg);
-                
-                // Add drag handlers
-                hostAvatar.addEventListener('mousedown', (e) => {
-                    if (e.button === 0) { // Left click
-                        startDrag(e);
-                    }
-                });
-                
-                // Add right-click handler
-                hostAvatar.addEventListener('contextmenu', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    showAvatarContextMenu(e, 'host', true);
-                });
-                
-                canvas.appendChild(hostAvatar);
-                
-                // Store host avatar data
-                avatars.set('host', {
-                    element: hostAvatar
-                });
-                
-                // Broadcast to other players
-                if (socket) {
-                    socket.emit('add-host-avatar', { src: e.target.result });
-                }
-            };
-            reader.readAsDataURL(file);
-            
-            // Reset input
-            event.target.value = '';
-        }
-
-        function handlePlayerAvatarUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const id = Date.now().toString();
-                    addAvatarToStage(id, e.target.result, true);
-                    
-                    // Broadcast to other players
-                    if (socket) {
-                        socket.emit('add-avatar', { id, src: e.target.result });
-                    }
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-            
-            // Reset input
-            event.target.value = '';
-        }
-
-        function addAvatarToStage(id, src, isLocal = true) {
-            const canvas = document.getElementById('canvas');
-            const canvasWidth = canvas.clientWidth;
-            const canvasHeight = canvas.clientHeight;
-            
-            // Avatar size (250 height x 200 width)
-            const avatarWidth = 200;
-            const avatarHeight = 250;
-            
-            // Position in lower third, centered, alternating left/right
-            const avatarCount = avatars.size;
-            const spacing = 240; // Space between avatars
-            
-            // Calculate position
-            let x, y;
-            y = canvasHeight - avatarHeight - 100; // Lower third, 100px from bottom
-            
-            if (avatarCount === 0) {
-                // First avatar: dead center
-                x = (canvasWidth - avatarWidth) / 2;
-            } else {
-                // Alternate left and right
-                const offset = Math.ceil(avatarCount / 2) * spacing;
-                if (avatarCount % 2 === 1) {
-                    // Odd number: go left
-                    x = (canvasWidth / 2) - offset - (avatarWidth / 2);
-                } else {
-                    // Even number: go right
-                    x = (canvasWidth / 2) + offset - (avatarWidth / 2);
-                }
-            }
-            
-            // Create avatar element
-            const avatar = document.createElement('div');
-            avatar.className = 'avatar-token';
-            avatar.style.left = x + 'px';
-            avatar.style.top = y + 'px';
-            avatar.dataset.id = id;
-            
-            const characterImg = document.createElement('img');
-            characterImg.className = 'character-portrait';
-            characterImg.src = src;
-            avatar.appendChild(characterImg);
-            
-            // Add drag handlers
-            avatar.addEventListener('mousedown', (e) => {
-                if (e.button === 0) { // Left click
-                    startDrag(e);
-                }
-            });
-            
-            // Add right-click handler
-            avatar.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                showAvatarContextMenu(e, id);
-            });
-            
-            canvas.appendChild(avatar);
-            avatars.set(id, { 
-                element: avatar, 
-                x, 
-                y, 
-                width: avatarWidth, 
-                height: avatarHeight
-            });
-        }
-
-        function handleImageUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const id = Date.now().toString();
-                    const canvas = document.getElementById('canvas');
-                    const canvasWidth = canvas.clientWidth;
-                    const canvasHeight = canvas.clientHeight;
-                    
-                    // Calculate dimensions to fill canvas while maintaining aspect ratio
-                    const imgAspect = img.width / img.height;
-                    const canvasAspect = canvasWidth / canvasHeight;
-                    
-                    let width, height;
-                    if (imgAspect > canvasAspect) {
-                        // Image is wider than canvas - fit to width
-                        width = canvasWidth;
-                        height = canvasWidth / imgAspect;
-                    } else {
-                        // Image is taller than canvas - fit to height
-                        height = canvasHeight;
-                        width = canvasHeight * imgAspect;
-                    }
-                    
-                    // Center the image
-                    const x = (canvasWidth - width) / 2;
-                    const y = (canvasHeight - height) / 2;
-                    
-                    addImageToCanvas(id, e.target.result, x, y, width, height, true);
-                    
-                    // Auto-lock scene images
-                    hardLockedAvatars.add(id);
-                    const imageData = images.get(id);
-                    if (imageData) {
-                        imageData.element.style.cursor = 'not-allowed';
-                        imageData.element.style.opacity = '0.9';
-                    }
-                    
-                    // Broadcast to other players
-                    if (socket) {
-                        socket.emit('add-image', { id, src: e.target.result, x, y, width, height, locked: true });
-                    }
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-            
-            // Reset input
-            event.target.value = '';
-        }
-
-        function addImageToCanvas(id, src, x, y, width, height, isLocal = true) {
-            const canvas = document.getElementById('canvas');
-            const token = document.createElement('div');
-            token.className = 'image-token';
-            token.style.left = x + 'px';
-            token.style.top = y + 'px';
-            token.style.width = width + 'px';
-            token.style.height = height + 'px';
-            token.dataset.id = id;
-            
-            const img = document.createElement('img');
-            img.src = src;
-            token.appendChild(img);
-            
-            // Add drag handlers
-            token.addEventListener('mousedown', startDrag);
-            
-            canvas.appendChild(token);
-            images.set(id, { element: token, x, y, width, height });
-        }
-
-        // ===== GRID SNAPPING SYSTEM =====
-        function calculateSnapGrid() {
-            const canvas = document.getElementById('canvas');
-            const canvasRect = canvas.getBoundingClientRect();
-            
-            snapGrid.rows = [];
-            snapGrid.cols = [];
-            
-            // Calculate row positions (5 rows)
-            for (let i = 0; i <= GRID_ROWS; i++) {
-                snapGrid.rows.push((canvasRect.height / GRID_ROWS) * i);
-            }
-            
-            // Calculate column positions (10 columns)
-            for (let i = 0; i <= GRID_COLS; i++) {
-                snapGrid.cols.push((canvasRect.width / GRID_COLS) * i);
-            }
+    // Image upload and movement
+    socket.on('add-image', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room) {
+            room.images.set(data.id, data);
         }
         
-        function snapToGrid(x, y, width, height) {
-            // Calculate CENTER of avatar for snapping
-            const centerX = x + (width / 2);
-            const centerY = y + (height / 2);
-            
-            // Find nearest column for CENTER
-            let nearestCol = snapGrid.cols[0];
-            let minColDist = Math.abs(centerX - nearestCol);
-            
-            for (let col of snapGrid.cols) {
-                const dist = Math.abs(centerX - col);
-                if (dist < minColDist) {
-                    minColDist = dist;
-                    nearestCol = col;
-                }
-            }
-            
-            // Find nearest row for CENTER
-            let nearestRow = snapGrid.rows[0];
-            let minRowDist = Math.abs(centerY - nearestRow);
-            
-            for (let row of snapGrid.rows) {
-                const dist = Math.abs(centerY - row);
-                if (dist < minRowDist) {
-                    minRowDist = dist;
-                    nearestRow = row;
-                }
-            }
-            
-            // Soft snap threshold (50px from center) - increased for better usability
-            const SNAP_THRESHOLD = 50;
-            
-            let finalCenterX = minColDist < SNAP_THRESHOLD ? nearestCol : centerX;
-            let finalCenterY = minRowDist < SNAP_THRESHOLD ? nearestRow : centerY;
-            
-            // Convert back to top-left position
-            const snappedX = finalCenterX - (width / 2);
-            const snappedY = finalCenterY - (height / 2);
-            
-            return { x: snappedX, y: snappedY };
+        // Broadcast to all other players
+        socket.to(currentRoom).emit('image-added', data);
+        
+        console.log(`Player ${socket.id} added image ${data.id}`);
+    });
+
+    socket.on('move-image', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room && room.images.has(data.id)) {
+            const img = room.images.get(data.id);
+            img.x = data.x;
+            img.y = data.y;
         }
         
-        // ===== DRAG SYSTEM =====
-        function startDrag(e) {
-            const target = e.currentTarget;
-            const targetId = target.dataset.id;
-            
-            // Check if avatar is hard locked
-            if (targetId && hardLockedAvatars.has(targetId)) {
-                return; // Don't allow dragging
-            }
-            
-            draggedImage = target;
-            draggedImage.classList.add('dragging');
-            
-            const rect = draggedImage.getBoundingClientRect();
-            dragOffset.x = e.clientX - rect.left;
-            dragOffset.y = e.clientY - rect.top;
-            
-            document.addEventListener('mousemove', drag);
-            document.addEventListener('mouseup', stopDrag);
-        }
+        // Broadcast to all other players
+        socket.to(currentRoom).emit('image-moved', data);
+    });
 
-        function drag(e) {
-            if (!draggedImage) return;
-            
-            const canvas = document.getElementById('canvas');
-            const canvasRect = canvas.getBoundingClientRect();
-            
-            let x = e.clientX - canvasRect.left - dragOffset.x;
-            let y = e.clientY - canvasRect.top - dragOffset.y;
-            
-            // Check if this is an avatar (has name banner)
-            const isAvatar = draggedImage.classList.contains('avatar-token') || 
-                           draggedImage.classList.contains('host-avatar');
-            
-            // Constrain to canvas
-            x = Math.max(0, Math.min(x, canvasRect.width - draggedImage.offsetWidth));
-            
-            // For avatars, account for name banner below (-35px for player, -45px for host)
-            if (isAvatar) {
-                const bannerOffset = draggedImage.classList.contains('host-avatar') ? 45 : 35;
-                y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight - bannerOffset));
-            } else {
-                y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight));
-            }
-            
-            draggedImage.style.left = x + 'px';
-            draggedImage.style.top = y + 'px';
+    // Avatar upload and movement
+    socket.on('add-avatar', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room) {
+            room.avatars.set(data.id, data);
         }
+        
+        // Broadcast to all other players
+        socket.to(currentRoom).emit('avatar-added', data);
+        
+        console.log(`Player ${socket.id} added avatar ${data.id}`);
+    });
 
-        function stopDrag(e) {
-            if (!draggedImage) return;
-            
-            const id = draggedImage.dataset.id;
-            let x = parseFloat(draggedImage.style.left);
-            let y = parseFloat(draggedImage.style.top);
-            
-            draggedImage.classList.remove('dragging');
-            
-            // Apply grid snapping for avatars
-            const isAvatar = draggedImage.classList.contains('avatar-token') || 
-                           draggedImage.classList.contains('host-avatar');
-            
-            if (isAvatar) {
-                const width = draggedImage.offsetWidth;
-                const height = draggedImage.offsetHeight;
-                const snapped = snapToGrid(x, y, width, height);
-                x = snapped.x;
-                y = snapped.y;
+    socket.on('move-avatar', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room && room.avatars.has(data.id)) {
+            const avatar = room.avatars.get(data.id);
+            avatar.x = data.x;
+            avatar.y = data.y;
+        }
+        
+        // Broadcast to all other players
+        socket.to(currentRoom).emit('avatar-moved', data);
+    });
+
+    // Host avatar upload handler
+    socket.on('add-host-avatar', (data) => {
+        if (!currentRoom) return;
+        
+        const room = rooms.get(currentRoom);
+        if (room) {
+            room.hostAvatar = data.src;
+        }
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('host-avatar-added', data);
+        
+        console.log(`Player ${socket.id} added host avatar`);
+    });
+
+    // Hotkey assignment handler
+    socket.on('hotkey-assigned', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('hotkey-assigned', data);
+        
+        console.log(`Avatar ${data.avatarId} assigned hotkey ${data.key}`);
+    });
+
+    // Hotkey toggle handler
+    socket.on('hotkey-toggled', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('hotkey-toggled', data);
+        
+        console.log(`Avatar ${data.avatarId} hotkey activation: ${data.enabled}`);
+    });
+
+    // Avatar activation handler
+    socket.on('avatar-activated', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-activated', data);
+    });
+
+    // Avatar removal handler
+    socket.on('avatar-removed', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-removed', data);
+        
+        console.log(`Avatar ${data.avatarId} removed`);
+    });
+    
+    // Avatar flip handler
+    socket.on('avatar-flipped', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-flipped', data);
+    });
+    
+    // Avatar alternate image handler
+    socket.on('avatar-alternate-set', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-alternate-set', data);
+        
+        console.log(`Avatar ${data.avatarId} alternate image set`);
+    });
+    
+    // Avatar name handler
+    socket.on('avatar-name-set', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-name-set', data);
+        
+        console.log(`Avatar ${data.avatarId} named: ${data.name}`);
+    });
+    
+    // Avatar lock handler
+    socket.on('avatar-lock-toggle', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-lock-toggle', data);
+        
+        console.log(`Avatar ${data.avatarId} lock: ${data.locked}`);
+    });
+    
+    // Board header handler
+    socket.on('board-header-update', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('board-header-update', data);
+        
+        console.log(`Board header updated: ${data.text}`);
+    });
+
+    socket.on('disconnect', () => {
+        // Remove player from all rooms
+        rooms.forEach((room, roomId) => {
+            // Remove from active players
+            if (room.players && room.players.has(socket.id)) {
+                const wasHost = room.host === socket.id;
+                room.players.delete(socket.id);
                 
-                draggedImage.style.left = x + 'px';
-                draggedImage.style.top = y + 'px';
-            }
-            
-            // Update local storage
-            const imageData = images.get(id);
-            if (imageData) {
-                imageData.x = x;
-                imageData.y = y;
-            }
-            
-            const avatarData = avatars.get(id);
-            if (avatarData) {
-                avatarData.x = x;
-                avatarData.y = y;
-            }
-            
-            // Broadcast to other players
-            if (socket) {
-                if (isAvatar) {
-                    socket.emit('move-avatar', { id, x, y });
-                } else {
-                    socket.emit('move-image', { id, x, y });
+                // Notify remaining players
+                io.to(roomId).emit('player-left', {
+                    socketId: socket.id
+                });
+                
+                // Handle host leaving
+                if (wasHost && room.players.size > 0) {
+                    // Transfer host to next player
+                    const newHost = room.players.keys().next().value;
+                    room.host = newHost;
+                    console.log(`Host transferred to ${newHost} in room ${roomId}`);
+                    
+                    // Notify new host
+                    const newHostSocket = room.players.get(newHost)?.socket;
+                    if (newHostSocket) {
+                        newHostSocket.emit('you-are-host');
+                        // Mark them as host
+                        io.to(roomId).emit('host-changed', { newHost: newHost });
+                    }
+                }
+                
+                // Clean up empty rooms
+                if (room.players.size === 0) {
+                    rooms.delete(roomId);
+                    console.log(`Room ${roomId} deleted (empty)`);
                 }
             }
             
-            draggedImage = null;
-            document.removeEventListener('mousemove', drag);
-            document.removeEventListener('mouseup', stopDrag);
-        }
+            // Remove from pending players
+            if (room.pendingPlayers && room.pendingPlayers.has(socket.id)) {
+                room.pendingPlayers.delete(socket.id);
+            }
+        });
+        console.log('Player disconnected:', socket.id);
+    });
+});
 
-        function moveImage(id, x, y, isLocal = true) {
-            const imageData = images.get(id);
-            if (!imageData) return;
-            
-            imageData.element.style.left = x + 'px';
-            imageData.element.style.top = y + 'px';
-            imageData.x = x;
-            imageData.y = y;
-        }
-    </script>
-</body>
-</html>
+httpServer.listen(PORT, () => {
+    console.log(`🎮 Monomyth VTT server running on port ${PORT}`);
+    console.log(`📡 Admit/Deny system enabled`);
+});
