@@ -29,177 +29,126 @@
         }
         
         .container {
-            display: flex;
+            width: 100vw;
             height: 100vh;
-        }
-        
-        /* Left Panel - Dice & Controls */
-        .left-panel {
-            width: 280px;
-            background: var(--bg-panel);
-            border-right: 2px solid var(--accent-gold);
-            padding: 20px;
-            overflow-y: auto;
-        }
-        
-        .info {
-            margin-bottom: 20px;
-            padding: 15px;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            font-size: 14px;
-        }
-        
-        .info h3 {
-            margin-bottom: 10px;
-            color: var(--accent-gold);
-            font-size: 16px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        /* Dice Container */
-        .dice-container {
-            margin-top: 20px;
-        }
-        
-        .dice-container h3 {
-            margin-bottom: 15px;
-            color: var(--accent-gold);
-            font-size: 16px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .dice-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            margin-bottom: 15px;
-        }
-        
-        .die-button {
-            background: linear-gradient(135deg, var(--bg-secondary) 0%, #1a1a1a 100%);
-            border: 2px solid var(--accent-gold);
-            border-radius: 4px;
-            padding: 12px 8px;
-            color: var(--accent-gold);
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 14px;
-            text-transform: uppercase;
-        }
-        
-        .die-button:hover {
-            background: linear-gradient(135deg, var(--accent-gold) 0%, #b8941f 100%);
-            color: #000;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(212, 175, 55, 0.3);
-        }
-        
-        .die-button:active {
-            transform: scale(0.95);
-        }
-        
-        .dice-result {
-            margin-top: 15px;
-            padding: 15px;
-            background: var(--bg-secondary);
-            border: 2px solid var(--accent-gold);
-            border-radius: 4px;
-            text-align: center;
-            min-height: 60px;
-        }
-        
-        .dice-result.rolling {
-            animation: pulse 0.5s ease-in-out;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { 
-                border-color: var(--accent-gold);
-                box-shadow: 0 0 0 rgba(212, 175, 55, 0);
-            }
-            50% { 
-                border-color: var(--accent-red);
-                box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
-            }
-        }
-        
-        .result-value {
-            font-size: 32px;
-            font-weight: bold;
-            color: var(--accent-gold);
-        }
-        
-        .result-label {
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-top: 5px;
-            text-transform: uppercase;
-        }
-        
-        /* Upload Sections */
-        .upload-section {
-            margin-top: 20px;
-        }
-        
-        .upload-section h3 {
-            margin-bottom: 10px;
-            color: var(--accent-gold);
-            font-size: 16px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .file-input-wrapper {
             position: relative;
-            overflow: hidden;
-            display: inline-block;
-            width: 100%;
-            margin-bottom: 10px;
         }
         
-        .file-input-wrapper input[type=file] {
+        /* Info Badge - Top Right */
+        .info-badge {
             position: absolute;
-            left: -9999px;
-        }
-        
-        .file-input-label {
-            display: block;
-            padding: 10px;
-            background: var(--bg-secondary);
+            top: 20px;
+            right: 20px;
+            background: var(--bg-panel);
             border: 2px solid var(--accent-gold);
-            color: var(--accent-gold);
-            text-align: center;
             border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
+            padding: 12px 16px;
             font-size: 12px;
             text-transform: uppercase;
-            transition: all 0.2s;
+            letter-spacing: 1px;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
         }
         
-        .file-input-label:hover {
+        .info-badge div {
+            margin: 4px 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Context Menu */
+        .context-menu {
+            position: absolute;
+            background: var(--bg-panel);
+            border: 2px solid var(--accent-gold);
+            border-radius: 4px;
+            padding: 8px 0;
+            min-width: 200px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+            display: none;
+            z-index: 10000;
+        }
+        
+        .context-menu.active {
+            display: block;
+        }
+        
+        .context-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            color: var(--text-primary);
+            font-size: 14px;
+            transition: all 0.2s;
+            position: relative;
+        }
+        
+        .context-item:hover {
             background: var(--accent-gold);
             color: #000;
         }
         
-        .file-input-label.avatar-upload {
-            border-color: var(--accent-red);
-            color: var(--accent-red);
+        .context-divider {
+            height: 1px;
+            background: var(--border-color);
+            margin: 4px 0;
         }
         
-        .file-input-label.avatar-upload:hover {
-            background: var(--accent-red);
-            color: #fff;
+        .submenu {
+            display: none;
+            position: absolute;
+            left: 100%;
+            top: 0;
+            background: var(--bg-panel);
+            border: 2px solid var(--accent-gold);
+            border-radius: 4px;
+            padding: 8px 0;
+            min-width: 120px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+        }
+        
+        .context-item:hover > .submenu {
+            display: block;
+        }
+        
+        /* Dice Notification */
+        .dice-notification {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            background: var(--bg-panel);
+            border: 3px solid var(--accent-gold);
+            border-radius: 8px;
+            padding: 30px 50px;
+            text-align: center;
+            z-index: 9999;
+            box-shadow: 0 0 40px rgba(212, 175, 55, 0.6);
+            pointer-events: none;
+            transition: transform 0.3s ease;
+        }
+        
+        .dice-notification.show {
+            transform: translate(-50%, -50%) scale(1);
+        }
+        
+        .dice-notification .result-value {
+            font-size: 72px;
+            font-weight: bold;
+            color: var(--accent-gold);
+            text-shadow: 0 0 20px rgba(212, 175, 55, 0.8);
+        }
+        
+        .dice-notification .result-label {
+            font-size: 18px;
+            color: var(--text-secondary);
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
         
         /* Canvas Area - The Stage */
         .canvas-area {
-            flex: 1;
+            width: 100%;
+            height: 100%;
             position: relative;
             background: radial-gradient(ellipse at center, #2a2a2a 0%, var(--bg-primary) 70%);
             overflow: hidden;
@@ -275,53 +224,94 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
+            border-radius: 6px;
+        }
+        
+        /* Host Avatar - Special Styling */
+        .host-avatar {
+            position: absolute;
+            top: 80px;
+            left: 40px;
+            width: 120px;
+            height: 120px;
+            border: 3px solid var(--accent-red);
+            border-radius: 50%;
+            box-shadow: 0 0 30px rgba(139, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.8);
+            z-index: 50;
+            cursor: move;
+            user-select: none;
+            animation: float 4s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0px);
+            }
+            50% {
+                transform: translateY(-20px);
+            }
+        }
+        
+        .host-avatar:hover {
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 40px rgba(212, 175, 55, 0.8), 0 4px 12px rgba(0, 0, 0, 0.8);
+            animation-play-state: paused;
+        }
+        
+        .host-avatar.dragging {
+            opacity: 0.9;
+            animation: none;
+            z-index: 1000;
+        }
+        
+        .host-avatar img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            border-radius: 50%;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="left-panel">
-            <div class="info">
-                <h3>🎭 Monomyth VTT</h3>
-                <div id="channel-info">Connecting...</div>
-                <div id="player-count" style="margin-top: 10px;">Players: 0</div>
-            </div>
-            
-            <div class="dice-container">
-                <h3>🎲 Dice</h3>
-                <div class="dice-grid">
-                    <button class="die-button" data-sides="4">D4</button>
-                    <button class="die-button" data-sides="6">D6</button>
-                    <button class="die-button" data-sides="8">D8</button>
-                    <button class="die-button" data-sides="10">D10</button>
-                    <button class="die-button" data-sides="12">D12</button>
-                    <button class="die-button" data-sides="20">D20</button>
-                    <button class="die-button" data-sides="100" style="grid-column: span 3;">D100</button>
-                </div>
-                <div class="dice-result" id="dice-result">
-                    <div class="result-label">Click a die to roll</div>
+        <!-- Context Menu -->
+        <div id="context-menu" class="context-menu">
+            <div class="context-item" data-action="dice-submenu">
+                🎲 Roll Dice →
+                <div class="submenu">
+                    <div class="context-item" data-action="roll" data-sides="4">D4</div>
+                    <div class="context-item" data-action="roll" data-sides="6">D6</div>
+                    <div class="context-item" data-action="roll" data-sides="8">D8</div>
+                    <div class="context-item" data-action="roll" data-sides="10">D10</div>
+                    <div class="context-item" data-action="roll" data-sides="12">D12</div>
+                    <div class="context-item" data-action="roll" data-sides="20">D20</div>
+                    <div class="context-item" data-action="roll" data-sides="100">D100</div>
                 </div>
             </div>
-            
-            <div class="upload-section">
-                <h3>🎭 Player Avatars</h3>
-                <div class="file-input-wrapper">
-                    <input type="file" id="avatar-upload" accept="image/png,image/jpg,image/jpeg,image/webp">
-                    <label for="avatar-upload" class="file-input-label avatar-upload">⬆ Add Character</label>
-                </div>
-            </div>
-            
-            <div class="upload-section">
-                <h3>🖼️ Scene Images</h3>
-                <div class="file-input-wrapper">
-                    <input type="file" id="image-upload" accept="image/*">
-                    <label for="image-upload" class="file-input-label">📤 Upload Image</label>
-                </div>
-            </div>
+            <div class="context-divider"></div>
+            <div class="context-item" data-action="add-player-avatar">🎭 Add Player Avatar</div>
+            <div class="context-item" data-action="add-host-avatar">👑 Add Host Avatar</div>
+            <div class="context-item" data-action="add-scene-image">🖼️ Add Scene Image</div>
         </div>
         
+        <!-- Hidden file inputs -->
+        <input type="file" id="player-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
+        <input type="file" id="host-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
+        <input type="file" id="scene-image-input" accept="image/*" style="display: none;">
+        
+        <!-- Dice Result Notification -->
+        <div id="dice-notification" class="dice-notification"></div>
+        
+        <!-- Info Badge -->
+        <div class="info-badge">
+            <div id="channel-info">Connecting...</div>
+            <div id="player-count">Players: 0</div>
+        </div>
+        
+        <!-- The Stage -->
         <div class="canvas-area" id="canvas">
-            <!-- Images will be added here -->
+            <!-- Images and avatars will be added here -->
         </div>
     </div>
 
@@ -411,6 +401,27 @@
                     moveImage(data.id, data.x, data.y, false);
                 });
 
+                socket.on('host-avatar-added', (data) => {
+                    // Remove existing host avatar if any
+                    const existingHost = document.querySelector('.host-avatar');
+                    if (existingHost) {
+                        existingHost.remove();
+                    }
+                    
+                    const canvas = document.getElementById('canvas');
+                    const hostAvatar = document.createElement('div');
+                    hostAvatar.className = 'host-avatar';
+                    
+                    const img = document.createElement('img');
+                    img.src = data.src;
+                    hostAvatar.appendChild(img);
+                    
+                    // Add drag handlers
+                    hostAvatar.addEventListener('mousedown', startDrag);
+                    
+                    canvas.appendChild(hostAvatar);
+                });
+
                 // Initial UI update
                 updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
 
@@ -431,25 +442,49 @@
         }
 
         function setupEventListeners() {
-            // Dice button listeners
-            document.querySelectorAll('.die-button').forEach(button => {
-                button.addEventListener('click', () => {
-                    const sides = parseInt(button.dataset.sides);
-                    rollDie(sides);
+            const canvas = document.getElementById('canvas');
+            const contextMenu = document.getElementById('context-menu');
+            
+            // Right-click context menu
+            canvas.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                contextMenu.style.left = e.clientX + 'px';
+                contextMenu.style.top = e.clientY + 'px';
+                contextMenu.classList.add('active');
+            });
+            
+            // Close context menu on left click
+            document.addEventListener('click', () => {
+                contextMenu.classList.remove('active');
+            });
+            
+            // Context menu actions
+            document.querySelectorAll('.context-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const action = item.dataset.action;
+                    const sides = item.dataset.sides;
+                    
+                    if (action === 'roll' && sides) {
+                        rollDie(parseInt(sides));
+                        contextMenu.classList.remove('active');
+                    } else if (action === 'add-player-avatar') {
+                        document.getElementById('player-avatar-input').click();
+                        contextMenu.classList.remove('active');
+                    } else if (action === 'add-host-avatar') {
+                        document.getElementById('host-avatar-input').click();
+                        contextMenu.classList.remove('active');
+                    } else if (action === 'add-scene-image') {
+                        document.getElementById('scene-image-input').click();
+                        contextMenu.classList.remove('active');
+                    }
                 });
             });
-
-            // Avatar upload listener
-            const avatarUpload = document.getElementById('avatar-upload');
-            if (avatarUpload) {
-                avatarUpload.addEventListener('change', handleAvatarUpload);
-            }
-
-            // Image upload listener
-            const imageUpload = document.getElementById('image-upload');
-            if (imageUpload) {
-                imageUpload.addEventListener('change', handleImageUpload);
-            }
+            
+            // File input listeners
+            document.getElementById('player-avatar-input').addEventListener('change', handlePlayerAvatarUpload);
+            document.getElementById('host-avatar-input').addEventListener('change', handleHostAvatarUpload);
+            document.getElementById('scene-image-input').addEventListener('change', handleImageUpload);
         }
 
         // ===== DICE ROLLING =====
@@ -464,19 +499,58 @@
         }
 
         function displayDiceResult(sides, result, playerId = 'You') {
-            const resultDiv = document.getElementById('dice-result');
-            resultDiv.classList.add('rolling');
+            const notification = document.getElementById('dice-notification');
             
-            resultDiv.innerHTML = `
+            notification.innerHTML = `
                 <div class="result-value">${result}</div>
                 <div class="result-label">D${sides} • ${playerId}</div>
             `;
             
-            setTimeout(() => resultDiv.classList.remove('rolling'), 500);
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 2000);
         }
 
         // ===== IMAGE UPLOAD & MOVEMENT =====
-        function handleAvatarUpload(event) {
+        function handleHostAvatarUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // Remove existing host avatar if any
+            const existingHost = document.querySelector('.host-avatar');
+            if (existingHost) {
+                existingHost.remove();
+            }
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const canvas = document.getElementById('canvas');
+                const hostAvatar = document.createElement('div');
+                hostAvatar.className = 'host-avatar';
+                
+                const img = document.createElement('img');
+                img.src = e.target.result;
+                hostAvatar.appendChild(img);
+                
+                // Add drag handlers
+                hostAvatar.addEventListener('mousedown', startDrag);
+                
+                canvas.appendChild(hostAvatar);
+                
+                // Broadcast to other players
+                if (socket) {
+                    socket.emit('add-host-avatar', { src: e.target.result });
+                }
+            };
+            reader.readAsDataURL(file);
+            
+            // Reset input
+            event.target.value = '';
+        }
+
+        function handlePlayerAvatarUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
             
