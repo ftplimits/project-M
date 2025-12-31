@@ -204,6 +204,9 @@
             user-select: none;
             z-index: 20;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
         
         .avatar-token:hover {
@@ -213,18 +216,44 @@
             z-index: 30;
         }
         
+        .avatar-token.speaking {
+            border-color: #00ff00;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.8);
+            animation: speakPulse 0.5s ease-in-out infinite;
+        }
+        
+        @keyframes speakPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
         .avatar-token.dragging {
             opacity: 0.9;
             z-index: 1000;
             transform: scale(1.15);
         }
         
-        .avatar-token img {
-            display: block;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
+        .avatar-token .character-portrait {
+            width: 200px;
+            height: 200px;
             border-radius: 6px;
+            pointer-events: none;
+        }
+        
+        .avatar-token .discord-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: 2px solid var(--accent-gold);
+            margin-top: -25px;
+            background: var(--bg-panel);
+            pointer-events: none;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .avatar-token .discord-avatar.hidden {
+            display: none;
         }
         
         /* Host Avatar - Special Styling */
@@ -232,15 +261,19 @@
             position: absolute;
             top: 80px;
             left: 40px;
-            width: 120px;
-            height: 120px;
-            border: 3px solid var(--accent-red);
+            width: 240px;
+            height: 240px;
+            border: 4px solid var(--accent-red);
             border-radius: 50%;
             box-shadow: 0 0 30px rgba(139, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.8);
             z-index: 50;
             cursor: move;
             user-select: none;
             animation: float 4s ease-in-out infinite;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
         
         @keyframes float {
@@ -258,18 +291,55 @@
             animation-play-state: paused;
         }
         
+        .host-avatar.speaking {
+            border-color: #00ff00;
+            box-shadow: 0 0 50px rgba(0, 255, 0, 0.9);
+        }
+        
         .host-avatar.dragging {
             opacity: 0.9;
             animation: none;
             z-index: 1000;
         }
         
-        .host-avatar img {
-            display: block;
+        .host-avatar .character-portrait {
             width: 100%;
             height: 100%;
-            pointer-events: none;
             border-radius: 50%;
+            pointer-events: none;
+        }
+        
+        .host-avatar .discord-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 3px solid var(--accent-red);
+            margin-top: -30px;
+            background: var(--bg-panel);
+            pointer-events: none;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .host-avatar .discord-avatar.hidden {
+            display: none;
+        }
+        
+        /* Avatar Context Menu */
+        .avatar-context-menu {
+            position: absolute;
+            background: var(--bg-panel);
+            border: 2px solid var(--accent-gold);
+            border-radius: 4px;
+            padding: 8px 0;
+            min-width: 180px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+            display: none;
+            z-index: 10001;
+        }
+        
+        .avatar-context-menu.active {
+            display: block;
         }
     </style>
 </head>
@@ -293,6 +363,14 @@
             <div class="context-item" data-action="add-player-avatar">🎭 Add Player Avatar</div>
             <div class="context-item" data-action="add-host-avatar">👑 Add Host Avatar</div>
             <div class="context-item" data-action="add-scene-image">🖼️ Add Scene Image</div>
+        </div>
+        
+        <!-- Avatar Context Menu -->
+        <div id="avatar-context-menu" class="avatar-context-menu">
+            <div class="context-item" data-action="assign-player">👤 Assign Player</div>
+            <div class="context-item" data-action="toggle-voice">🎤 Voice Activation</div>
+            <div class="context-divider"></div>
+            <div class="context-item" data-action="remove-avatar">🗑️ Remove Avatar</div>
         </div>
         
         <!-- Hidden file inputs -->
@@ -329,6 +407,11 @@
         let avatars = new Map(); // Track player avatars separately
         let draggedImage = null;
         let dragOffset = { x: 0, y: 0 };
+        
+        // Discord integration
+        let discordParticipants = new Map(); // userId -> participant data
+        let avatarAssignments = new Map(); // avatarId -> userId
+        let voiceStates = new Map(); // userId -> speaking state
 
         // Initialize
         (async function init() {
@@ -344,12 +427,55 @@
                     instanceId: discordSdk.instanceId
                 });
 
-                // Try getting instance data (may require auth)
+                // Try to get participant data with OAuth
                 try {
-                    const instance = await discordSdk.commands.getInstanceConnectedParticipants();
-                    console.log('✓ Got instance participants:', instance);
-                } catch (err) {
-                    console.log('⚠️ Could not get participants (requires auth):', err.message);
+                    console.log('Attempting OAuth for participant data...');
+                    
+                    // Request authorization
+                    const { code } = await discordSdk.commands.authorize({
+                        client_id: CLIENT_ID,
+                        response_type: 'code',
+                        state: '',
+                        prompt: 'none',
+                        scope: ['identify', 'guilds']
+                    });
+                    
+                    console.log('✓ Got authorization code');
+                    
+                    // Exchange code for access token (via our server)
+                    const tokenResponse = await fetch('/discord-token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code })
+                    });
+                    
+                    const { access_token } = await tokenResponse.json();
+                    console.log('✓ Got access token');
+                    
+                    // Authenticate with token
+                    await discordSdk.commands.authenticate({ access_token });
+                    console.log('✓ Authenticated');
+                    
+                    // Get participants
+                    const participants = await discordSdk.commands.getInstanceConnectedParticipants();
+                    console.log('✓ Got participants:', participants);
+                    
+                    // Store participant data
+                    participants.participants.forEach(p => {
+                        discordParticipants.set(p.id, {
+                            id: p.id,
+                            username: p.username,
+                            avatar: p.avatar,
+                            global_name: p.global_name
+                        });
+                    });
+                    
+                    // Subscribe to voice state updates
+                    discordSdk.subscribe('VOICE_STATE_UPDATE', handleVoiceStateUpdate);
+                    
+                } catch (authError) {
+                    console.warn('⚠️ OAuth failed, continuing without Discord integration:', authError.message);
+                    // Continue without Discord participant data
                 }
                 
                 const channelId = discordSdk.channelId;
@@ -411,15 +537,67 @@
                     const canvas = document.getElementById('canvas');
                     const hostAvatar = document.createElement('div');
                     hostAvatar.className = 'host-avatar';
+                    hostAvatar.dataset.id = 'host';
                     
-                    const img = document.createElement('img');
-                    img.src = data.src;
-                    hostAvatar.appendChild(img);
+                    const characterImg = document.createElement('img');
+                    characterImg.className = 'character-portrait';
+                    characterImg.src = data.src;
+                    hostAvatar.appendChild(characterImg);
+                    
+                    // Discord avatar placeholder
+                    const discordImg = document.createElement('img');
+                    discordImg.className = 'discord-avatar hidden';
+                    hostAvatar.appendChild(discordImg);
                     
                     // Add drag handlers
-                    hostAvatar.addEventListener('mousedown', startDrag);
+                    hostAvatar.addEventListener('mousedown', (e) => {
+                        if (e.button === 0) startDrag(e);
+                    });
+                    
+                    // Add right-click handler
+                    hostAvatar.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        showAvatarContextMenu(e, 'host', true);
+                    });
                     
                     canvas.appendChild(hostAvatar);
+                    
+                    avatars.set('host', {
+                        element: hostAvatar,
+                        voiceEnabled: false,
+                        assignedUser: null
+                    });
+                });
+
+                socket.on('avatar-assigned', (data) => {
+                    const avatarData = avatars.get(data.avatarId);
+                    if (!avatarData) return;
+                    
+                    avatarData.assignedUser = data.userId;
+                    avatarAssignments.set(data.avatarId, data.userId);
+                    
+                    const discordAvatar = avatarData.element.querySelector('.discord-avatar');
+                    if (discordAvatar && data.avatar) {
+                        discordAvatar.src = `https://cdn.discordapp.com/avatars/${data.userId}/${data.avatar}.png?size=128`;
+                        discordAvatar.classList.remove('hidden');
+                    }
+                });
+
+                socket.on('avatar-voice-toggle', (data) => {
+                    const avatarData = avatars.get(data.avatarId);
+                    if (avatarData) {
+                        avatarData.voiceEnabled = data.enabled;
+                    }
+                });
+
+                socket.on('avatar-removed', (data) => {
+                    const avatarData = avatars.get(data.avatarId);
+                    if (avatarData) {
+                        avatarData.element.remove();
+                        avatars.delete(data.avatarId);
+                        avatarAssignments.delete(data.avatarId);
+                    }
                 });
 
                 // Initial UI update
@@ -444,18 +622,23 @@
         function setupEventListeners() {
             const canvas = document.getElementById('canvas');
             const contextMenu = document.getElementById('context-menu');
+            const avatarContextMenu = document.getElementById('avatar-context-menu');
             
             // Right-click context menu
             canvas.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
+                // Close avatar menu if open
+                avatarContextMenu.classList.remove('active');
+                // Show main menu
                 contextMenu.style.left = e.clientX + 'px';
                 contextMenu.style.top = e.clientY + 'px';
                 contextMenu.classList.add('active');
             });
             
-            // Close context menu on left click
+            // Close context menus on left click
             document.addEventListener('click', () => {
                 contextMenu.classList.remove('active');
+                avatarContextMenu.classList.remove('active');
             });
             
             // Context menu actions
@@ -477,6 +660,12 @@
                     } else if (action === 'add-scene-image') {
                         document.getElementById('scene-image-input').click();
                         contextMenu.classList.remove('active');
+                    } else if (action === 'assign-player') {
+                        assignPlayerToAvatar();
+                    } else if (action === 'toggle-voice') {
+                        toggleVoiceActivation();
+                    } else if (action === 'remove-avatar') {
+                        removeAvatar();
                     }
                 });
             });
@@ -485,6 +674,121 @@
             document.getElementById('player-avatar-input').addEventListener('change', handlePlayerAvatarUpload);
             document.getElementById('host-avatar-input').addEventListener('change', handleHostAvatarUpload);
             document.getElementById('scene-image-input').addEventListener('change', handleImageUpload);
+        }
+        
+        let currentContextAvatarId = null;
+        
+        function showAvatarContextMenu(e, avatarId, isHost = false) {
+            currentContextAvatarId = avatarId;
+            const menu = document.getElementById('avatar-context-menu');
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
+            menu.classList.add('active');
+        }
+        
+        function assignPlayerToAvatar() {
+            if (!currentContextAvatarId) return;
+            
+            const avatarData = avatars.get(currentContextAvatarId);
+            if (!avatarData) return;
+            
+            // Create participant selection prompt
+            const participants = Array.from(discordParticipants.values());
+            
+            if (participants.length === 0) {
+                alert('No Discord participants available. OAuth may have failed.');
+                return;
+            }
+            
+            const names = participants.map(p => p.global_name || p.username).join('\n');
+            const choice = prompt(`Select participant (enter name):\n${names}`);
+            
+            if (!choice) return;
+            
+            const selected = participants.find(p => 
+                (p.global_name || p.username).toLowerCase() === choice.toLowerCase()
+            );
+            
+            if (selected) {
+                avatarData.assignedUser = selected.id;
+                avatarAssignments.set(currentContextAvatarId, selected.id);
+                
+                // Update Discord avatar
+                const discordAvatar = avatarData.element.querySelector('.discord-avatar');
+                if (discordAvatar && selected.avatar) {
+                    discordAvatar.src = `https://cdn.discordapp.com/avatars/${selected.id}/${selected.avatar}.png?size=128`;
+                    discordAvatar.classList.remove('hidden');
+                }
+                
+                // Broadcast assignment
+                if (socket) {
+                    socket.emit('avatar-assigned', {
+                        avatarId: currentContextAvatarId,
+                        userId: selected.id,
+                        username: selected.global_name || selected.username,
+                        avatar: selected.avatar
+                    });
+                }
+            }
+            
+            document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        function toggleVoiceActivation() {
+            if (!currentContextAvatarId) return;
+            
+            const avatarData = avatars.get(currentContextAvatarId);
+            if (!avatarData) return;
+            
+            avatarData.voiceEnabled = !avatarData.voiceEnabled;
+            
+            alert(`Voice activation ${avatarData.voiceEnabled ? 'enabled' : 'disabled'} for this avatar`);
+            
+            // Broadcast voice toggle
+            if (socket) {
+                socket.emit('avatar-voice-toggle', {
+                    avatarId: currentContextAvatarId,
+                    enabled: avatarData.voiceEnabled
+                });
+            }
+            
+            document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        function removeAvatar() {
+            if (!currentContextAvatarId) return;
+            
+            const avatarData = avatars.get(currentContextAvatarId);
+            if (!avatarData) return;
+            
+            avatarData.element.remove();
+            avatars.delete(currentContextAvatarId);
+            avatarAssignments.delete(currentContextAvatarId);
+            
+            // Broadcast removal
+            if (socket) {
+                socket.emit('avatar-removed', { avatarId: currentContextAvatarId });
+            }
+            
+            document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        function handleVoiceStateUpdate(voiceState) {
+            const userId = voiceState.user.id;
+            const isSpeaking = voiceState.voice_state?.self_mute === false && voiceState.voice_state?.self_deaf === false;
+            
+            voiceStates.set(userId, isSpeaking);
+            
+            // Find avatars assigned to this user with voice enabled
+            avatars.forEach((data, avatarId) => {
+                if (data.assignedUser === userId && data.voiceEnabled) {
+                    if (isSpeaking) {
+                        data.element.classList.add('speaking');
+                    } else {
+                        data.element.classList.remove('speaking');
+                    }
+                }
+            });
         }
 
         // ===== DICE ROLLING =====
@@ -529,15 +833,40 @@
                 const canvas = document.getElementById('canvas');
                 const hostAvatar = document.createElement('div');
                 hostAvatar.className = 'host-avatar';
+                hostAvatar.dataset.id = 'host';
                 
-                const img = document.createElement('img');
-                img.src = e.target.result;
-                hostAvatar.appendChild(img);
+                const characterImg = document.createElement('img');
+                characterImg.className = 'character-portrait';
+                characterImg.src = e.target.result;
+                hostAvatar.appendChild(characterImg);
+                
+                // Discord avatar placeholder (hidden until assigned)
+                const discordImg = document.createElement('img');
+                discordImg.className = 'discord-avatar hidden';
+                hostAvatar.appendChild(discordImg);
                 
                 // Add drag handlers
-                hostAvatar.addEventListener('mousedown', startDrag);
+                hostAvatar.addEventListener('mousedown', (e) => {
+                    if (e.button === 0) { // Left click
+                        startDrag(e);
+                    }
+                });
+                
+                // Add right-click handler
+                hostAvatar.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    showAvatarContextMenu(e, 'host', true);
+                });
                 
                 canvas.appendChild(hostAvatar);
+                
+                // Store host avatar data
+                avatars.set('host', {
+                    element: hostAvatar,
+                    voiceEnabled: false,
+                    assignedUser: null
+                });
                 
                 // Broadcast to other players
                 if (socket) {
@@ -580,15 +909,15 @@
             const canvasHeight = canvas.clientHeight;
             
             // Avatar size
-            const avatarSize = 150;
+            const avatarSize = 200;
             
             // Position in lower third, centered, alternating left/right
             const avatarCount = avatars.size;
-            const spacing = 180; // Space between avatars
+            const spacing = 240; // Space between avatars
             
             // Calculate position
             let x, y;
-            y = canvasHeight - avatarSize - 60; // Lower third, 60px from bottom
+            y = canvasHeight - avatarSize - 100; // Lower third, 100px from bottom
             
             if (avatarCount === 0) {
                 // First avatar: dead center
@@ -610,19 +939,42 @@
             avatar.className = 'avatar-token';
             avatar.style.left = x + 'px';
             avatar.style.top = y + 'px';
-            avatar.style.width = avatarSize + 'px';
-            avatar.style.height = avatarSize + 'px';
             avatar.dataset.id = id;
             
-            const img = document.createElement('img');
-            img.src = src;
-            avatar.appendChild(img);
+            const characterImg = document.createElement('img');
+            characterImg.className = 'character-portrait';
+            characterImg.src = src;
+            avatar.appendChild(characterImg);
+            
+            // Discord avatar placeholder (hidden until assigned)
+            const discordImg = document.createElement('img');
+            discordImg.className = 'discord-avatar hidden';
+            avatar.appendChild(discordImg);
             
             // Add drag handlers
-            avatar.addEventListener('mousedown', startDrag);
+            avatar.addEventListener('mousedown', (e) => {
+                if (e.button === 0) { // Left click
+                    startDrag(e);
+                }
+            });
+            
+            // Add right-click handler
+            avatar.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                showAvatarContextMenu(e, id);
+            });
             
             canvas.appendChild(avatar);
-            avatars.set(id, { element: avatar, x, y, width: avatarSize, height: avatarSize });
+            avatars.set(id, { 
+                element: avatar, 
+                x, 
+                y, 
+                width: avatarSize, 
+                height: avatarSize,
+                voiceEnabled: false,
+                assignedUser: null
+            });
         }
 
         function handleImageUpload(event) {
