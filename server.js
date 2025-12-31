@@ -295,6 +295,16 @@ io.on('connection', (socket) => {
         
         console.log(`Avatar ${data.avatarId} lock: ${data.locked}`);
     });
+    
+    // Board header handler
+    socket.on('board-header-update', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('board-header-update', data);
+        
+        console.log(`Board header updated: ${data.text}`);
+    });
 
     socket.on('disconnect', () => {
         // Remove player from all rooms
