@@ -213,13 +213,13 @@
             <div class="dice-container">
                 <h3>🎲 Dice</h3>
                 <div class="dice-grid">
-                    <button class="die-button" onclick="rollDie(4)">D4</button>
-                    <button class="die-button" onclick="rollDie(6)">D6</button>
-                    <button class="die-button" onclick="rollDie(8)">D8</button>
-                    <button class="die-button" onclick="rollDie(10)">D10</button>
-                    <button class="die-button" onclick="rollDie(12)">D12</button>
-                    <button class="die-button" onclick="rollDie(20)">D20</button>
-                    <button class="die-button" onclick="rollDie(100)" style="grid-column: span 3;">D100</button>
+                    <button class="die-button" data-sides="4">D4</button>
+                    <button class="die-button" data-sides="6">D6</button>
+                    <button class="die-button" data-sides="8">D8</button>
+                    <button class="die-button" data-sides="10">D10</button>
+                    <button class="die-button" data-sides="12">D12</button>
+                    <button class="die-button" data-sides="20">D20</button>
+                    <button class="die-button" data-sides="100" style="grid-column: span 3;">D100</button>
                 </div>
                 <div class="dice-result" id="dice-result">
                     <div class="result-label">Click a die to roll</div>
@@ -229,7 +229,7 @@
             <div class="upload-section">
                 <h3>🖼️ Images</h3>
                 <div class="file-input-wrapper">
-                    <input type="file" id="image-upload" accept="image/*" onchange="handleImageUpload(event)">
+                    <input type="file" id="image-upload" accept="image/*">
                     <label for="image-upload" class="file-input-label">📤 Upload Image</label>
                 </div>
             </div>
@@ -320,6 +320,9 @@
                 // Initial UI update
                 updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
 
+                // Setup event listeners (CSP doesn't allow inline handlers)
+                setupEventListeners();
+
             } catch (error) {
                 console.error('❌ Error:', error);
                 document.getElementById('channel-info').innerHTML = `
@@ -331,6 +334,22 @@
         function updateUI(channel, playerCount) {
             document.getElementById('channel-info').textContent = `Channel: ${channel.name || channel.id}`;
             document.getElementById('player-count').textContent = `Players: ${playerCount}`;
+        }
+
+        function setupEventListeners() {
+            // Dice button listeners
+            document.querySelectorAll('.die-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    const sides = parseInt(button.dataset.sides);
+                    rollDie(sides);
+                });
+            });
+
+            // Image upload listener
+            const imageUpload = document.getElementById('image-upload');
+            if (imageUpload) {
+                imageUpload.addEventListener('change', handleImageUpload);
+            }
         }
 
         // ===== DICE ROLLING =====
