@@ -543,64 +543,77 @@
                     instanceId: discordSdk.instanceId
                 });
 
-                // Try to get participant data with OAuth
+                // Try to get participant data
                 try {
-                    console.log('Attempting OAuth for participant data...');
+                    console.log('Attempting to get participant data...');
                     
-                    // Request authorization
-                    const { code } = await discordSdk.commands.authorize({
-                        client_id: CLIENT_ID,
-                        response_type: 'code',
-                        state: '',
-                        prompt: 'none',
-                        scope: ['identify', 'guilds']
-                    });
-                    
-                    console.log('✓ Got authorization code');
-                    
-                    // Exchange code for access token (via our server)
-                    const tokenResponse = await fetch('/discord-token', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ code })
-                    });
-                    
-                    if (!tokenResponse.ok) {
-                        const errorData = await tokenResponse.json();
-                        throw new Error(errorData.details || errorData.error || 'Token exchange failed');
+                    // Try without OAuth first - might work for Activities
+                    try {
+                        const participants = await discordSdk.commands.getInstanceConnectedParticipants();
+                        console.log('✓ Got participants without OAuth:', participants);
+                        
+                        // Store participant data
+                        participants.participants.forEach(p => {
+                            discordParticipants.set(p.id, {
+                                id: p.id,
+                                username: p.username,
+                                avatar: p.avatar,
+                                global_name: p.global_name
+                            });
+                        });
+                        
+                        console.log('✅ Discord integration active!');
+                        console.log(`📋 ${discordParticipants.size} participants available`);
+                        
+                    } catch (noAuthError) {
+                        console.log('⚠️ Participants require auth, attempting OAuth...');
+                        
+                        // If that fails, try with OAuth
+                        const { code } = await discordSdk.commands.authorize({
+                            client_id: CLIENT_ID,
+                            response_type: 'code',
+                            state: '',
+                            prompt: 'none',
+                            scope: ['identify', 'guilds', 'guilds.members.read']
+                        });
+                        
+                        console.log('✓ Got authorization code');
+                        
+                        // For Activities, authenticate with the code
+                        await discordSdk.commands.authenticate({ access_token: code });
+                        console.log('✓ Authenticated with code');
+                        
+                        // Try getting participants again
+                        const participants = await discordSdk.commands.getInstanceConnectedParticipants();
+                        console.log('✓ Got participants after auth:', participants);
+                        
+                        participants.participants.forEach(p => {
+                            discordParticipants.set(p.id, {
+                                id: p.id,
+                                username: p.username,
+                                avatar: p.avatar,
+                                global_name: p.global_name
+                            });
+                        });
+                        
+                        console.log('✅ OAuth complete! Discord integration active.');
+                        console.log(`📋 ${discordParticipants.size} participants available`);
                     }
                     
-                    const { access_token } = await tokenResponse.json();
-                    console.log('✓ Got access token');
-                    
-                    // Authenticate with token
-                    await discordSdk.commands.authenticate({ access_token });
-                    console.log('✓ Authenticated');
-                    
-                    // Get participants
-                    const participants = await discordSdk.commands.getInstanceConnectedParticipants();
-                    console.log('✓ Got participants:', participants);
-                    
-                    // Store participant data
-                    participants.participants.forEach(p => {
-                        discordParticipants.set(p.id, {
-                            id: p.id,
-                            username: p.username,
-                            avatar: p.avatar,
-                            global_name: p.global_name
-                        });
-                    });
-                    
-                    // Subscribe to voice state updates
-                    discordSdk.subscribe('VOICE_STATE_UPDATE', handleVoiceStateUpdate);
-                    
-                    console.log('✅ OAuth complete! Discord integration active.');
+                    // Subscribe to voice state updates if we have participants
+                    if (discordParticipants.size > 0) {
+                        try {
+                            await discordSdk.subscribe('VOICE_STATE_UPDATE', handleVoiceStateUpdate);
+                            console.log('✓ Subscribed to voice state updates');
+                        } catch (voiceError) {
+                            console.log('⚠️ Could not subscribe to voice updates:', voiceError.message);
+                        }
+                    }
                     
                 } catch (authError) {
-                    console.warn('⚠️ OAuth failed:', authError.message);
-                    console.log('Continuing without Discord integration (avatars/voice disabled)');
-                    console.log('To enable: Set DISCORD_CLIENT_SECRET in Render environment variables');
-                    // Continue without Discord participant data
+                    console.warn('⚠️ Discord integration failed:', authError.message);
+                    console.log('Continuing without Discord avatars/voice features');
+                    // App continues to work, just without Discord integration
                 }
                 
                 const channelId = discordSdk.channelId;
