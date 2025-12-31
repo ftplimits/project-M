@@ -1,6 +1,8 @@
 const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const https = require('https');
+const querystring = require('querystring');
 const path = require('path');
 
 const app = express();
@@ -22,26 +24,70 @@ app.use(express.json());
 app.post('/discord-token', async (req, res) => {
     const { code } = req.body;
     
-    try {
-        const response = await fetch('https://discord.com/api/oauth2/token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                client_id: process.env.DISCORD_CLIENT_ID || '1455487225490837526',
-                client_secret: process.env.DISCORD_CLIENT_SECRET,
-                grant_type: 'authorization_code',
-                code: code,
-            }),
+    if (!code) {
+        return res.status(400).json({ error: 'Code is required' });
+    }
+    
+    if (!process.env.DISCORD_CLIENT_SECRET) {
+        console.error('DISCORD_CLIENT_SECRET not set in environment variables!');
+        return res.status(500).json({ 
+            error: 'Server configuration error', 
+            details: 'DISCORD_CLIENT_SECRET not configured' 
+        });
+    }
+    
+    const params = new URLSearchParams({
+        client_id: process.env.DISCORD_CLIENT_ID || '1455487225490837526',
+        client_secret: process.env.DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code: code
+    });
+    
+    const options = {
+        hostname: 'discord.com',
+        path: '/api/oauth2/token',
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': params.toString().length
+        }
+    };
+    
+    const discordReq = https.request(options, (discordRes) => {
+        let data = '';
+        
+        discordRes.on('data', (chunk) => {
+            data += chunk;
         });
         
-        const data = await response.json();
-        res.json(data);
-    } catch (error) {
-        console.error('OAuth token exchange error:', error);
-        res.status(500).json({ error: 'Token exchange failed' });
-    }
+        discordRes.on('end', () => {
+            try {
+                const jsonData = JSON.parse(data);
+                
+                if (discordRes.statusCode !== 200) {
+                    console.error('Discord OAuth error:', jsonData);
+                    return res.status(discordRes.statusCode).json({ 
+                        error: 'Discord OAuth failed', 
+                        details: jsonData 
+                    });
+                }
+                
+                res.json(jsonData);
+            } catch (error) {
+                console.error('Failed to parse Discord response:', error);
+                console.error('Raw response:', data);
+                res.status(500).json({ error: 'Invalid response from Discord' });
+            }
+        });
+    });
+    
+    discordReq.on('error', (error) => {
+        console.error('Discord request error:', error);
+        res.status(500).json({ error: 'Failed to contact Discord' });
+    });
+    
+    discordReq.write(params.toString());
+    discordReq.end();
 });
 
 // Track active rooms and players
