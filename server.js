@@ -1,8 +1,6 @@
 const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-const https = require('https');
-const querystring = require('querystring');
 const path = require('path');
 
 const app = express();
@@ -19,76 +17,6 @@ const PORT = process.env.PORT || 3000;
 // Serve static files from public directory
 app.use(express.static('public'));
 app.use(express.json());
-
-// Discord OAuth token exchange endpoint
-app.post('/discord-token', async (req, res) => {
-    const { code } = req.body;
-    
-    if (!code) {
-        return res.status(400).json({ error: 'Code is required' });
-    }
-    
-    if (!process.env.DISCORD_CLIENT_SECRET) {
-        console.error('DISCORD_CLIENT_SECRET not set in environment variables!');
-        return res.status(500).json({ 
-            error: 'Server configuration error', 
-            details: 'DISCORD_CLIENT_SECRET not configured' 
-        });
-    }
-    
-    const params = new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID || '1455487225490837526',
-        client_secret: process.env.DISCORD_CLIENT_SECRET,
-        grant_type: 'authorization_code',
-        code: code
-    });
-    
-    const options = {
-        hostname: 'discord.com',
-        path: '/api/oauth2/token',
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Content-Length': params.toString().length
-        }
-    };
-    
-    const discordReq = https.request(options, (discordRes) => {
-        let data = '';
-        
-        discordRes.on('data', (chunk) => {
-            data += chunk;
-        });
-        
-        discordRes.on('end', () => {
-            try {
-                const jsonData = JSON.parse(data);
-                
-                if (discordRes.statusCode !== 200) {
-                    console.error('Discord OAuth error:', jsonData);
-                    return res.status(discordRes.statusCode).json({ 
-                        error: 'Discord OAuth failed', 
-                        details: jsonData 
-                    });
-                }
-                
-                res.json(jsonData);
-            } catch (error) {
-                console.error('Failed to parse Discord response:', error);
-                console.error('Raw response:', data);
-                res.status(500).json({ error: 'Invalid response from Discord' });
-            }
-        });
-    });
-    
-    discordReq.on('error', (error) => {
-        console.error('Discord request error:', error);
-        res.status(500).json({ error: 'Failed to contact Discord' });
-    });
-    
-    discordReq.write(params.toString());
-    discordReq.end();
-});
 
 // Track active rooms and players
 const rooms = new Map();
@@ -198,24 +126,34 @@ io.on('connection', (socket) => {
         console.log(`Player ${socket.id} added host avatar`);
     });
 
-    // Avatar assignment handler
-    socket.on('avatar-assigned', (data) => {
+    // Hotkey assignment handler
+    socket.on('hotkey-assigned', (data) => {
         if (!currentRoom) return;
         
         // Broadcast to all other players in room
-        socket.to(currentRoom).emit('avatar-assigned', data);
+        socket.to(currentRoom).emit('hotkey-assigned', data);
         
-        console.log(`Avatar ${data.avatarId} assigned to user ${data.userId}`);
+        console.log(`Avatar ${data.avatarId} assigned hotkey ${data.key}`);
     });
 
-    // Avatar voice toggle handler
-    socket.on('avatar-voice-toggle', (data) => {
+    // Hotkey toggle handler
+    socket.on('hotkey-toggled', (data) => {
         if (!currentRoom) return;
         
         // Broadcast to all other players in room
-        socket.to(currentRoom).emit('avatar-voice-toggle', data);
+        socket.to(currentRoom).emit('hotkey-toggled', data);
         
-        console.log(`Avatar ${data.avatarId} voice activation: ${data.enabled}`);
+        console.log(`Avatar ${data.avatarId} hotkey activation: ${data.enabled}`);
+    });
+
+    // Avatar activation handler
+    socket.on('avatar-activated', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-activated', data);
+        
+        console.log(`Avatar ${data.avatarId} activated: ${data.active}`);
     });
 
     // Avatar removal handler
