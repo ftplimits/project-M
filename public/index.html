@@ -1,126 +1,479 @@
-const express = require('express');
-const { createServer } = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
-
-const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
-});
-
-const PORT = process.env.PORT || 3000;
-
-// Serve static files from public directory
-app.use(express.static('public'));
-
-// Track active rooms and players
-const rooms = new Map();
-
-io.on('connection', (socket) => {
-    console.log('Player connected:', socket.id);
-    let currentRoom = null;
-
-    socket.on('join-room', (roomId) => {
-        currentRoom = roomId;
-        socket.join(roomId);
-        
-        if (!rooms.has(roomId)) {
-            rooms.set(roomId, {
-                players: new Set(),
-                images: new Map()
-            });
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monomyth VTT - Discord Activity</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="discord-sdk.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            overflow: hidden;
         }
         
-        const room = rooms.get(roomId);
-        room.players.add(socket.id);
-
-        // Notify room of new player
-        io.to(roomId).emit('player-joined', {
-            playerId: socket.id,
-            playerCount: room.players.size
-        });
-        
-        // Send existing images to new player
-        room.images.forEach((imageData, imageId) => {
-            socket.emit('image-added', imageData);
-        });
-
-        console.log(`Player ${socket.id} joined room ${roomId}`);
-    });
-
-    // Dice roll handler
-    socket.on('dice-roll', (data) => {
-        if (!currentRoom) return;
-        
-        // Broadcast to all other players in room
-        socket.to(currentRoom).emit('dice-roll', {
-            ...data,
-            playerId: socket.id
-        });
-        
-        console.log(`Player ${socket.id} rolled D${data.sides}: ${data.result}`);
-    });
-
-    // Image upload handler
-    socket.on('add-image', (data) => {
-        if (!currentRoom) return;
-        
-        const room = rooms.get(currentRoom);
-        if (room) {
-            room.images.set(data.id, data);
+        .container {
+            display: flex;
+            height: 100vh;
         }
         
-        // Broadcast to all other players in room
-        socket.to(currentRoom).emit('image-added', data);
-        
-        console.log(`Player ${socket.id} added image ${data.id}`);
-    });
-
-    // Image movement handler
-    socket.on('move-image', (data) => {
-        if (!currentRoom) return;
-        
-        const room = rooms.get(currentRoom);
-        if (room && room.images.has(data.id)) {
-            const imageData = room.images.get(data.id);
-            imageData.x = data.x;
-            imageData.y = data.y;
+        /* Left Panel - Dice & Controls */
+        .left-panel {
+            width: 280px;
+            background: rgba(0, 0, 0, 0.3);
+            border-right: 2px solid rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            overflow-y: auto;
         }
         
-        // Broadcast to all other players in room
-        socket.to(currentRoom).emit('image-moved', data);
-    });
+        .info {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .info h3 {
+            margin-bottom: 10px;
+            color: #4ecdc4;
+        }
+        
+        /* Dice Container */
+        .dice-container {
+            margin-top: 20px;
+        }
+        
+        .dice-container h3 {
+            margin-bottom: 15px;
+            color: #4ecdc4;
+            font-size: 18px;
+        }
+        
+        .dice-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .die-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 15px 10px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 16px;
+        }
+        
+        .die-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .die-button:active {
+            transform: scale(0.95);
+        }
+        
+        .dice-result {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(78, 205, 196, 0.1);
+            border: 2px solid #4ecdc4;
+            border-radius: 8px;
+            text-align: center;
+            min-height: 60px;
+        }
+        
+        .dice-result.rolling {
+            animation: pulse 0.5s ease-in-out;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .result-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #4ecdc4;
+        }
+        
+        .result-label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 5px;
+        }
+        
+        /* Image Upload */
+        .upload-section {
+            margin-top: 20px;
+        }
+        
+        .upload-section h3 {
+            margin-bottom: 10px;
+            color: #4ecdc4;
+            font-size: 18px;
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+        
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+        
+        .file-input-label {
+            display: block;
+            padding: 12px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        
+        .file-input-label:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4);
+        }
+        
+        /* Canvas Area */
+        .canvas-area {
+            flex: 1;
+            position: relative;
+            background: 
+                repeating-linear-gradient(
+                    0deg,
+                    rgba(255, 255, 255, 0.03) 0px,
+                    transparent 1px,
+                    transparent 40px,
+                    rgba(255, 255, 255, 0.03) 41px
+                ),
+                repeating-linear-gradient(
+                    90deg,
+                    rgba(255, 255, 255, 0.03) 0px,
+                    transparent 1px,
+                    transparent 40px,
+                    rgba(255, 255, 255, 0.03) 41px
+                );
+            overflow: hidden;
+        }
+        
+        .image-token {
+            position: absolute;
+            cursor: move;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            transition: border-color 0.2s;
+            user-select: none;
+        }
+        
+        .image-token:hover {
+            border-color: #4ecdc4;
+        }
+        
+        .image-token.dragging {
+            opacity: 0.7;
+            z-index: 1000;
+        }
+        
+        .image-token img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="left-panel">
+            <div class="info">
+                <h3>🎮 Monomyth VTT</h3>
+                <div id="channel-info">Connecting...</div>
+                <div id="player-count" style="margin-top: 10px;">Players: 0</div>
+            </div>
+            
+            <div class="dice-container">
+                <h3>🎲 Dice</h3>
+                <div class="dice-grid">
+                    <button class="die-button" onclick="rollDie(4)">D4</button>
+                    <button class="die-button" onclick="rollDie(6)">D6</button>
+                    <button class="die-button" onclick="rollDie(8)">D8</button>
+                    <button class="die-button" onclick="rollDie(10)">D10</button>
+                    <button class="die-button" onclick="rollDie(12)">D12</button>
+                    <button class="die-button" onclick="rollDie(20)">D20</button>
+                    <button class="die-button" onclick="rollDie(100)" style="grid-column: span 3;">D100</button>
+                </div>
+                <div class="dice-result" id="dice-result">
+                    <div class="result-label">Click a die to roll</div>
+                </div>
+            </div>
+            
+            <div class="upload-section">
+                <h3>🖼️ Images</h3>
+                <div class="file-input-wrapper">
+                    <input type="file" id="image-upload" accept="image/*" onchange="handleImageUpload(event)">
+                    <label for="image-upload" class="file-input-label">📤 Upload Image</label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="canvas-area" id="canvas">
+            <!-- Images will be added here -->
+        </div>
+    </div>
 
-    socket.on('game-state', (data) => {
-        // Broadcast game state to all players in room except sender
-        socket.to(data.roomId).emit('game-state', data);
-    });
+    <script>
+        const CLIENT_ID = '1455487225490837526';
+        const discordSdk = new DiscordSDK(CLIENT_ID);
+        
+        let socket;
+        let roomId;
+        let players = new Map();
+        
+        // Image tracking
+        let images = new Map();
+        let draggedImage = null;
+        let dragOffset = { x: 0, y: 0 };
 
-    socket.on('disconnect', () => {
-        // Remove player from all rooms
-        rooms.forEach((room, roomId) => {
-            if (room.players && room.players.has(socket.id)) {
-                room.players.delete(socket.id);
-                io.to(roomId).emit('player-left', {
-                    playerId: socket.id,
-                    playerCount: room.players.size
+        // Initialize
+        (async function init() {
+            console.log('🎮 Initializing Monomyth VTT...');
+            
+            try {
+                // Initialize Discord SDK
+                await discordSdk.ready();
+                console.log('✓ Discord SDK ready');
+                console.log('SDK Context:', {
+                    channelId: discordSdk.channelId,
+                    guildId: discordSdk.guildId,
+                    instanceId: discordSdk.instanceId
                 });
-                
-                // Clean up empty rooms
-                if (room.players.size === 0) {
-                    rooms.delete(roomId);
-                }
-            }
-        });
-        console.log('Player disconnected:', socket.id);
-    });
-});
 
-httpServer.listen(PORT, () => {
-    console.log(`🎮 Monomyth VTT server running on port ${PORT}`);
-    console.log(`📍 http://localhost:${PORT}`);
-});
+                // Try getting instance data (may require auth)
+                try {
+                    const instance = await discordSdk.commands.getInstanceConnectedParticipants();
+                    console.log('✓ Got instance participants:', instance);
+                } catch (err) {
+                    console.log('⚠️ Could not get participants (requires auth):', err.message);
+                }
+                
+                const channelId = discordSdk.channelId;
+                const guildId = discordSdk.guildId;
+                
+                console.log('Using Channel ID:', channelId);
+                console.log('Using Guild ID:', guildId);
+
+                // Use channel ID as room ID for multiplayer
+                roomId = channelId;
+
+                // Connect to Socket.IO
+                socket = io();
+                
+                socket.on('connect', () => {
+                    console.log('✓ Connected to server');
+                    socket.emit('join-room', roomId);
+                });
+
+                socket.on('player-joined', (data) => {
+                    console.log('Player joined:', data.playerId);
+                    players.set(data.playerId, { id: data.playerId, name: 'Player' });
+                    updateUI({ id: channelId, name: `Channel ${channelId}` }, data.playerCount);
+                });
+
+                socket.on('player-left', (data) => {
+                    console.log('Player left:', data.playerId);
+                    players.delete(data.playerId);
+                    updateUI({ id: channelId, name: `Channel ${channelId}` }, data.playerCount);
+                });
+
+                socket.on('dice-roll', (data) => {
+                    displayDiceResult(data.sides, data.result, data.playerId);
+                });
+
+                socket.on('image-added', (data) => {
+                    addImageToCanvas(data.id, data.src, data.x, data.y, data.width, data.height, false);
+                });
+
+                socket.on('image-moved', (data) => {
+                    moveImage(data.id, data.x, data.y, false);
+                });
+
+                // Initial UI update
+                updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                document.getElementById('channel-info').innerHTML = `
+                    <p style="color: #ff6b6b;">Error: ${error.message}</p>
+                `;
+            }
+        })();
+
+        function updateUI(channel, playerCount) {
+            document.getElementById('channel-info').textContent = `Channel: ${channel.name || channel.id}`;
+            document.getElementById('player-count').textContent = `Players: ${playerCount}`;
+        }
+
+        // ===== DICE ROLLING =====
+        function rollDie(sides) {
+            const result = Math.floor(Math.random() * sides) + 1;
+            displayDiceResult(sides, result);
+            
+            // Broadcast to other players
+            if (socket) {
+                socket.emit('dice-roll', { sides, result });
+            }
+        }
+
+        function displayDiceResult(sides, result, playerId = 'You') {
+            const resultDiv = document.getElementById('dice-result');
+            resultDiv.classList.add('rolling');
+            
+            resultDiv.innerHTML = `
+                <div class="result-value">${result}</div>
+                <div class="result-label">D${sides} • ${playerId}</div>
+            `;
+            
+            setTimeout(() => resultDiv.classList.remove('rolling'), 500);
+        }
+
+        // ===== IMAGE UPLOAD & MOVEMENT =====
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const id = Date.now().toString();
+                    const maxSize = 200;
+                    const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+                    const width = img.width * scale;
+                    const height = img.height * scale;
+                    
+                    // Place in center of canvas
+                    const canvas = document.getElementById('canvas');
+                    const x = (canvas.clientWidth - width) / 2;
+                    const y = (canvas.clientHeight - height) / 2;
+                    
+                    addImageToCanvas(id, e.target.result, x, y, width, height, true);
+                    
+                    // Broadcast to other players
+                    if (socket) {
+                        socket.emit('add-image', { id, src: e.target.result, x, y, width, height });
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            
+            // Reset input
+            event.target.value = '';
+        }
+
+        function addImageToCanvas(id, src, x, y, width, height, isLocal = true) {
+            const canvas = document.getElementById('canvas');
+            const token = document.createElement('div');
+            token.className = 'image-token';
+            token.style.left = x + 'px';
+            token.style.top = y + 'px';
+            token.style.width = width + 'px';
+            token.style.height = height + 'px';
+            token.dataset.id = id;
+            
+            const img = document.createElement('img');
+            img.src = src;
+            token.appendChild(img);
+            
+            // Add drag handlers
+            token.addEventListener('mousedown', startDrag);
+            
+            canvas.appendChild(token);
+            images.set(id, { element: token, x, y, width, height });
+        }
+
+        function startDrag(e) {
+            draggedImage = e.currentTarget;
+            draggedImage.classList.add('dragging');
+            
+            const rect = draggedImage.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', stopDrag);
+        }
+
+        function drag(e) {
+            if (!draggedImage) return;
+            
+            const canvas = document.getElementById('canvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            let x = e.clientX - canvasRect.left - dragOffset.x;
+            let y = e.clientY - canvasRect.top - dragOffset.y;
+            
+            // Constrain to canvas
+            x = Math.max(0, Math.min(x, canvasRect.width - draggedImage.offsetWidth));
+            y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight));
+            
+            draggedImage.style.left = x + 'px';
+            draggedImage.style.top = y + 'px';
+        }
+
+        function stopDrag(e) {
+            if (!draggedImage) return;
+            
+            const id = draggedImage.dataset.id;
+            const x = parseFloat(draggedImage.style.left);
+            const y = parseFloat(draggedImage.style.top);
+            
+            draggedImage.classList.remove('dragging');
+            
+            // Update local storage
+            const imageData = images.get(id);
+            if (imageData) {
+                imageData.x = x;
+                imageData.y = y;
+            }
+            
+            // Broadcast to other players
+            if (socket) {
+                socket.emit('move-image', { id, x, y });
+            }
+            
+            draggedImage = null;
+            document.removeEventListener('mousemove', drag);
+            document.removeEventListener('mouseup', stopDrag);
+        }
+
+        function moveImage(id, x, y, isLocal = true) {
+            const imageData = images.get(id);
+            if (!imageData) return;
+            
+            imageData.element.style.left = x + 'px';
+            imageData.element.style.top = y + 'px';
+            imageData.x = x;
+            imageData.y = y;
+        }
+    </script>
+</body>
+</html>
