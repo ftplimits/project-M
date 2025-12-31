@@ -341,6 +341,113 @@
         .avatar-context-menu.active {
             display: block;
         }
+        
+        /* Custom Modal Dialog */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 20000;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal-dialog {
+            background: var(--bg-panel);
+            border: 3px solid var(--accent-gold);
+            border-radius: 8px;
+            padding: 30px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            color: var(--accent-gold);
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .modal-content {
+            margin-bottom: 20px;
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        .modal-button {
+            padding: 10px 20px;
+            border: 2px solid var(--accent-gold);
+            background: var(--bg-secondary);
+            color: var(--accent-gold);
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: all 0.2s;
+        }
+        
+        .modal-button:hover {
+            background: var(--accent-gold);
+            color: #000;
+        }
+        
+        .modal-button.cancel {
+            border-color: var(--text-secondary);
+            color: var(--text-secondary);
+        }
+        
+        .modal-button.cancel:hover {
+            background: var(--text-secondary);
+            color: #000;
+        }
+        
+        .player-select-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 15px 0;
+        }
+        
+        .player-select-item {
+            padding: 12px;
+            margin: 5px 0;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .player-select-item:hover {
+            border-color: var(--accent-gold);
+            background: var(--accent-gold);
+            color: #000;
+        }
+        
+        .player-select-item img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid var(--accent-gold);
+        }
     </style>
 </head>
 <body>
@@ -371,6 +478,15 @@
             <div class="context-item" data-action="toggle-voice">🎤 Voice Activation</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="remove-avatar">🗑️ Remove Avatar</div>
+        </div>
+        
+        <!-- Modal Dialog -->
+        <div id="modal-overlay" class="modal-overlay">
+            <div class="modal-dialog">
+                <div class="modal-title" id="modal-title">Modal</div>
+                <div class="modal-content" id="modal-content"></div>
+                <div class="modal-buttons" id="modal-buttons"></div>
+            </div>
         </div>
         
         <!-- Hidden file inputs -->
@@ -641,6 +757,13 @@
                 avatarContextMenu.classList.remove('active');
             });
             
+            // Close modal when clicking overlay (not dialog)
+            document.getElementById('modal-overlay').addEventListener('click', (e) => {
+                if (e.target.id === 'modal-overlay') {
+                    e.target.classList.remove('active');
+                }
+            });
+            
             // Context menu actions
             document.querySelectorAll('.context-item').forEach(item => {
                 item.addEventListener('click', (e) => {
@@ -678,6 +801,36 @@
         
         let currentContextAvatarId = null;
         
+        function showModal(title, content, buttons) {
+            const overlay = document.getElementById('modal-overlay');
+            const modalTitle = document.getElementById('modal-title');
+            const modalContent = document.getElementById('modal-content');
+            const modalButtons = document.getElementById('modal-buttons');
+            
+            modalTitle.textContent = title;
+            
+            if (typeof content === 'string') {
+                modalContent.innerHTML = content;
+            } else {
+                modalContent.innerHTML = '';
+                modalContent.appendChild(content);
+            }
+            
+            modalButtons.innerHTML = '';
+            buttons.forEach(btn => {
+                const button = document.createElement('button');
+                button.className = `modal-button ${btn.class || ''}`;
+                button.textContent = btn.text;
+                button.onclick = () => {
+                    overlay.classList.remove('active');
+                    if (btn.onClick) btn.onClick();
+                };
+                modalButtons.appendChild(button);
+            });
+            
+            overlay.classList.add('active');
+        }
+        
         function showAvatarContextMenu(e, avatarId, isHost = false) {
             currentContextAvatarId = avatarId;
             const menu = document.getElementById('avatar-context-menu');
@@ -692,46 +845,75 @@
             const avatarData = avatars.get(currentContextAvatarId);
             if (!avatarData) return;
             
-            // Create participant selection prompt
             const participants = Array.from(discordParticipants.values());
             
             if (participants.length === 0) {
-                alert('No Discord participants available. OAuth may have failed.');
+                showModal(
+                    'No Players Available',
+                    'Discord OAuth may have failed. No participants available to assign.',
+                    [{ text: 'OK', class: 'cancel' }]
+                );
                 return;
             }
             
-            const names = participants.map(p => p.global_name || p.username).join('\n');
-            const choice = prompt(`Select participant (enter name):\n${names}`);
+            // Create player selection list
+            const listContainer = document.createElement('div');
+            listContainer.className = 'player-select-list';
             
-            if (!choice) return;
+            participants.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'player-select-item';
+                
+                if (p.avatar) {
+                    const avatar = document.createElement('img');
+                    avatar.src = `https://cdn.discordapp.com/avatars/${p.id}/${p.avatar}.png?size=64`;
+                    item.appendChild(avatar);
+                }
+                
+                const name = document.createElement('span');
+                name.textContent = p.global_name || p.username;
+                item.appendChild(name);
+                
+                item.onclick = () => {
+                    assignPlayer(p);
+                    document.getElementById('modal-overlay').classList.remove('active');
+                };
+                
+                listContainer.appendChild(item);
+            });
             
-            const selected = participants.find(p => 
-                (p.global_name || p.username).toLowerCase() === choice.toLowerCase()
+            showModal(
+                'Assign Player',
+                listContainer,
+                [{ text: 'Cancel', class: 'cancel' }]
             );
             
-            if (selected) {
-                avatarData.assignedUser = selected.id;
-                avatarAssignments.set(currentContextAvatarId, selected.id);
-                
-                // Update Discord avatar
-                const discordAvatar = avatarData.element.querySelector('.discord-avatar');
-                if (discordAvatar && selected.avatar) {
-                    discordAvatar.src = `https://cdn.discordapp.com/avatars/${selected.id}/${selected.avatar}.png?size=128`;
-                    discordAvatar.classList.remove('hidden');
-                }
-                
-                // Broadcast assignment
-                if (socket) {
-                    socket.emit('avatar-assigned', {
-                        avatarId: currentContextAvatarId,
-                        userId: selected.id,
-                        username: selected.global_name || selected.username,
-                        avatar: selected.avatar
-                    });
-                }
+            document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        function assignPlayer(participant) {
+            const avatarData = avatars.get(currentContextAvatarId);
+            if (!avatarData) return;
+            
+            avatarData.assignedUser = participant.id;
+            avatarAssignments.set(currentContextAvatarId, participant.id);
+            
+            // Update Discord avatar
+            const discordAvatar = avatarData.element.querySelector('.discord-avatar');
+            if (discordAvatar && participant.avatar) {
+                discordAvatar.src = `https://cdn.discordapp.com/avatars/${participant.id}/${participant.avatar}.png?size=128`;
+                discordAvatar.classList.remove('hidden');
             }
             
-            document.getElementById('avatar-context-menu').classList.remove('active');
+            // Broadcast assignment
+            if (socket) {
+                socket.emit('avatar-assigned', {
+                    avatarId: currentContextAvatarId,
+                    userId: participant.id,
+                    username: participant.global_name || participant.username,
+                    avatar: participant.avatar
+                });
+            }
         }
         
         function toggleVoiceActivation() {
@@ -742,7 +924,12 @@
             
             avatarData.voiceEnabled = !avatarData.voiceEnabled;
             
-            alert(`Voice activation ${avatarData.voiceEnabled ? 'enabled' : 'disabled'} for this avatar`);
+            const status = avatarData.voiceEnabled ? 'enabled' : 'disabled';
+            showModal(
+                'Voice Activation',
+                `Voice activation ${status} for this avatar.`,
+                [{ text: 'OK', class: 'cancel' }]
+            );
             
             // Broadcast voice toggle
             if (socket) {
