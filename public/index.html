@@ -22,7 +22,7 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Times New Roman', Times, serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             overflow: hidden;
@@ -283,6 +283,10 @@
             z-index: 30;
         }
         
+        .avatar-token.speaking.flipped {
+            transform: scaleX(-1) translateY(-15px);
+        }
+        
         .avatar-token.dragging {
             opacity: 0.9;
             z-index: 1000;
@@ -294,6 +298,37 @@
             height: 200px;
             border-radius: 6px;
             pointer-events: none;
+        }
+        
+        .avatar-name-banner {
+            position: absolute;
+            bottom: -35px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--accent-red);
+            color: #fff;
+            padding: 6px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            white-space: nowrap;
+            border: 2px solid var(--accent-gold);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+            min-width: 100px;
+            cursor: text;
+            font-family: 'Times New Roman', Times, serif;
+        }
+        
+        .avatar-name-banner:empty::before {
+            content: 'Unnamed';
+            opacity: 0.6;
+        }
+        
+        .host-avatar .avatar-name-banner {
+            bottom: -45px;
+            font-size: 16px;
+            padding: 8px 20px;
         }
         
         /* Host Avatar - Special Styling */
@@ -354,6 +389,11 @@
             box-shadow: 0 0 50px rgba(212, 175, 55, 0.9);
             transform: translateY(-25px);
             transition: all 0.3s ease-out;
+            animation: none;
+        }
+        
+        .host-avatar.speaking.flipped {
+            transform: scaleX(-1) translateY(-25px);
             animation: none;
         }
         
@@ -490,6 +530,7 @@
             <div class="context-item" data-action="assign-hotkey">⌨️ Assign Activation Key</div>
             <div class="context-item" data-action="toggle-activation">🔄 Enable Activation</div>
             <div class="context-item" data-action="set-alternate">🎭 Set Alternate Image</div>
+            <div class="context-item" data-action="set-name">📛 Set Name</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="remove-avatar">🗑️ Remove Avatar</div>
         </div>
@@ -777,6 +818,16 @@
                     
                     avatarData.alternateImage = data.alternateSrc;
                 });
+                
+                socket.on('avatar-name-set', (data) => {
+                    const avatarData = avatars.get(data.avatarId);
+                    if (!avatarData) return;
+                    
+                    let nameBanner = avatarData.element.querySelector('.avatar-name-banner');
+                    if (nameBanner) {
+                        nameBanner.textContent = data.name;
+                    }
+                });
 
                 socket.on('avatar-removed', (data) => {
                     const avatarData = avatars.get(data.avatarId);
@@ -864,6 +915,8 @@
                         toggleActivation();
                     } else if (action === 'set-alternate') {
                         setAlternateImage();
+                    } else if (action === 'set-name') {
+                        setName();
                     } else if (action === 'remove-avatar') {
                         removeAvatar();
                     }
@@ -1144,6 +1197,78 @@
             
             // Reset input
             event.target.value = '';
+        }
+        
+        function setName() {
+            if (!currentContextAvatarId) return;
+            
+            const avatarData = avatars.get(currentContextAvatarId);
+            if (!avatarData) return;
+            
+            // Check if name banner already exists
+            let nameBanner = avatarData.element.querySelector('.avatar-name-banner');
+            
+            if (!nameBanner) {
+                // Create name banner
+                nameBanner = document.createElement('div');
+                nameBanner.className = 'avatar-name-banner';
+                nameBanner.contentEditable = false;
+                
+                // Double-click to edit
+                nameBanner.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    nameBanner.contentEditable = true;
+                    nameBanner.focus();
+                    
+                    // Select all text
+                    const range = document.createRange();
+                    range.selectNodeContents(nameBanner);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                });
+                
+                // Save on blur or Enter
+                nameBanner.addEventListener('blur', () => {
+                    nameBanner.contentEditable = false;
+                    const name = nameBanner.textContent.trim();
+                    
+                    // Broadcast name change
+                    if (socket) {
+                        socket.emit('avatar-name-set', {
+                            avatarId: currentContextAvatarId,
+                            name: name
+                        });
+                    }
+                });
+                
+                nameBanner.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        nameBanner.blur();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        nameBanner.blur();
+                    }
+                });
+                
+                avatarData.element.appendChild(nameBanner);
+            }
+            
+            // Focus and enable editing
+            nameBanner.contentEditable = true;
+            nameBanner.focus();
+            
+            // Select all text if not empty
+            if (nameBanner.textContent) {
+                const range = document.createRange();
+                range.selectNodeContents(nameBanner);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+            
+            document.getElementById('avatar-context-menu').classList.remove('active');
         }
         
         // ===== AUTOFLIP SYSTEM =====
