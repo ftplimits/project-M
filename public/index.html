@@ -242,7 +242,8 @@
 
     <script>
         const CLIENT_ID = '1455487225490837526';
-        const discordSdk = new DiscordSDK(CLIENT_ID);
+        // The discord-sdk.js exports as: DiscordSDK.DiscordSDK
+        const discordSdk = new DiscordSDK.DiscordSDK(CLIENT_ID);
         
         let socket;
         let roomId;
