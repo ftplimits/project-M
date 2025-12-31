@@ -915,9 +915,37 @@
                 e.preventDefault();
                 // Close avatar menu if open
                 avatarContextMenu.classList.remove('active');
-                // Show main menu
-                contextMenu.style.left = e.clientX + 'px';
-                contextMenu.style.top = e.clientY + 'px';
+                
+                // Show menu temporarily to get dimensions
+                contextMenu.style.display = 'block';
+                const menuRect = contextMenu.getBoundingClientRect();
+                
+                // Calculate position with boundary checking
+                let left = e.clientX;
+                let top = e.clientY;
+                
+                // Check right edge
+                if (left + menuRect.width > window.innerWidth) {
+                    left = window.innerWidth - menuRect.width - 10;
+                }
+                
+                // Check bottom edge
+                if (top + menuRect.height > window.innerHeight) {
+                    top = window.innerHeight - menuRect.height - 10;
+                }
+                
+                // Check left edge
+                if (left < 0) {
+                    left = 10;
+                }
+                
+                // Check top edge
+                if (top < 0) {
+                    top = 10;
+                }
+                
+                contextMenu.style.left = left + 'px';
+                contextMenu.style.top = top + 'px';
                 contextMenu.classList.add('active');
             });
             
@@ -1101,8 +1129,36 @@
             const isLocked = hardLockedAvatars.has(avatarId);
             lockItem.textContent = isLocked ? '🔓 Unlock' : '🔒 Hard Lock';
             
-            menu.style.left = e.clientX + 'px';
-            menu.style.top = e.clientY + 'px';
+            // Show menu temporarily to get dimensions
+            menu.style.display = 'block';
+            const menuRect = menu.getBoundingClientRect();
+            
+            // Calculate position with boundary checking
+            let left = e.clientX;
+            let top = e.clientY;
+            
+            // Check right edge
+            if (left + menuRect.width > window.innerWidth) {
+                left = window.innerWidth - menuRect.width - 10;
+            }
+            
+            // Check bottom edge
+            if (top + menuRect.height > window.innerHeight) {
+                top = window.innerHeight - menuRect.height - 10;
+            }
+            
+            // Check left edge
+            if (left < 0) {
+                left = 10;
+            }
+            
+            // Check top edge
+            if (top < 0) {
+                top = 10;
+            }
+            
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
             menu.classList.add('active');
         }
         
@@ -2059,35 +2115,43 @@
         }
         
         function snapToGrid(x, y, width, height) {
-            // Find nearest column for left edge
+            // Calculate CENTER of avatar for snapping
+            const centerX = x + (width / 2);
+            const centerY = y + (height / 2);
+            
+            // Find nearest column for CENTER
             let nearestCol = snapGrid.cols[0];
-            let minColDist = Math.abs(x - nearestCol);
+            let minColDist = Math.abs(centerX - nearestCol);
             
             for (let col of snapGrid.cols) {
-                const dist = Math.abs(x - col);
+                const dist = Math.abs(centerX - col);
                 if (dist < minColDist) {
                     minColDist = dist;
                     nearestCol = col;
                 }
             }
             
-            // Find nearest row for top edge
+            // Find nearest row for CENTER
             let nearestRow = snapGrid.rows[0];
-            let minRowDist = Math.abs(y - nearestRow);
+            let minRowDist = Math.abs(centerY - nearestRow);
             
             for (let row of snapGrid.rows) {
-                const dist = Math.abs(y - row);
+                const dist = Math.abs(centerY - row);
                 if (dist < minRowDist) {
                     minRowDist = dist;
                     nearestRow = row;
                 }
             }
             
-            // Soft snap threshold (30px) - only snap if close enough
-            const SNAP_THRESHOLD = 30;
+            // Soft snap threshold (50px from center) - increased for better usability
+            const SNAP_THRESHOLD = 50;
             
-            const snappedX = minColDist < SNAP_THRESHOLD ? nearestCol : x;
-            const snappedY = minRowDist < SNAP_THRESHOLD ? nearestRow : y;
+            let finalCenterX = minColDist < SNAP_THRESHOLD ? nearestCol : centerX;
+            let finalCenterY = minRowDist < SNAP_THRESHOLD ? nearestRow : centerY;
+            
+            // Convert back to top-left position
+            const snappedX = finalCenterX - (width / 2);
+            const snappedY = finalCenterY - (height / 2);
             
             return { x: snappedX, y: snappedY };
         }
@@ -2122,9 +2186,20 @@
             let x = e.clientX - canvasRect.left - dragOffset.x;
             let y = e.clientY - canvasRect.top - dragOffset.y;
             
+            // Check if this is an avatar (has name banner)
+            const isAvatar = draggedImage.classList.contains('avatar-token') || 
+                           draggedImage.classList.contains('host-avatar');
+            
             // Constrain to canvas
             x = Math.max(0, Math.min(x, canvasRect.width - draggedImage.offsetWidth));
-            y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight));
+            
+            // For avatars, account for name banner below (-35px for player, -45px for host)
+            if (isAvatar) {
+                const bannerOffset = draggedImage.classList.contains('host-avatar') ? 45 : 35;
+                y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight - bannerOffset));
+            } else {
+                y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight));
+            }
             
             draggedImage.style.left = x + 'px';
             draggedImage.style.top = y + 'px';
