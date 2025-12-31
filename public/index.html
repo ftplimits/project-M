@@ -320,6 +320,10 @@
             font-family: 'Times New Roman', Times, serif;
         }
         
+        .avatar-token.flipped .avatar-name-banner {
+            transform: translateX(-50%) scaleX(-1);
+        }
+        
         .avatar-name-banner:empty::before {
             content: 'Unnamed';
             opacity: 0.6;
@@ -329,6 +333,10 @@
             bottom: -45px;
             font-size: 16px;
             padding: 8px 20px;
+        }
+        
+        .host-avatar.flipped .avatar-name-banner {
+            transform: translateX(-50%) scaleX(-1);
         }
         
         /* Host Avatar - Special Styling */
@@ -523,6 +531,9 @@
             <div class="context-item" data-action="add-player-avatar">🎭 Add Player Avatar</div>
             <div class="context-item" data-action="add-host-avatar">👑 Add Host Avatar</div>
             <div class="context-item" data-action="add-scene-image">🖼️ Add Scene Image</div>
+            <div class="context-divider"></div>
+            <div class="context-item" data-action="save-session">💾 Save Session</div>
+            <div class="context-item" data-action="load-session">📂 Load Session</div>
         </div>
         
         <!-- Avatar Context Menu -->
@@ -561,6 +572,7 @@
         <input type="file" id="host-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
         <input type="file" id="scene-image-input" accept="image/*" style="display: none;">
         <input type="file" id="alternate-image-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
+        <input type="file" id="load-session-input" accept="application/json,.json" style="display: none;">
         
         <!-- Dice Result Notification -->
         <div id="dice-notification" class="dice-notification"></div>
@@ -909,6 +921,12 @@
                     } else if (action === 'add-scene-image') {
                         document.getElementById('scene-image-input').click();
                         contextMenu.classList.remove('active');
+                    } else if (action === 'save-session') {
+                        saveSession();
+                        contextMenu.classList.remove('active');
+                    } else if (action === 'load-session') {
+                        loadSession();
+                        contextMenu.classList.remove('active');
                     } else if (action === 'assign-hotkey') {
                         assignHotkeyToAvatar();
                     } else if (action === 'toggle-activation') {
@@ -928,6 +946,7 @@
             document.getElementById('host-avatar-input').addEventListener('change', handleHostAvatarUpload);
             document.getElementById('scene-image-input').addEventListener('change', handleImageUpload);
             document.getElementById('alternate-image-input').addEventListener('change', handleAlternateImageUpload);
+            document.getElementById('load-session-input').addEventListener('change', handleLoadSession);
             
             // Info badge click to toggle player list
             document.getElementById('info-badge').addEventListener('click', togglePlayerList);
@@ -1269,6 +1288,328 @@
             }
             
             document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        // ===== SESSION SAVE/LOAD =====
+        function saveSession() {
+            const sessionData = {
+                version: "1.0",
+                channelId: roomId,
+                savedAt: new Date().toISOString(),
+                avatars: [],
+                hostAvatar: null,
+                images: []
+            };
+            
+            // Save player avatars
+            avatars.forEach((data, avatarId) => {
+                if (avatarId === 'host') return; // Skip host, handle separately
+                
+                const portraitImg = data.element.querySelector('.character-portrait');
+                const nameBanner = data.element.querySelector('.avatar-name-banner');
+                const hotkeyData = avatarHotkeys.get(avatarId);
+                
+                const avatarSave = {
+                    id: avatarId,
+                    src: portraitImg ? portraitImg.src : null,
+                    alternateSrc: data.alternateImage || null,
+                    originalSrc: data.originalImage || null,
+                    x: data.x || parseInt(data.element.style.left),
+                    y: data.y || parseInt(data.element.style.top),
+                    width: data.width || 200,
+                    height: data.height || 200,
+                    name: nameBanner ? nameBanner.textContent : '',
+                    flipped: data.element.classList.contains('flipped'),
+                    hotkey: hotkeyData ? {
+                        key: hotkeyData.key,
+                        enabled: hotkeyData.enabled
+                    } : null
+                };
+                
+                sessionData.avatars.push(avatarSave);
+            });
+            
+            // Save host avatar
+            const hostData = avatars.get('host');
+            if (hostData) {
+                const portraitImg = hostData.element.querySelector('.character-portrait');
+                const nameBanner = hostData.element.querySelector('.avatar-name-banner');
+                const hotkeyData = avatarHotkeys.get('host');
+                
+                sessionData.hostAvatar = {
+                    src: portraitImg ? portraitImg.src : null,
+                    alternateSrc: hostData.alternateImage || null,
+                    originalSrc: hostData.originalImage || null,
+                    name: nameBanner ? nameBanner.textContent : '',
+                    flipped: hostData.element.classList.contains('flipped'),
+                    hotkey: hotkeyData ? {
+                        key: hotkeyData.key,
+                        enabled: hotkeyData.enabled
+                    } : null
+                };
+            }
+            
+            // Save scene images
+            images.forEach((data, imageId) => {
+                const imgElement = data.element.querySelector('img');
+                sessionData.images.push({
+                    id: imageId,
+                    src: imgElement ? imgElement.src : data.src,
+                    x: data.x || parseInt(data.element.style.left),
+                    y: data.y || parseInt(data.element.style.top),
+                    width: data.width || parseInt(data.element.style.width),
+                    height: data.height || parseInt(data.element.style.height)
+                });
+            });
+            
+            // Create download
+            const dataStr = JSON.stringify(sessionData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = `monomyth-session-${new Date().toISOString().split('T')[0]}.json`;
+            downloadLink.click();
+            
+            URL.revokeObjectURL(url);
+            
+            console.log('✓ Session saved:', sessionData);
+        }
+        
+        function loadSession() {
+            document.getElementById('load-session-input').click();
+        }
+        
+        function handleLoadSession(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const sessionData = JSON.parse(e.target.result);
+                    
+                    console.log('Loading session:', sessionData);
+                    
+                    // Clear existing state
+                    avatars.forEach((data, id) => {
+                        data.element.remove();
+                    });
+                    avatars.clear();
+                    avatarHotkeys.clear();
+                    activeAvatars.clear();
+                    
+                    images.forEach((data) => {
+                        data.element.remove();
+                    });
+                    images.clear();
+                    
+                    // Load scene images first (background)
+                    if (sessionData.images) {
+                        sessionData.images.forEach(imgData => {
+                            addImageToCanvas(imgData.id, imgData.src, imgData.x, imgData.y, imgData.width, imgData.height, true);
+                        });
+                    }
+                    
+                    // Load player avatars
+                    if (sessionData.avatars) {
+                        sessionData.avatars.forEach(avatarData => {
+                            // Create avatar element
+                            const canvas = document.getElementById('canvas');
+                            const avatar = document.createElement('div');
+                            avatar.className = 'avatar-token';
+                            avatar.style.left = avatarData.x + 'px';
+                            avatar.style.top = avatarData.y + 'px';
+                            avatar.dataset.id = avatarData.id;
+                            
+                            if (avatarData.flipped) {
+                                avatar.classList.add('flipped');
+                            }
+                            
+                            const characterImg = document.createElement('img');
+                            characterImg.className = 'character-portrait';
+                            characterImg.src = avatarData.src;
+                            avatar.appendChild(characterImg);
+                            
+                            // Add name banner if exists
+                            if (avatarData.name) {
+                                const nameBanner = document.createElement('div');
+                                nameBanner.className = 'avatar-name-banner';
+                                nameBanner.textContent = avatarData.name;
+                                nameBanner.contentEditable = false;
+                                
+                                // Add double-click editing
+                                nameBanner.addEventListener('dblclick', (e) => {
+                                    e.stopPropagation();
+                                    nameBanner.contentEditable = true;
+                                    nameBanner.focus();
+                                    const range = document.createRange();
+                                    range.selectNodeContents(nameBanner);
+                                    const sel = window.getSelection();
+                                    sel.removeAllRanges();
+                                    sel.addRange(range);
+                                });
+                                
+                                nameBanner.addEventListener('blur', () => {
+                                    nameBanner.contentEditable = false;
+                                    if (socket) {
+                                        socket.emit('avatar-name-set', {
+                                            avatarId: avatarData.id,
+                                            name: nameBanner.textContent.trim()
+                                        });
+                                    }
+                                });
+                                
+                                nameBanner.addEventListener('keydown', (e) => {
+                                    if (e.key === 'Enter' || e.key === 'Escape') {
+                                        e.preventDefault();
+                                        nameBanner.blur();
+                                    }
+                                });
+                                
+                                avatar.appendChild(nameBanner);
+                            }
+                            
+                            // Add drag handlers
+                            avatar.addEventListener('mousedown', (e) => {
+                                if (e.button === 0) startDrag(e);
+                            });
+                            
+                            // Add right-click handler
+                            avatar.addEventListener('contextmenu', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                showAvatarContextMenu(e, avatarData.id);
+                            });
+                            
+                            canvas.appendChild(avatar);
+                            
+                            // Store avatar data
+                            avatars.set(avatarData.id, {
+                                element: avatar,
+                                x: avatarData.x,
+                                y: avatarData.y,
+                                width: avatarData.width,
+                                height: avatarData.height,
+                                alternateImage: avatarData.alternateSrc,
+                                originalImage: avatarData.originalSrc
+                            });
+                            
+                            // Restore hotkey
+                            if (avatarData.hotkey) {
+                                avatarHotkeys.set(avatarData.id, {
+                                    key: avatarData.hotkey.key,
+                                    enabled: avatarData.hotkey.enabled
+                                });
+                            }
+                        });
+                    }
+                    
+                    // Load host avatar
+                    if (sessionData.hostAvatar) {
+                        const hostData = sessionData.hostAvatar;
+                        const canvas = document.getElementById('canvas');
+                        const hostAvatar = document.createElement('div');
+                        hostAvatar.className = 'host-avatar';
+                        hostAvatar.dataset.id = 'host';
+                        
+                        if (hostData.flipped) {
+                            hostAvatar.classList.add('flipped');
+                        }
+                        
+                        const characterImg = document.createElement('img');
+                        characterImg.className = 'character-portrait';
+                        characterImg.src = hostData.src;
+                        hostAvatar.appendChild(characterImg);
+                        
+                        // Add name banner if exists
+                        if (hostData.name) {
+                            const nameBanner = document.createElement('div');
+                            nameBanner.className = 'avatar-name-banner';
+                            nameBanner.textContent = hostData.name;
+                            nameBanner.contentEditable = false;
+                            
+                            nameBanner.addEventListener('dblclick', (e) => {
+                                e.stopPropagation();
+                                nameBanner.contentEditable = true;
+                                nameBanner.focus();
+                                const range = document.createRange();
+                                range.selectNodeContents(nameBanner);
+                                const sel = window.getSelection();
+                                sel.removeAllRanges();
+                                sel.addRange(range);
+                            });
+                            
+                            nameBanner.addEventListener('blur', () => {
+                                nameBanner.contentEditable = false;
+                                if (socket) {
+                                    socket.emit('avatar-name-set', {
+                                        avatarId: 'host',
+                                        name: nameBanner.textContent.trim()
+                                    });
+                                }
+                            });
+                            
+                            nameBanner.addEventListener('keydown', (e) => {
+                                if (e.key === 'Enter' || e.key === 'Escape') {
+                                    e.preventDefault();
+                                    nameBanner.blur();
+                                }
+                            });
+                            
+                            hostAvatar.appendChild(nameBanner);
+                        }
+                        
+                        // Add drag handlers
+                        hostAvatar.addEventListener('mousedown', (e) => {
+                            if (e.button === 0) startDrag(e);
+                        });
+                        
+                        // Add right-click handler
+                        hostAvatar.addEventListener('contextmenu', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            showAvatarContextMenu(e, 'host', true);
+                        });
+                        
+                        canvas.appendChild(hostAvatar);
+                        
+                        avatars.set('host', {
+                            element: hostAvatar,
+                            alternateImage: hostData.alternateSrc,
+                            originalImage: hostData.originalSrc
+                        });
+                        
+                        // Restore hotkey
+                        if (hostData.hotkey) {
+                            avatarHotkeys.set('host', {
+                                key: hostData.hotkey.key,
+                                enabled: hostData.hotkey.enabled
+                            });
+                        }
+                    }
+                    
+                    showModal(
+                        'Session Loaded',
+                        `Loaded session from ${new Date(sessionData.savedAt).toLocaleString()}`,
+                        [{ text: 'OK', class: 'cancel' }]
+                    );
+                    
+                    console.log('✓ Session loaded successfully');
+                    
+                } catch (error) {
+                    console.error('Failed to load session:', error);
+                    showModal(
+                        'Load Failed',
+                        'Failed to load session file. Please check the file is valid.',
+                        [{ text: 'OK', class: 'cancel' }]
+                    );
+                }
+            };
+            
+            reader.readAsText(file);
+            event.target.value = '';
         }
         
         // ===== AUTOFLIP SYSTEM =====
