@@ -295,9 +295,11 @@
         
         .avatar-token .character-portrait {
             width: 200px;
-            height: 200px;
+            height: 250px;
             border-radius: 6px;
             pointer-events: none;
+            object-fit: cover;
+            object-position: center;
         }
         
         .avatar-name-banner {
@@ -542,6 +544,7 @@
             <div class="context-item" data-action="toggle-activation">🔄 Enable Activation</div>
             <div class="context-item" data-action="set-alternate">🎭 Set Alternate Image</div>
             <div class="context-item" data-action="set-name">📛 Set Name</div>
+            <div class="context-item" data-action="toggle-lock">🔒 Hard Lock</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="remove-avatar">🗑️ Remove Avatar</div>
         </div>
@@ -613,6 +616,14 @@
         // Hotkey activation system
         let avatarHotkeys = new Map(); // avatarId -> { key, enabled }
         let activeAvatars = new Set(); // Currently glowing avatars
+        
+        // Grid snapping system (5 rows x 10 columns)
+        const GRID_ROWS = 5;
+        const GRID_COLS = 10;
+        let snapGrid = { rows: [], cols: [] };
+        
+        // Hard lock system
+        let hardLockedAvatars = new Set(); // Avatar IDs that are locked
         
         // Autoflip system
         let autoflipInterval = null;
@@ -840,6 +851,21 @@
                         nameBanner.textContent = data.name;
                     }
                 });
+                
+                socket.on('avatar-lock-toggle', (data) => {
+                    const avatarData = avatars.get(data.avatarId);
+                    if (!avatarData) return;
+                    
+                    if (data.locked) {
+                        hardLockedAvatars.add(data.avatarId);
+                        avatarData.element.style.cursor = 'not-allowed';
+                        avatarData.element.style.opacity = '0.9';
+                    } else {
+                        hardLockedAvatars.delete(data.avatarId);
+                        avatarData.element.style.cursor = 'move';
+                        avatarData.element.style.opacity = '1';
+                    }
+                });
 
                 socket.on('avatar-removed', (data) => {
                     const avatarData = avatars.get(data.avatarId);
@@ -856,6 +882,12 @@
 
                 // Setup event listeners (CSP doesn't allow inline handlers)
                 setupEventListeners();
+                
+                // Initialize snap grid
+                calculateSnapGrid();
+                
+                // Recalculate grid on window resize
+                window.addEventListener('resize', calculateSnapGrid);
                 
                 // Start autoflip timer
                 startAutoflip();
@@ -935,6 +967,8 @@
                         setAlternateImage();
                     } else if (action === 'set-name') {
                         setName();
+                    } else if (action === 'toggle-lock') {
+                        toggleLock();
                     } else if (action === 'remove-avatar') {
                         removeAvatar();
                     }
@@ -1061,6 +1095,11 @@
             const hotkeyData = avatarHotkeys.get(avatarId);
             const isEnabled = hotkeyData?.enabled || false;
             toggleItem.textContent = isEnabled ? '✓ Activation Enabled' : '○ Activation Disabled';
+            
+            // Update lock text based on current state
+            const lockItem = menu.querySelector('[data-action="toggle-lock"]');
+            const isLocked = hardLockedAvatars.has(avatarId);
+            lockItem.textContent = isLocked ? '🔓 Unlock' : '🔒 Hard Lock';
             
             menu.style.left = e.clientX + 'px';
             menu.style.top = e.clientY + 'px';
@@ -1290,6 +1329,35 @@
             document.getElementById('avatar-context-menu').classList.remove('active');
         }
         
+        function toggleLock() {
+            if (!currentContextAvatarId) return;
+            
+            const avatarData = avatars.get(currentContextAvatarId);
+            if (!avatarData) return;
+            
+            const isLocked = hardLockedAvatars.has(currentContextAvatarId);
+            
+            if (isLocked) {
+                hardLockedAvatars.delete(currentContextAvatarId);
+                avatarData.element.style.cursor = 'move';
+                avatarData.element.style.opacity = '1';
+            } else {
+                hardLockedAvatars.add(currentContextAvatarId);
+                avatarData.element.style.cursor = 'not-allowed';
+                avatarData.element.style.opacity = '0.9';
+            }
+            
+            // Broadcast lock state
+            if (socket) {
+                socket.emit('avatar-lock-toggle', {
+                    avatarId: currentContextAvatarId,
+                    locked: !isLocked
+                });
+            }
+            
+            document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
         // ===== SESSION SAVE/LOAD =====
         function saveSession() {
             const sessionData = {
@@ -1317,9 +1385,10 @@
                     x: data.x || parseInt(data.element.style.left),
                     y: data.y || parseInt(data.element.style.top),
                     width: data.width || 200,
-                    height: data.height || 200,
+                    height: data.height || 250,
                     name: nameBanner ? nameBanner.textContent : '',
                     flipped: data.element.classList.contains('flipped'),
+                    locked: hardLockedAvatars.has(avatarId),
                     hotkey: hotkeyData ? {
                         key: hotkeyData.key,
                         enabled: hotkeyData.enabled
@@ -1342,6 +1411,7 @@
                     originalSrc: hostData.originalImage || null,
                     name: nameBanner ? nameBanner.textContent : '',
                     flipped: hostData.element.classList.contains('flipped'),
+                    locked: hardLockedAvatars.has('host'),
                     hotkey: hotkeyData ? {
                         key: hotkeyData.key,
                         enabled: hotkeyData.enabled
@@ -1503,6 +1573,16 @@
                                     enabled: avatarData.hotkey.enabled
                                 });
                             }
+                            
+                            // Restore lock state
+                            if (avatarData.locked) {
+                                hardLockedAvatars.add(avatarData.id);
+                                const storedAvatar = avatars.get(avatarData.id);
+                                if (storedAvatar) {
+                                    storedAvatar.element.style.cursor = 'not-allowed';
+                                    storedAvatar.element.style.opacity = '0.9';
+                                }
+                            }
                         });
                     }
                     
@@ -1587,6 +1667,16 @@
                                 key: hostData.hotkey.key,
                                 enabled: hostData.hotkey.enabled
                             });
+                        }
+                        
+                        // Restore lock state
+                        if (hostData.locked) {
+                            hardLockedAvatars.add('host');
+                            const storedHost = avatars.get('host');
+                            if (storedHost) {
+                                storedHost.element.style.cursor = 'not-allowed';
+                                storedHost.element.style.opacity = '0.9';
+                            }
                         }
                     }
                     
@@ -1831,8 +1921,9 @@
             const canvasWidth = canvas.clientWidth;
             const canvasHeight = canvas.clientHeight;
             
-            // Avatar size
-            const avatarSize = 200;
+            // Avatar size (250 height x 200 width)
+            const avatarWidth = 200;
+            const avatarHeight = 250;
             
             // Position in lower third, centered, alternating left/right
             const avatarCount = avatars.size;
@@ -1840,20 +1931,20 @@
             
             // Calculate position
             let x, y;
-            y = canvasHeight - avatarSize - 100; // Lower third, 100px from bottom
+            y = canvasHeight - avatarHeight - 100; // Lower third, 100px from bottom
             
             if (avatarCount === 0) {
                 // First avatar: dead center
-                x = (canvasWidth - avatarSize) / 2;
+                x = (canvasWidth - avatarWidth) / 2;
             } else {
                 // Alternate left and right
                 const offset = Math.ceil(avatarCount / 2) * spacing;
                 if (avatarCount % 2 === 1) {
                     // Odd number: go left
-                    x = (canvasWidth / 2) - offset - (avatarSize / 2);
+                    x = (canvasWidth / 2) - offset - (avatarWidth / 2);
                 } else {
                     // Even number: go right
-                    x = (canvasWidth / 2) + offset - (avatarSize / 2);
+                    x = (canvasWidth / 2) + offset - (avatarWidth / 2);
                 }
             }
             
@@ -1888,8 +1979,8 @@
                 element: avatar, 
                 x, 
                 y, 
-                width: avatarSize, 
-                height: avatarSize
+                width: avatarWidth, 
+                height: avatarHeight
             });
         }
 
@@ -1948,8 +2039,70 @@
             images.set(id, { element: token, x, y, width, height });
         }
 
+        // ===== GRID SNAPPING SYSTEM =====
+        function calculateSnapGrid() {
+            const canvas = document.getElementById('canvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            snapGrid.rows = [];
+            snapGrid.cols = [];
+            
+            // Calculate row positions (5 rows)
+            for (let i = 0; i <= GRID_ROWS; i++) {
+                snapGrid.rows.push((canvasRect.height / GRID_ROWS) * i);
+            }
+            
+            // Calculate column positions (10 columns)
+            for (let i = 0; i <= GRID_COLS; i++) {
+                snapGrid.cols.push((canvasRect.width / GRID_COLS) * i);
+            }
+        }
+        
+        function snapToGrid(x, y, width, height) {
+            // Find nearest column for left edge
+            let nearestCol = snapGrid.cols[0];
+            let minColDist = Math.abs(x - nearestCol);
+            
+            for (let col of snapGrid.cols) {
+                const dist = Math.abs(x - col);
+                if (dist < minColDist) {
+                    minColDist = dist;
+                    nearestCol = col;
+                }
+            }
+            
+            // Find nearest row for top edge
+            let nearestRow = snapGrid.rows[0];
+            let minRowDist = Math.abs(y - nearestRow);
+            
+            for (let row of snapGrid.rows) {
+                const dist = Math.abs(y - row);
+                if (dist < minRowDist) {
+                    minRowDist = dist;
+                    nearestRow = row;
+                }
+            }
+            
+            // Soft snap threshold (30px) - only snap if close enough
+            const SNAP_THRESHOLD = 30;
+            
+            const snappedX = minColDist < SNAP_THRESHOLD ? nearestCol : x;
+            const snappedY = minRowDist < SNAP_THRESHOLD ? nearestRow : y;
+            
+            return { x: snappedX, y: snappedY };
+        }
+        
+        // ===== DRAG SYSTEM =====
         function startDrag(e) {
-            draggedImage = e.currentTarget;
+            const target = e.currentTarget;
+            const targetId = target.dataset.id;
+            
+            // Check if avatar is hard locked
+            if (targetId && hardLockedAvatars.has(targetId)) {
+                return; // Don't allow dragging
+            }
+            
+            draggedImage = target;
             draggedImage.classList.add('dragging');
             
             const rect = draggedImage.getBoundingClientRect();
@@ -1981,10 +2134,25 @@
             if (!draggedImage) return;
             
             const id = draggedImage.dataset.id;
-            const x = parseFloat(draggedImage.style.left);
-            const y = parseFloat(draggedImage.style.top);
+            let x = parseFloat(draggedImage.style.left);
+            let y = parseFloat(draggedImage.style.top);
             
             draggedImage.classList.remove('dragging');
+            
+            // Apply grid snapping for avatars
+            const isAvatar = draggedImage.classList.contains('avatar-token') || 
+                           draggedImage.classList.contains('host-avatar');
+            
+            if (isAvatar) {
+                const width = draggedImage.offsetWidth;
+                const height = draggedImage.offsetHeight;
+                const snapped = snapToGrid(x, y, width, height);
+                x = snapped.x;
+                y = snapped.y;
+                
+                draggedImage.style.left = x + 'px';
+                draggedImage.style.top = y + 'px';
+            }
             
             // Update local storage
             const imageData = images.get(id);
@@ -1993,9 +2161,19 @@
                 imageData.y = y;
             }
             
+            const avatarData = avatars.get(id);
+            if (avatarData) {
+                avatarData.x = x;
+                avatarData.y = y;
+            }
+            
             // Broadcast to other players
             if (socket) {
-                socket.emit('move-image', { id, x, y });
+                if (isAvatar) {
+                    socket.emit('move-avatar', { id, x, y });
+                } else {
+                    socket.emit('move-image', { id, x, y });
+                }
             }
             
             draggedImage = null;
