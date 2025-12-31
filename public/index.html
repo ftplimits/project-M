@@ -220,6 +220,53 @@
             overflow: hidden;
         }
         
+        /* Board Header */
+        .board-header {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 48px;
+            font-weight: bold;
+            color: var(--accent-gold);
+            text-align: center;
+            text-shadow: 
+                0 0 20px rgba(212, 175, 55, 0.8),
+                0 0 40px rgba(212, 175, 55, 0.5),
+                3px 3px 6px rgba(0, 0, 0, 0.9);
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            z-index: 60;
+            cursor: pointer;
+            padding: 20px 40px;
+            background: linear-gradient(180deg, 
+                rgba(26, 26, 26, 0.95) 0%, 
+                rgba(26, 26, 26, 0.85) 50%,
+                rgba(26, 26, 26, 0.7) 100%);
+            border: 3px solid var(--accent-gold);
+            border-radius: 8px;
+            box-shadow: 
+                0 0 30px rgba(212, 175, 55, 0.6),
+                inset 0 0 20px rgba(0, 0, 0, 0.5);
+            max-width: 80%;
+            word-wrap: break-word;
+            user-select: none;
+        }
+        
+        .board-header:empty {
+            display: none;
+        }
+        
+        .board-header:hover {
+            color: #fff;
+            border-color: var(--accent-red);
+            text-shadow: 
+                0 0 30px rgba(255, 255, 255, 0.9),
+                0 0 50px rgba(212, 175, 55, 0.7),
+                3px 3px 6px rgba(0, 0, 0, 0.9);
+        }
+        
         /* Stage floor effect */
         .canvas-area::after {
             content: '';
@@ -249,13 +296,12 @@
         
         .image-token:hover {
             border-color: var(--accent-gold);
-            transform: scale(1.05);
         }
         
         .image-token.dragging {
             opacity: 0.8;
             z-index: 1000;
-            transform: scale(1.1);
+        }
         }
         
         .image-token img {
@@ -556,6 +602,7 @@
             <div class="context-item" data-action="add-player-avatar">🎭 Add Player Avatar</div>
             <div class="context-item" data-action="add-host-avatar">👑 Add Host Avatar</div>
             <div class="context-item" data-action="add-scene-image">🖼️ Add Scene Image</div>
+            <div class="context-item" data-action="set-board-header">📜 Set Board Header</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="save-session">💾 Save Session</div>
             <div class="context-item" data-action="load-session">📂 Load Session</div>
@@ -615,6 +662,8 @@
         <!-- The Stage - Fixed 16:9 aspect ratio wrapper -->
         <div class="canvas-wrapper">
             <div class="canvas-area" id="canvas">
+                <!-- Board Header -->
+                <div class="board-header" id="board-header"></div>
                 <!-- Images and avatars will be added here -->
             </div>
         </div>
@@ -901,6 +950,13 @@
                         avatarData.element.style.opacity = '1';
                     }
                 });
+                
+                socket.on('board-header-update', (data) => {
+                    const header = document.getElementById('board-header');
+                    if (header) {
+                        header.textContent = data.text;
+                    }
+                });
 
                 socket.on('avatar-removed', (data) => {
                     const avatarData = avatars.get(data.avatarId);
@@ -917,6 +973,9 @@
 
                 // Setup event listeners (CSP doesn't allow inline handlers)
                 setupEventListeners();
+                
+                // Setup board header editing
+                setupBoardHeaderEditing();
                 
                 // Initialize snap grid
                 calculateSnapGrid();
@@ -1015,6 +1074,9 @@
                         contextMenu.classList.remove('active');
                     } else if (action === 'add-scene-image') {
                         document.getElementById('scene-image-input').click();
+                        contextMenu.classList.remove('active');
+                    } else if (action === 'set-board-header') {
+                        setBoardHeader();
                         contextMenu.classList.remove('active');
                     } else if (action === 'save-session') {
                         saveSession();
@@ -1455,12 +1517,69 @@
             document.getElementById('avatar-context-menu').classList.remove('active');
         }
         
+        // ===== BOARD HEADER =====
+        function setBoardHeader() {
+            showModal(
+                'Set Board Header',
+                '<input type="text" id="header-input" placeholder="Enter board header..." style="width: 100%; padding: 10px; font-size: 16px; font-family: \'Times New Roman\', Times, serif; background: var(--bg-secondary); color: var(--text-primary); border: 2px solid var(--accent-gold); border-radius: 4px;">',
+                [
+                    { 
+                        text: 'Set Header', 
+                        class: '', 
+                        callback: () => {
+                            const input = document.getElementById('header-input');
+                            const headerText = input ? input.value.trim() : '';
+                            updateBoardHeader(headerText);
+                        }
+                    },
+                    { text: 'Cancel', class: 'cancel' }
+                ]
+            );
+            
+            // Focus input after modal opens
+            setTimeout(() => {
+                const input = document.getElementById('header-input');
+                if (input) {
+                    const currentHeader = document.getElementById('board-header');
+                    if (currentHeader) {
+                        input.value = currentHeader.textContent;
+                    }
+                    input.focus();
+                    input.select();
+                }
+            }, 100);
+        }
+        
+        function updateBoardHeader(text) {
+            const header = document.getElementById('board-header');
+            if (!header) return;
+            
+            header.textContent = text;
+            
+            // Broadcast to other players
+            if (socket) {
+                socket.emit('board-header-update', { text: text });
+            }
+        }
+        
+        function setupBoardHeaderEditing() {
+            const header = document.getElementById('board-header');
+            if (!header) return;
+            
+            // Double-click to edit
+            header.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                setBoardHeader();
+            });
+        }
+        
         // ===== SESSION SAVE/LOAD =====
         function saveSession() {
             const sessionData = {
                 version: "1.0",
                 channelId: roomId,
                 savedAt: new Date().toISOString(),
+                boardHeader: document.getElementById('board-header')?.textContent || '',
                 avatars: [],
                 hostAvatar: null,
                 images: []
@@ -1572,6 +1691,14 @@
                         data.element.remove();
                     });
                     images.clear();
+                    
+                    // Restore board header
+                    if (sessionData.boardHeader) {
+                        const header = document.getElementById('board-header');
+                        if (header) {
+                            header.textContent = sessionData.boardHeader;
+                        }
+                    }
                     
                     // Load scene images first (background)
                     if (sessionData.images) {
