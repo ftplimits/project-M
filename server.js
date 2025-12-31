@@ -275,6 +275,16 @@ io.on('connection', (socket) => {
         
         console.log(`Avatar ${data.avatarId} alternate image set`);
     });
+    
+    // Avatar name handler
+    socket.on('avatar-name-set', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast to all other players in room
+        socket.to(currentRoom).emit('avatar-name-set', data);
+        
+        console.log(`Avatar ${data.avatarId} named: ${data.name}`);
+    });
 
     socket.on('disconnect', () => {
         // Remove player from all rooms
