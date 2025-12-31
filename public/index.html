@@ -251,7 +251,7 @@
             cursor: move;
             border: 3px solid var(--accent-gold);
             border-radius: 8px;
-            transition: all 0.3s;
+            transition: all 0.3s, transform 0.6s ease-in-out;
             user-select: none;
             z-index: 20;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
@@ -260,11 +260,19 @@
             align-items: center;
         }
         
+        .avatar-token.flipped {
+            transform: scaleX(-1);
+        }
+        
         .avatar-token:hover {
             border-color: var(--accent-red);
             transform: scale(1.1) translateY(-5px);
             box-shadow: 0 8px 20px rgba(212, 175, 55, 0.4);
             z-index: 30;
+        }
+        
+        .avatar-token.flipped:hover {
+            transform: scaleX(-1) scale(1.1) translateY(-5px);
         }
         
         .avatar-token.speaking {
@@ -306,6 +314,11 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            transition: transform 0.6s ease-in-out;
+        }
+        
+        .host-avatar.flipped {
+            transform: scaleX(-1);
         }
         
         @keyframes float {
@@ -315,6 +328,19 @@
             50% {
                 transform: translateY(-20px);
             }
+        }
+        
+        @keyframes floatFlipped {
+            0%, 100% {
+                transform: scaleX(-1) translateY(0px);
+            }
+            50% {
+                transform: scaleX(-1) translateY(-20px);
+            }
+        }
+        
+        .host-avatar.flipped {
+            animation: floatFlipped 4s ease-in-out infinite;
         }
         
         .host-avatar:hover {
@@ -463,6 +489,7 @@
         <div id="avatar-context-menu" class="avatar-context-menu">
             <div class="context-item" data-action="assign-hotkey">⌨️ Assign Activation Key</div>
             <div class="context-item" data-action="toggle-activation">🔄 Enable Activation</div>
+            <div class="context-item" data-action="set-alternate">🎭 Set Alternate Image</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="remove-avatar">🗑️ Remove Avatar</div>
         </div>
@@ -492,6 +519,7 @@
         <input type="file" id="player-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
         <input type="file" id="host-avatar-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
         <input type="file" id="scene-image-input" accept="image/*" style="display: none;">
+        <input type="file" id="alternate-image-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
         
         <!-- Dice Result Notification -->
         <div id="dice-notification" class="dice-notification"></div>
@@ -532,6 +560,12 @@
         // Hotkey activation system
         let avatarHotkeys = new Map(); // avatarId -> { key, enabled }
         let activeAvatars = new Set(); // Currently glowing avatars
+        
+        // Autoflip system
+        let autoflipInterval = null;
+        
+        // Alternate images
+        let currentContextAvatarId = null;
 
         // Initialize
         (async function init() {
@@ -702,13 +736,46 @@
                     const avatarData = avatars.get(data.avatarId);
                     if (!avatarData) return;
                     
+                    const portraitImg = avatarData.element.querySelector('.character-portrait');
+                    
                     if (data.active) {
                         activeAvatars.add(data.avatarId);
                         avatarData.element.classList.add('speaking');
+                        
+                        // Swap to alternate image if available
+                        if (avatarData.alternateImage && portraitImg) {
+                            if (!avatarData.originalImage) {
+                                avatarData.originalImage = portraitImg.src;
+                            }
+                            portraitImg.src = avatarData.alternateImage;
+                        }
                     } else {
                         activeAvatars.delete(data.avatarId);
                         avatarData.element.classList.remove('speaking');
+                        
+                        // Swap back to original image
+                        if (avatarData.originalImage && portraitImg) {
+                            portraitImg.src = avatarData.originalImage;
+                        }
                     }
+                });
+                
+                socket.on('avatar-flipped', (data) => {
+                    const avatarData = avatars.get(data.avatarId);
+                    if (!avatarData) return;
+                    
+                    if (data.flipped) {
+                        avatarData.element.classList.add('flipped');
+                    } else {
+                        avatarData.element.classList.remove('flipped');
+                    }
+                });
+                
+                socket.on('avatar-alternate-set', (data) => {
+                    const avatarData = avatars.get(data.avatarId);
+                    if (!avatarData) return;
+                    
+                    avatarData.alternateImage = data.alternateSrc;
                 });
 
                 socket.on('avatar-removed', (data) => {
@@ -726,6 +793,9 @@
 
                 // Setup event listeners (CSP doesn't allow inline handlers)
                 setupEventListeners();
+                
+                // Start autoflip timer
+                startAutoflip();
 
             } catch (error) {
                 console.error('❌ Error:', error);
@@ -792,6 +862,8 @@
                         assignHotkeyToAvatar();
                     } else if (action === 'toggle-activation') {
                         toggleActivation();
+                    } else if (action === 'set-alternate') {
+                        setAlternateImage();
                     } else if (action === 'remove-avatar') {
                         removeAvatar();
                     }
@@ -802,6 +874,7 @@
             document.getElementById('player-avatar-input').addEventListener('change', handlePlayerAvatarUpload);
             document.getElementById('host-avatar-input').addEventListener('change', handleHostAvatarUpload);
             document.getElementById('scene-image-input').addEventListener('change', handleImageUpload);
+            document.getElementById('alternate-image-input').addEventListener('change', handleAlternateImageUpload);
             
             // Info badge click to toggle player list
             document.getElementById('info-badge').addEventListener('click', togglePlayerList);
@@ -844,12 +917,28 @@
             const avatarData = avatars.get(avatarId);
             if (!avatarData) return;
             
+            const portraitImg = avatarData.element.querySelector('.character-portrait');
+            
             if (active) {
                 activeAvatars.add(avatarId);
                 avatarData.element.classList.add('speaking');
+                
+                // Swap to alternate image if available
+                if (avatarData.alternateImage && portraitImg) {
+                    // Store original if not already stored
+                    if (!avatarData.originalImage) {
+                        avatarData.originalImage = portraitImg.src;
+                    }
+                    portraitImg.src = avatarData.alternateImage;
+                }
             } else {
                 activeAvatars.delete(avatarId);
                 avatarData.element.classList.remove('speaking');
+                
+                // Swap back to original image
+                if (avatarData.originalImage && portraitImg) {
+                    portraitImg.src = avatarData.originalImage;
+                }
             }
             
             // Broadcast activation state
@@ -1013,6 +1102,92 @@
             }
             
             document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        function setAlternateImage() {
+            if (!currentContextAvatarId) return;
+            
+            // Store which avatar we're setting alternate for
+            document.getElementById('alternate-image-input').dataset.avatarId = currentContextAvatarId;
+            document.getElementById('alternate-image-input').click();
+            document.getElementById('avatar-context-menu').classList.remove('active');
+        }
+        
+        function handleAlternateImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const avatarId = event.target.dataset.avatarId;
+            if (!avatarId) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const avatarData = avatars.get(avatarId);
+                if (!avatarData) return;
+                
+                // Store alternate image
+                avatarData.alternateImage = e.target.result;
+                
+                // Broadcast to other players
+                if (socket) {
+                    socket.emit('avatar-alternate-set', {
+                        avatarId: avatarId,
+                        alternateSrc: e.target.result
+                    });
+                }
+                
+                showModal(
+                    'Alternate Image Set',
+                    'Avatar will swap to this image when activated!',
+                    [{ text: 'OK', class: 'cancel' }]
+                );
+            };
+            reader.readAsDataURL(file);
+            
+            // Reset input
+            event.target.value = '';
+        }
+        
+        // ===== AUTOFLIP SYSTEM =====
+        function startAutoflip() {
+            function scheduleNextFlip() {
+                // Random interval between 8-16 seconds
+                const interval = Math.random() * 8000 + 8000;
+                
+                autoflipInterval = setTimeout(() => {
+                    flipRandomAvatar();
+                    scheduleNextFlip();
+                }, interval);
+            }
+            
+            scheduleNextFlip();
+        }
+        
+        function flipRandomAvatar() {
+            const avatarIds = Array.from(avatars.keys());
+            if (avatarIds.length === 0) return;
+            
+            // Pick random avatar
+            const randomId = avatarIds[Math.floor(Math.random() * avatarIds.length)];
+            const avatarData = avatars.get(randomId);
+            if (!avatarData) return;
+            
+            // Toggle flip
+            const isFlipped = avatarData.element.classList.contains('flipped');
+            
+            if (isFlipped) {
+                avatarData.element.classList.remove('flipped');
+            } else {
+                avatarData.element.classList.add('flipped');
+            }
+            
+            // Broadcast flip
+            if (socket) {
+                socket.emit('avatar-flipped', {
+                    avatarId: randomId,
+                    flipped: !isFlipped
+                });
+            }
         }
         
         // ===== PLAYER LIST & ADMIT/DENY =====
