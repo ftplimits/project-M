@@ -41,6 +41,17 @@ io.on('connection', (socket) => {
     let currentRoom = null;
     let isAdmitted = false;
 
+    // Check room status before joining
+    socket.on('check-room-status', (data) => {
+        const { roomId } = data;
+        const room = initRoom(roomId);
+        
+        // Tell client if room has a host
+        socket.emit('room-status', {
+            hasHost: room.host !== null
+        });
+    });
+
     // Player requests to join
     socket.on('request-join', (data) => {
         const { roomId, playerName } = data;
