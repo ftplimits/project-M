@@ -588,8 +588,8 @@
         
         .tactical-token {
             position: absolute;
-            width: 60px;
-            height: 110px;
+            width: 90px;
+            height: 165px;
             cursor: move;
             display: none;
             border: 2px solid var(--accent-gold);
@@ -1234,9 +1234,10 @@
     <!-- Token Context Menu -->
     <div id="token-context-menu" class="token-context-menu">
         <div class="token-context-item" data-action="toggle-hp-tracking">🩸 Enable HP Tracking</div>
+        <div class="token-context-item" data-action="set-size-small">🔍 Small Size</div>
         <div class="token-context-item" data-action="set-size-standard">📏 Standard Size</div>
-        <div class="token-context-item" data-action="set-size-large">📐 Large (+50%)</div>
-        <div class="token-context-item" data-action="set-size-huge">📊 Huge (+100%)</div>
+        <div class="token-context-item" data-action="set-size-large">📐 Large Size</div>
+        <div class="token-context-item" data-action="set-size-huge">📊 Huge Size</div>
         <div class="token-context-item" style="border-top: 1px solid rgba(212,175,55,0.3); padding-top: 8px; margin-top: 4px; font-weight: bold; cursor: default; pointer-events: none;">Conditions:</div>
         <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 4px;">
             <div class="token-condition-btn" data-emoji="">⭕</div>
@@ -3409,9 +3410,9 @@
                     // Place tokens centered on grid in a pattern
                     const tokenId = `token-${tokenIdCounter++}`;
                     
-                    // Center of canvas/grid
-                    const centerX = 960 - 30; // Half canvas width minus half token width (60/2)
-                    const centerY = 540 - 55; // Half canvas height minus half token height (110/2)
+                    // Center of canvas/grid (using standard token size: 90×165)
+                    const centerX = 960 - 45; // Half canvas width minus half token width (90/2)
+                    const centerY = 540 - 82.5; // Half canvas height minus half token height (165/2)
                     
                     // Arrange in a circle around center
                     const radius = 150;
@@ -3483,6 +3484,9 @@
             const baseZIndex = 20;
             const rowOffset = snapped.row * 10;
             tokenEl.style.zIndex = baseZIndex + rowOffset;
+            
+            // Apply default standard size (90×165px)
+            setTokenSize(tokenId, 'standard');
             
             // Add HP counter if tracking enabled
             if (hpTracking) {
@@ -3681,9 +3685,9 @@
             const offsetX = canvasWidth / 2;
             const offsetY = (canvasHeight - gridHeight) / 2;
             
-            // Token dimensions
-            const tokenWidth = 60;
-            const tokenHeight = 110;
+            // Token dimensions (using standard size for snap calculation)
+            const tokenWidth = 90;
+            const tokenHeight = 165;
             
             // Convert token top-left to center
             const centerX = x + tokenWidth / 2;
@@ -3756,12 +3760,13 @@
             
             // Apply size multipliers
             const sizeMultipliers = {
-                'standard': 1,
-                'large': 1.5,
-                'huge': 2
+                'small': 1,      // 60×110 (old standard)
+                'standard': 1.5, // 90×165 (old large)
+                'large': 2,      // 120×220 (old huge)
+                'huge': 3        // 180×330 (new)
             };
             
-            const multiplier = sizeMultipliers[size] || 1;
+            const multiplier = sizeMultipliers[size] || 1.5; // Default to standard
             const baseWidth = 60;
             const baseHeight = 110;
             
@@ -4782,6 +4787,8 @@
                         hp: tokenData.hp
                     });
                 }
+            } else if (action === 'set-size-small') {
+                setTokenSize(currentContextTokenId, 'small');
             } else if (action === 'set-size-standard') {
                 setTokenSize(currentContextTokenId, 'standard');
             } else if (action === 'set-size-large') {
