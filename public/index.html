@@ -2349,7 +2349,8 @@
                 savedAt: new Date().toISOString(),
                 avatars: [],
                 hostAvatar: null,
-                images: []
+                images: [],
+                tokens: []
             };
             
             // Save player avatars
@@ -2413,6 +2414,19 @@
                     width: data.width || parseInt(data.element.style.width),
                     height: data.height || parseInt(data.element.style.height),
                     locked: hardLockedAvatars.has(imageId)
+                });
+            });
+            
+            // Save tactical tokens
+            tacticalTokens.forEach((tokenData, tokenId) => {
+                sessionData.tokens.push({
+                    id: tokenId,
+                    src: tokenData.src,
+                    x: tokenData.x,
+                    y: tokenData.y,
+                    hp: tokenData.hp,
+                    hpTracking: tokenData.hpTracking,
+                    zIndex: tokenData.element.style.zIndex || '20'
                 });
             });
             
@@ -2679,6 +2693,36 @@
                                 storedHost.element.style.opacity = '0.9';
                             }
                         }
+                    }
+                    
+                    // Load tactical tokens
+                    if (sessionData.tokens) {
+                        // Clear existing tokens
+                        tacticalTokens.forEach((tokenData) => {
+                            if (tokenData.element && tokenData.element.parentNode) {
+                                tokenData.element.remove();
+                            }
+                        });
+                        tacticalTokens.clear();
+                        
+                        // Load saved tokens
+                        sessionData.tokens.forEach(tokenData => {
+                            addTokenToCanvas(
+                                tokenData.id,
+                                tokenData.src,
+                                tokenData.x,
+                                tokenData.y,
+                                true,
+                                tokenData.hpTracking,
+                                tokenData.hp
+                            );
+                            
+                            // Restore z-index
+                            const loadedToken = tacticalTokens.get(tokenData.id);
+                            if (loadedToken && loadedToken.element) {
+                                loadedToken.element.style.zIndex = tokenData.zIndex;
+                            }
+                        });
                     }
                     
                     showModal(
