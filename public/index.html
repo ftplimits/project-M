@@ -659,6 +659,17 @@
             z-index: 2;
         }
         
+        .token-condition-emoji {
+            position: absolute;
+            bottom: -8px;
+            right: -8px;
+            font-size: 24px;
+            z-index: 100;
+            text-shadow: 0 0 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.6);
+            user-select: none;
+            pointer-events: none;
+        }
+        
         .token-context-menu {
             position: fixed;
             background: var(--bg-panel);
@@ -673,6 +684,23 @@
         
         .token-context-menu.active {
             display: block;
+        }
+        
+        .token-condition-btn {
+            background: rgba(42, 42, 42, 0.95);
+            border: 1px solid rgba(212, 175, 55, 0.5);
+            border-radius: 4px;
+            padding: 4px;
+            font-size: 18px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        
+        .token-condition-btn:hover {
+            background: rgba(212, 175, 55, 0.2);
+            border-color: var(--accent-gold);
+            transform: scale(1.1);
         }
         
         .token-context-item {
@@ -1206,7 +1234,37 @@
     <!-- Token Context Menu -->
     <div id="token-context-menu" class="token-context-menu">
         <div class="token-context-item" data-action="toggle-hp-tracking">🩸 Enable HP Tracking</div>
-        <div class="token-context-item" data-action="delete-token">🗑️ Delete Token</div>
+        <div class="token-context-item" data-action="set-size-standard">📏 Standard Size</div>
+        <div class="token-context-item" data-action="set-size-large">📐 Large (+50%)</div>
+        <div class="token-context-item" data-action="set-size-huge">📊 Huge (+100%)</div>
+        <div class="token-context-item" style="border-top: 1px solid rgba(212,175,55,0.3); padding-top: 8px; margin-top: 4px; font-weight: bold; cursor: default; pointer-events: none;">Conditions:</div>
+        <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 4px;">
+            <div class="token-condition-btn" data-emoji="">⭕</div>
+            <div class="token-condition-btn" data-emoji="💀">💀</div>
+            <div class="token-condition-btn" data-emoji="🔥">🔥</div>
+            <div class="token-condition-btn" data-emoji="⚡">⚡</div>
+            <div class="token-condition-btn" data-emoji="🩸">🩸</div>
+            <div class="token-condition-btn" data-emoji="🕷️">🕷️</div>
+            <div class="token-condition-btn" data-emoji="✨">✨</div>
+            <div class="token-condition-btn" data-emoji="🛡️">🛡️</div>
+            <div class="token-condition-btn" data-emoji="⚔️">⚔️</div>
+            <div class="token-condition-btn" data-emoji="💪">💪</div>
+            <div class="token-condition-btn" data-emoji="🌀">🌀</div>
+            <div class="token-condition-btn" data-emoji="💫">💫</div>
+            <div class="token-condition-btn" data-emoji="💧">💧</div>
+            <div class="token-condition-btn" data-emoji="🎯">🎯</div>
+            <div class="token-condition-btn" data-emoji="❓">❓</div>
+            <div class="token-condition-btn" data-emoji="👻">👻</div>
+            <div class="token-condition-btn" data-emoji="😴">😴</div>
+            <div class="token-condition-btn" data-emoji="🧊">🧊</div>
+            <div class="token-condition-btn" data-emoji="⛓️">⛓️</div>
+            <div class="token-condition-btn" data-emoji="🔆">🔆</div>
+            <div class="token-condition-btn" data-emoji="☠️">☠️</div>
+            <div class="token-condition-btn" data-emoji="⚰️">⚰️</div>
+            <div class="token-condition-btn" data-emoji="💔">💔</div>
+            <div class="token-condition-btn" data-emoji="🎭">🎭</div>
+        </div>
+        <div class="token-context-item" data-action="delete-token" style="border-top: 1px solid rgba(212,175,55,0.3); margin-top: 4px;">🗑️ Delete Token</div>
     </div>
     
     <!-- Handout Popup -->
@@ -1697,6 +1755,14 @@
                             if (counter) counter.remove();
                         }
                     }
+                });
+                
+                socket.on('token-condition-changed', (data) => {
+                    setTokenCondition(data.id, data.conditionEmoji);
+                });
+                
+                socket.on('token-size-changed', (data) => {
+                    setTokenSize(data.id, data.size);
                 });
                 
                 // Handout sync
@@ -2426,6 +2492,8 @@
                     y: tokenData.y,
                     hp: tokenData.hp,
                     hpTracking: tokenData.hpTracking,
+                    conditionEmoji: tokenData.conditionEmoji || '',
+                    size: tokenData.size || 'standard',
                     zIndex: tokenData.element.style.zIndex || '20'
                 });
             });
@@ -2717,10 +2785,20 @@
                                 tokenData.hp
                             );
                             
-                            // Restore z-index
+                            // Restore z-index, condition emoji, and size
                             const loadedToken = tacticalTokens.get(tokenData.id);
                             if (loadedToken && loadedToken.element) {
                                 loadedToken.element.style.zIndex = tokenData.zIndex;
+                                
+                                // Restore condition emoji
+                                if (tokenData.conditionEmoji) {
+                                    setTokenCondition(tokenData.id, tokenData.conditionEmoji);
+                                }
+                                
+                                // Restore size
+                                if (tokenData.size && tokenData.size !== 'standard') {
+                                    setTokenSize(tokenData.id, tokenData.size);
+                                }
                             }
                         });
                     }
@@ -3379,6 +3457,13 @@
             img.draggable = false;
             
             tokenEl.appendChild(img);
+            
+            // Add condition emoji element
+            const conditionEmoji = document.createElement('div');
+            conditionEmoji.className = 'token-condition-emoji';
+            conditionEmoji.style.display = 'none';
+            tokenEl.appendChild(conditionEmoji);
+            
             canvas.appendChild(tokenEl);
             
             // Store token data
@@ -3388,7 +3473,9 @@
                 y: y,
                 src: src,
                 hpTracking: hpTracking,
-                hp: hp
+                hp: hp,
+                conditionEmoji: '',
+                size: 'standard' // standard, large, huge
             });
             
             // Calculate and set initial z-index based on grid row
@@ -3606,9 +3693,9 @@
             const col = ((centerX - offsetX) / (tileWidth / 2) + (centerY - offsetY) / (tileHeight / 2)) / 2;
             const row = ((centerY - offsetY) / (tileHeight / 2) - (centerX - offsetX) / (tileWidth / 2)) / 2;
             
-            // Round to nearest grid cell
-            const snappedCol = Math.round(col);
-            const snappedRow = Math.round(row);
+            // Round to nearest half-grid cell (doubles snap resolution)
+            const snappedCol = Math.round(col * 2) / 2;
+            const snappedRow = Math.round(row * 2) / 2;
             
             // Convert back to screen coordinates (cell center)
             const snappedCenterX = offsetX + (snappedCol - snappedRow) * (tileWidth / 2);
@@ -3631,6 +3718,62 @@
                 if (socket) {
                     socket.emit('token-removed', { id: tokenId });
                 }
+            }
+        }
+        
+        function setTokenCondition(tokenId, emoji) {
+            const tokenData = tacticalTokens.get(tokenId);
+            if (!tokenData) return;
+            
+            tokenData.conditionEmoji = emoji || '';
+            
+            const conditionElement = tokenData.element.querySelector('.token-condition-emoji');
+            if (conditionElement) {
+                if (emoji) {
+                    conditionElement.textContent = emoji;
+                    conditionElement.style.display = 'block';
+                } else {
+                    conditionElement.textContent = '';
+                    conditionElement.style.display = 'none';
+                }
+            }
+            
+            // Broadcast condition change
+            if (socket) {
+                socket.emit('token-condition-changed', {
+                    id: tokenId,
+                    conditionEmoji: emoji || ''
+                });
+            }
+        }
+        
+        function setTokenSize(tokenId, size) {
+            const tokenData = tacticalTokens.get(tokenId);
+            if (!tokenData) return;
+            
+            tokenData.size = size;
+            const tokenEl = tokenData.element;
+            
+            // Apply size multipliers
+            const sizeMultipliers = {
+                'standard': 1,
+                'large': 1.5,
+                'huge': 2
+            };
+            
+            const multiplier = sizeMultipliers[size] || 1;
+            const baseWidth = 60;
+            const baseHeight = 110;
+            
+            tokenEl.style.width = (baseWidth * multiplier) + 'px';
+            tokenEl.style.height = (baseHeight * multiplier) + 'px';
+            
+            // Broadcast size change
+            if (socket) {
+                socket.emit('token-size-changed', {
+                    id: tokenId,
+                    size: size
+                });
             }
         }
         
@@ -4639,9 +4782,26 @@
                         hp: tokenData.hp
                     });
                 }
+            } else if (action === 'set-size-standard') {
+                setTokenSize(currentContextTokenId, 'standard');
+            } else if (action === 'set-size-large') {
+                setTokenSize(currentContextTokenId, 'large');
+            } else if (action === 'set-size-huge') {
+                setTokenSize(currentContextTokenId, 'huge');
             }
             
             tokenContextMenu.classList.remove('active');
+        });
+        
+        // Handle condition emoji buttons
+        tokenContextMenu.addEventListener('click', (e) => {
+            if (e.target.classList.contains('token-condition-btn')) {
+                const emoji = e.target.dataset.emoji;
+                if (currentContextTokenId) {
+                    setTokenCondition(currentContextTokenId, emoji);
+                }
+                tokenContextMenu.classList.remove('active');
+            }
         });
         
         // Close token context menu on outside click
