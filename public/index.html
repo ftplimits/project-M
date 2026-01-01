@@ -627,7 +627,7 @@
         
         .token-hp-counter {
             position: absolute;
-            top: 2px;
+            bottom: 2px;
             left: 2px;
             background: rgba(0, 0, 0, 0.9);
             color: #4ecdc4;
@@ -651,7 +651,7 @@
         
         .token-hp-input {
             position: absolute;
-            top: 2px;
+            bottom: 2px;
             left: 2px;
             width: 50px;
             background: rgba(0, 0, 0, 0.95);
@@ -693,6 +693,128 @@
         
         .token-context-item:hover {
             background: var(--bg-secondary);
+        }
+        
+        /* Drawing Tool */
+        .drawing-toolbox {
+            position: fixed;
+            top: 200px;
+            right: 20px;
+            width: 200px;
+            background: var(--bg-panel);
+            border: 2px solid var(--accent-gold);
+            border-radius: 8px;
+            padding: 12px;
+            z-index: 3000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
+            cursor: move;
+        }
+        
+        .drawing-toolbox.active {
+            display: block;
+        }
+        
+        .drawing-toolbox-header {
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--accent-gold);
+            margin-bottom: 10px;
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+            cursor: move;
+        }
+        
+        .drawing-tool-section {
+            margin-bottom: 12px;
+        }
+        
+        .drawing-tool-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        
+        .drawing-tool-buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+        }
+        
+        .drawing-tool-btn {
+            padding: 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .drawing-tool-btn:hover {
+            background: var(--bg-primary);
+            border-color: var(--accent-gold);
+        }
+        
+        .drawing-tool-btn.active {
+            background: var(--accent-gold);
+            color: var(--bg-primary);
+            border-color: var(--accent-gold);
+        }
+        
+        .drawing-color-palette {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+        }
+        
+        .drawing-color-btn {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--border-color);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .drawing-color-btn:hover {
+            transform: scale(1.1);
+            border-color: var(--accent-gold);
+        }
+        
+        .drawing-color-btn.active {
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 8px var(--accent-gold);
+        }
+        
+        .drawing-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--text-primary);
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .drawing-checkbox input {
+            cursor: pointer;
+        }
+        
+        .drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+        
+        .drawing-canvas.active {
+            pointer-events: auto;
         }
         
         /* Dice System */
@@ -877,6 +999,7 @@
             <div class="context-divider"></div>
             <div class="context-item" data-action="toggle-tactical-mode">⚔️ Toggle Tactical Mode</div>
             <div class="context-item" data-action="upload-tokens">🎯 Upload Tokens</div>
+            <div class="context-item" data-action="toggle-drawing-tool">✏️ Toggle Drawing Tool</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="save-session">💾 Save Session</div>
             <div class="context-item" data-action="load-session">📂 Load Session</div>
@@ -941,6 +1064,9 @@
                 
                 <!-- Tactical Mode Grid -->
                 <canvas class="tactical-grid" id="tactical-grid" width="1920" height="1080"></canvas>
+                
+                <!-- Drawing Canvas -->
+                <canvas class="drawing-canvas" id="drawing-canvas" width="1920" height="1080"></canvas>
             </div>
         </div>
     </div>
@@ -995,6 +1121,48 @@
         <div style="font-size: 16px; color: var(--accent-gold); font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">🎲 PRESETS</div>
     </div>
 
+    <!-- Drawing Toolbox -->
+    <div id="drawing-toolbox" class="drawing-toolbox">
+        <div class="drawing-toolbox-header">✏️ DRAWING TOOLS</div>
+        
+        <div class="drawing-tool-section">
+            <div class="drawing-tool-label">TOOL</div>
+            <div class="drawing-tool-buttons">
+                <button class="drawing-tool-btn active" data-tool="freehand">✏️ Free</button>
+                <button class="drawing-tool-btn" data-tool="line">📏 Line</button>
+                <button class="drawing-tool-btn" data-tool="square">⬜ Square</button>
+                <button class="drawing-tool-btn" data-tool="circle">⭕ Circle</button>
+                <button class="drawing-tool-btn" data-tool="triangle">🔺 Triangle</button>
+                <button class="drawing-tool-btn" data-tool="clear">🗑️ Clear</button>
+            </div>
+        </div>
+        
+        <div class="drawing-tool-section">
+            <label class="drawing-checkbox">
+                <input type="checkbox" id="fill-shape">
+                Fill Shape
+            </label>
+        </div>
+        
+        <div class="drawing-tool-section">
+            <div class="drawing-tool-label">COLOR</div>
+            <div class="drawing-color-palette">
+                <div class="drawing-color-btn active" data-color="#FFFFFF" style="background: #FFFFFF;"></div>
+                <div class="drawing-color-btn" data-color="#000000" style="background: #000000;"></div>
+                <div class="drawing-color-btn" data-color="#808080" style="background: #808080;"></div>
+                <div class="drawing-color-btn" data-color="#8B4513" style="background: #8B4513;"></div>
+                <div class="drawing-color-btn" data-color="#FF0000" style="background: #FF0000;"></div>
+                <div class="drawing-color-btn" data-color="#FFC0CB" style="background: #FFC0CB;"></div>
+                <div class="drawing-color-btn" data-color="#FFA500" style="background: #FFA500;"></div>
+                <div class="drawing-color-btn" data-color="#FFFF00" style="background: #FFFF00;"></div>
+                <div class="drawing-color-btn" data-color="#00FF00" style="background: #00FF00;"></div>
+                <div class="drawing-color-btn" data-color="#00FFFF" style="background: #00FFFF;"></div>
+                <div class="drawing-color-btn" data-color="#0000FF" style="background: #0000FF;"></div>
+                <div class="drawing-color-btn" data-color="#800080" style="background: #800080;"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const CLIENT_ID = '1455487225490837526';
         // The discord-sdk.js exports as: DiscordSDK.DiscordSDK
@@ -1038,6 +1206,19 @@
         let draggedToken = null;
         let tokenIdCounter = 1;
         let currentContextTokenId = null;
+        
+        // Drawing tool system
+        let drawingToolActive = false;
+        let currentTool = 'freehand';
+        let currentColor = '#FFFFFF';
+        let fillShape = false;
+        let isDrawing = false;
+        let drawingStartX = 0;
+        let drawingStartY = 0;
+        let drawingCanvas = null;
+        let drawingCtx = null;
+        let toolboxDragging = false;
+        let toolboxOffset = { x: 0, y: 0 };
 
         // Initialize
         (async function init() {
@@ -1499,6 +1680,9 @@
                         contextMenu.classList.remove('active');
                     } else if (action === 'upload-tokens') {
                         document.getElementById('token-upload-input').click();
+                        contextMenu.classList.remove('active');
+                    } else if (action === 'toggle-drawing-tool') {
+                        toggleDrawingTool();
                         contextMenu.classList.remove('active');
                     } else if (action === 'save-session') {
                         saveSession();
@@ -2937,10 +3121,18 @@
             Array.from(files).forEach((file, index) => {
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    // Place tokens in a grid pattern initially
+                    // Place tokens centered on grid in a pattern
                     const tokenId = `token-${tokenIdCounter++}`;
-                    const x = 100 + (index % 5) * 100;
-                    const y = 100 + Math.floor(index / 5) * 170;
+                    
+                    // Center of canvas/grid
+                    const centerX = 960 - 28; // Half canvas width minus half token width (56/2)
+                    const centerY = 540 - 56; // Half canvas height minus half token height (112/2)
+                    
+                    // Arrange in a circle around center
+                    const radius = 150;
+                    const angle = (index / Math.max(files.length, 1)) * 2 * Math.PI;
+                    const x = centerX + Math.cos(angle) * radius;
+                    const y = centerY + Math.sin(angle) * radius;
                     
                     addTokenToCanvas(tokenId, e.target.result, x, y, true, false, 10);
                     
@@ -3233,6 +3425,135 @@
             tokenData.element.style.top = y + 'px';
             tokenData.x = x;
             tokenData.y = y;
+        }
+
+        // ===== DRAWING TOOL SYSTEM =====
+        function toggleDrawingTool() {
+            drawingToolActive = !drawingToolActive;
+            const toolbox = document.getElementById('drawing-toolbox');
+            const canvas = document.getElementById('drawing-canvas');
+            
+            if (drawingToolActive) {
+                toolbox.classList.add('active');
+                canvas.classList.add('active');
+                initDrawingCanvas();
+            } else {
+                toolbox.classList.remove('active');
+                canvas.classList.remove('active');
+            }
+        }
+        
+        function initDrawingCanvas() {
+            drawingCanvas = document.getElementById('drawing-canvas');
+            drawingCtx = drawingCanvas.getContext('2d');
+            
+            // Set up canvas event listeners
+            drawingCanvas.addEventListener('mousedown', startDrawing);
+            drawingCanvas.addEventListener('mousemove', draw);
+            drawingCanvas.addEventListener('mouseup', stopDrawing);
+            drawingCanvas.addEventListener('mouseleave', stopDrawing);
+        }
+        
+        function startDrawing(e) {
+            if (!drawingToolActive) return;
+            
+            isDrawing = true;
+            const rect = drawingCanvas.getBoundingClientRect();
+            drawingStartX = e.clientX - rect.left;
+            drawingStartY = e.clientY - rect.top;
+            
+            if (currentTool === 'freehand') {
+                drawingCtx.beginPath();
+                drawingCtx.moveTo(drawingStartX, drawingStartY);
+            }
+        }
+        
+        function draw(e) {
+            if (!isDrawing || !drawingToolActive) return;
+            
+            const rect = drawingCanvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            
+            if (currentTool === 'freehand') {
+                drawingCtx.strokeStyle = currentColor;
+                drawingCtx.lineWidth = 3;
+                drawingCtx.lineCap = 'round';
+                drawingCtx.lineTo(currentX, currentY);
+                drawingCtx.stroke();
+            }
+        }
+        
+        function stopDrawing(e) {
+            if (!isDrawing || !drawingToolActive) return;
+            
+            const rect = drawingCanvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+            
+            if (currentTool !== 'freehand') {
+                drawShape(drawingStartX, drawingStartY, endX, endY);
+            }
+            
+            isDrawing = false;
+        }
+        
+        function drawShape(startX, startY, endX, endY) {
+            drawingCtx.strokeStyle = currentColor;
+            drawingCtx.fillStyle = currentColor;
+            drawingCtx.lineWidth = 3;
+            
+            const width = endX - startX;
+            const height = endY - startY;
+            
+            switch (currentTool) {
+                case 'line':
+                    drawingCtx.beginPath();
+                    drawingCtx.moveTo(startX, startY);
+                    drawingCtx.lineTo(endX, endY);
+                    drawingCtx.stroke();
+                    break;
+                    
+                case 'square':
+                    if (fillShape) {
+                        drawingCtx.fillRect(startX, startY, width, height);
+                    } else {
+                        drawingCtx.strokeRect(startX, startY, width, height);
+                    }
+                    break;
+                    
+                case 'circle':
+                    const radius = Math.sqrt(width * width + height * height) / 2;
+                    const centerX = startX + width / 2;
+                    const centerY = startY + height / 2;
+                    drawingCtx.beginPath();
+                    drawingCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                    if (fillShape) {
+                        drawingCtx.fill();
+                    } else {
+                        drawingCtx.stroke();
+                    }
+                    break;
+                    
+                case 'triangle':
+                    drawingCtx.beginPath();
+                    drawingCtx.moveTo(startX + width / 2, startY);
+                    drawingCtx.lineTo(startX, endY);
+                    drawingCtx.lineTo(endX, endY);
+                    drawingCtx.closePath();
+                    if (fillShape) {
+                        drawingCtx.fill();
+                    } else {
+                        drawingCtx.stroke();
+                    }
+                    break;
+            }
+        }
+        
+        function clearDrawing() {
+            if (drawingCtx) {
+                drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            }
         }
 
         // ===== DICE SYSTEM =====
@@ -3975,6 +4296,61 @@
             if (!tokenContextMenu.contains(e.target) && !e.target.closest('.tactical-token')) {
                 tokenContextMenu.classList.remove('active');
             }
+        });
+        
+        // Initialize drawing tool
+        const drawingToolbox = document.getElementById('drawing-toolbox');
+        const drawingToolButtons = document.querySelectorAll('.drawing-tool-btn');
+        const drawingColorButtons = document.querySelectorAll('.drawing-color-btn');
+        const fillShapeCheckbox = document.getElementById('fill-shape');
+        
+        // Tool selection
+        drawingToolButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (btn.dataset.tool === 'clear') {
+                    clearDrawing();
+                    return;
+                }
+                
+                currentTool = btn.dataset.tool;
+                drawingToolButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+        
+        // Color selection
+        drawingColorButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentColor = btn.dataset.color;
+                drawingColorButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+        
+        // Fill shape toggle
+        fillShapeCheckbox.addEventListener('change', (e) => {
+            fillShape = e.target.checked;
+        });
+        
+        // Make toolbox draggable
+        const toolboxHeader = drawingToolbox.querySelector('.drawing-toolbox-header');
+        toolboxHeader.addEventListener('mousedown', (e) => {
+            toolboxDragging = true;
+            const rect = drawingToolbox.getBoundingClientRect();
+            toolboxOffset.x = e.clientX - rect.left;
+            toolboxOffset.y = e.clientY - rect.top;
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (toolboxDragging) {
+                drawingToolbox.style.left = (e.clientX - toolboxOffset.x) + 'px';
+                drawingToolbox.style.top = (e.clientY - toolboxOffset.y) + 'px';
+                drawingToolbox.style.right = 'auto'; // Remove right positioning
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            toolboxDragging = false;
         });
     </script>
 </body>
