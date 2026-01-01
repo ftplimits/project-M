@@ -258,6 +258,15 @@ io.on('connection', (socket) => {
         console.log(`Avatar ${data.avatarId} removed`);
     });
     
+    socket.on('dice-roll', (data) => {
+        if (!currentRoom) return;
+        
+        // Broadcast dice roll to all other players in room
+        socket.to(currentRoom).emit('dice-roll', data);
+        
+        console.log(`Dice rolled: ${data.formula} = ${data.total}`);
+    });
+    
     // Avatar flip handler
     socket.on('avatar-flipped', (data) => {
         if (!currentRoom) return;
