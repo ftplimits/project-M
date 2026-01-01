@@ -1218,10 +1218,10 @@
     </div>
     
     <!-- Handout Popup -->
-    <div id="handoutPopup" onclick="closeHandout()">
-        <div style="position: relative;" onclick="event.stopPropagation()">
+    <div id="handoutPopup">
+        <div style="position: relative;" id="handoutContent">
             <img src="" alt="Handout">
-            <button class="handout-close-btn" onclick="closeHandout()">✕</button>
+            <button class="handout-close-btn" id="handoutCloseBtn">✕</button>
         </div>
     </div>
     
@@ -3252,8 +3252,8 @@
             const offsetX = canvasWidth / 2;
             const offsetY = (canvasHeight - gridHeight) / 2;
             
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 2;
             
             // Draw isometric grid
             for (let row = 0; row <= gridSize; row++) {
@@ -3739,7 +3739,8 @@
             document.getElementById('handoutInput').click();
         }
         
-        function closeHandout() {
+        // Make closeHandout global
+        window.closeHandout = function() {
             handoutVisible = false;
             updateHandoutDisplay();
             
@@ -3765,8 +3766,36 @@
             }
         }
         
-        // Setup handout input handler
+        // Setup handout event listeners and input handler
         document.addEventListener('DOMContentLoaded', function() {
+            // Close button click
+            const closeBtn = document.getElementById('handoutCloseBtn');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    window.closeHandout();
+                });
+            }
+            
+            // Click background to close
+            const handoutPopup = document.getElementById('handoutPopup');
+            if (handoutPopup) {
+                handoutPopup.addEventListener('click', function(e) {
+                    if (e.target === handoutPopup) {
+                        window.closeHandout();
+                    }
+                });
+            }
+            
+            // Stop propagation on content
+            const handoutContent = document.getElementById('handoutContent');
+            if (handoutContent) {
+                handoutContent.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+            }
+            
+            // File input handler
             const handoutInput = document.getElementById('handoutInput');
             if (handoutInput) {
                 handoutInput.addEventListener('change', async function(e) {
