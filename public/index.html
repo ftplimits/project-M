@@ -594,15 +594,15 @@
         
         .tactical-token {
             position: absolute;
-            width: 75px;
-            height: 150px;
+            width: 56px;
+            height: 112px;
             cursor: move;
             z-index: 20;
             display: none;
             border: 2px solid var(--accent-gold);
             border-radius: 4px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6);
-            transition: border-color 0.2s, transform 0.2s;
+            transition: border-color 0.2s;
         }
         
         .tactical-token.active {
@@ -611,7 +611,6 @@
         
         .tactical-token:hover {
             border-color: #fff;
-            transform: scale(1.05);
         }
         
         .tactical-token.dragging {
@@ -625,6 +624,76 @@
             object-fit: cover;
             pointer-events: none;
             border-radius: 2px;
+        }
+        
+        .token-hp-counter {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            background: rgba(0, 0, 0, 0.9);
+            color: #4ecdc4;
+            border: 1px solid var(--accent-gold);
+            border-radius: 3px;
+            padding: 2px 6px;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: Arial, sans-serif;
+            cursor: pointer;
+            user-select: none;
+            z-index: 1;
+            min-width: 20px;
+            text-align: center;
+        }
+        
+        .token-hp-counter:hover {
+            background: rgba(0, 0, 0, 1);
+            border-color: #fff;
+        }
+        
+        .token-hp-input {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 50px;
+            background: rgba(0, 0, 0, 0.95);
+            color: #4ecdc4;
+            border: 2px solid var(--accent-gold);
+            border-radius: 3px;
+            padding: 2px 4px;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            z-index: 2;
+        }
+        
+        .token-context-menu {
+            position: fixed;
+            background: var(--bg-panel);
+            border: 2px solid var(--accent-gold);
+            border-radius: 4px;
+            padding: 4px 0;
+            z-index: 5000;
+            display: none;
+            min-width: 150px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
+        }
+        
+        .token-context-menu.active {
+            display: block;
+        }
+        
+        .token-context-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            color: var(--text-primary);
+            font-size: 13px;
+            transition: background 0.2s;
+            user-select: none;
+        }
+        
+        .token-context-item:hover {
+            background: var(--bg-secondary);
         }
         
         /* Dice System */
@@ -902,6 +971,12 @@
     <div id="diceNotification" style="display: none;"></div>
     <div id="diceCountMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-gold); border-radius: 8px; padding: 8px; z-index: 3000; box-shadow: 0 4px 12px rgba(0,0,0,0.8);"></div>
     
+    <!-- Token Context Menu -->
+    <div id="token-context-menu" class="token-context-menu">
+        <div class="token-context-item" data-action="toggle-hp-tracking">🩸 Enable HP Tracking</div>
+        <div class="token-context-item" data-action="delete-token">🗑️ Delete Token</div>
+    </div>
+    
     <!-- Dice Presets Panel -->
     <div id="presetsPanel" style="position: fixed; right: -350px; top: 80px; width: 320px; max-height: 500px; z-index: 2000; background-color: #1a1a1a; border: 2px solid var(--accent-gold); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); transition: right 0.3s ease-in-out; display: flex; flex-direction: column;">
         <div style="font-size: 16px; font-weight: bold; color: var(--accent-gold); margin-bottom: 12px; font-family: 'Times New Roman', Times, serif; border-bottom: 1px solid var(--accent-gold); padding-bottom: 8px; text-align: center;">
@@ -959,9 +1034,10 @@
         
         // Tactical Mode system
         let tacticalModeActive = false;
-        let tacticalTokens = new Map(); // tokenId -> {element, x, y, src}
+        let tacticalTokens = new Map(); // tokenId -> {element, x, y, src, hp, hpTracking}
         let draggedToken = null;
         let tokenIdCounter = 1;
+        let currentContextTokenId = null;
 
         // Initialize
         (async function init() {
@@ -1270,7 +1346,7 @@
                 });
 
                 socket.on('token-added', (data) => {
-                    addTokenToCanvas(data.id, data.src, data.x, data.y, false);
+                    addTokenToCanvas(data.id, data.src, data.x, data.y, false, data.hpTracking || false, data.hp || 10);
                 });
 
                 socket.on('token-moved', (data) => {
@@ -1282,6 +1358,32 @@
                     if (tokenData) {
                         tokenData.element.remove();
                         tacticalTokens.delete(data.id);
+                    }
+                });
+
+                socket.on('token-hp-changed', (data) => {
+                    const tokenData = tacticalTokens.get(data.id);
+                    if (tokenData) {
+                        tokenData.hp = data.hp;
+                        const counter = tokenData.element.querySelector('.token-hp-counter');
+                        if (counter) {
+                            counter.textContent = data.hp;
+                        }
+                    }
+                });
+
+                socket.on('token-hp-tracking-changed', (data) => {
+                    const tokenData = tacticalTokens.get(data.id);
+                    if (tokenData) {
+                        tokenData.hpTracking = data.hpTracking;
+                        tokenData.hp = data.hp;
+                        
+                        if (data.hpTracking) {
+                            addHPCounter(data.id);
+                        } else {
+                            const counter = tokenData.element.querySelector('.token-hp-counter');
+                            if (counter) counter.remove();
+                        }
                     }
                 });
 
@@ -2835,11 +2937,18 @@
                     const x = 100 + (index % 5) * 100;
                     const y = 100 + Math.floor(index / 5) * 170;
                     
-                    addTokenToCanvas(tokenId, e.target.result, x, y);
+                    addTokenToCanvas(tokenId, e.target.result, x, y, true, false, 10);
                     
                     // Broadcast to other players
                     if (socket) {
-                        socket.emit('token-added', { id: tokenId, src: e.target.result, x, y });
+                        socket.emit('token-added', { 
+                            id: tokenId, 
+                            src: e.target.result, 
+                            x, 
+                            y,
+                            hpTracking: false,
+                            hp: 10
+                        });
                     }
                 };
                 reader.readAsDataURL(file);
@@ -2849,7 +2958,7 @@
             event.target.value = '';
         }
         
-        function addTokenToCanvas(tokenId, src, x, y, isLocal = true) {
+        function addTokenToCanvas(tokenId, src, x, y, isLocal = true, hpTracking = false, hp = 10) {
             const canvas = document.getElementById('canvas');
             
             const tokenEl = document.createElement('div');
@@ -2873,17 +2982,121 @@
                 element: tokenEl,
                 x: x,
                 y: y,
-                src: src
+                src: src,
+                hpTracking: hpTracking,
+                hp: hp
             });
             
+            // Add HP counter if tracking enabled
+            if (hpTracking) {
+                addHPCounter(tokenId);
+            }
+            
             // Setup dragging
-            tokenEl.addEventListener('mousedown', (e) => startDragToken(e, tokenId));
+            tokenEl.addEventListener('mousedown', (e) => {
+                // Don't start drag if clicking HP counter
+                if (e.target.classList.contains('token-hp-counter') || e.target.classList.contains('token-hp-input')) {
+                    return;
+                }
+                startDragToken(e, tokenId);
+            });
+            
+            // Setup context menu
             tokenEl.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                if (confirm('Delete this token?')) {
-                    deleteToken(tokenId);
+                showTokenContextMenu(e, tokenId);
+            });
+        }
+        
+        function addHPCounter(tokenId) {
+            const tokenData = tacticalTokens.get(tokenId);
+            if (!tokenData) return;
+            
+            // Remove existing HP counter if any
+            const existingCounter = tokenData.element.querySelector('.token-hp-counter');
+            if (existingCounter) existingCounter.remove();
+            
+            const hpCounter = document.createElement('div');
+            hpCounter.className = 'token-hp-counter';
+            hpCounter.textContent = tokenData.hp;
+            
+            // Double-click to edit HP
+            hpCounter.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                showHPInput(tokenId);
+            });
+            
+            tokenData.element.appendChild(hpCounter);
+        }
+        
+        function showHPInput(tokenId) {
+            const tokenData = tacticalTokens.get(tokenId);
+            if (!tokenData) return;
+            
+            const counter = tokenData.element.querySelector('.token-hp-counter');
+            if (!counter) return;
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'token-hp-input';
+            input.value = '';
+            input.placeholder = '+/-#';
+            
+            counter.style.display = 'none';
+            tokenData.element.appendChild(input);
+            input.focus();
+            
+            const finishEdit = () => {
+                const value = input.value.trim();
+                if (value) {
+                    // Smart math: +5, -3, or absolute value
+                    let newHP = tokenData.hp;
+                    if (value.startsWith('+') || value.startsWith('-')) {
+                        const change = parseInt(value);
+                        if (!isNaN(change)) {
+                            newHP = tokenData.hp + change;
+                        }
+                    } else {
+                        const absolute = parseInt(value);
+                        if (!isNaN(absolute)) {
+                            newHP = absolute;
+                        }
+                    }
+                    
+                    tokenData.hp = newHP;
+                    counter.textContent = newHP;
+                    
+                    // Broadcast HP change
+                    if (socket) {
+                        socket.emit('token-hp-changed', { id: tokenId, hp: newHP });
+                    }
+                }
+                
+                input.remove();
+                counter.style.display = 'block';
+            };
+            
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    finishEdit();
                 }
             });
+            
+            input.addEventListener('blur', finishEdit);
+        }
+        
+        function showTokenContextMenu(e, tokenId) {
+            currentContextTokenId = tokenId;
+            const menu = document.getElementById('token-context-menu');
+            const tokenData = tacticalTokens.get(tokenId);
+            
+            // Update HP tracking text
+            const hpItem = menu.querySelector('[data-action="toggle-hp-tracking"]');
+            hpItem.textContent = tokenData.hpTracking ? '✓ HP Tracking Enabled' : '🩸 Enable HP Tracking';
+            
+            menu.classList.add('active');
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
         }
         
         function startDragToken(e, tokenId) {
@@ -2919,6 +3132,13 @@
                 if (draggedToken) {
                     tokenData.element.classList.remove('dragging');
                     
+                    // Apply grid snapping (50% snap)
+                    const snapped = snapToGrid(tokenData.x, tokenData.y);
+                    tokenData.x = snapped.x;
+                    tokenData.y = snapped.y;
+                    tokenData.element.style.left = snapped.x + 'px';
+                    tokenData.element.style.top = snapped.y + 'px';
+                    
                     // Broadcast position
                     if (socket) {
                         socket.emit('token-moved', { id: draggedToken, x: tokenData.x, y: tokenData.y });
@@ -2932,6 +3152,44 @@
             
             document.addEventListener('mousemove', drag);
             document.addEventListener('mouseup', stopDrag);
+        }
+        
+        function snapToGrid(x, y) {
+            // Grid settings (must match drawIsometricGrid)
+            const tileWidth = 90;
+            const tileHeight = 45;
+            const gridSize = 20;
+            const canvasWidth = 1920;
+            const canvasHeight = 1080;
+            const gridHeight = gridSize * tileHeight;
+            const offsetX = canvasWidth / 2;
+            const offsetY = (canvasHeight - gridHeight) / 2;
+            
+            // Token dimensions
+            const tokenWidth = 56;
+            const tokenHeight = 112;
+            
+            // Convert token top-left to center
+            const centerX = x + tokenWidth / 2;
+            const centerY = y + tokenHeight / 2;
+            
+            // Convert screen coordinates to grid coordinates
+            const col = ((centerX - offsetX) / (tileWidth / 2) + (centerY - offsetY) / (tileHeight / 2)) / 2;
+            const row = ((centerY - offsetY) / (tileHeight / 2) - (centerX - offsetX) / (tileWidth / 2)) / 2;
+            
+            // Round to nearest grid cell
+            const snappedCol = Math.round(col);
+            const snappedRow = Math.round(row);
+            
+            // Convert back to screen coordinates (cell center)
+            const snappedCenterX = offsetX + (snappedCol - snappedRow) * (tileWidth / 2);
+            const snappedCenterY = offsetY + (snappedCol + snappedRow) * (tileHeight / 2);
+            
+            // Convert center back to top-left
+            const snappedX = snappedCenterX - tokenWidth / 2;
+            const snappedY = snappedCenterY - tokenHeight / 2;
+            
+            return { x: snappedX, y: snappedY };
         }
         
         function deleteToken(tokenId) {
@@ -3658,6 +3916,46 @@
         updatePresetsPanel();
         document.getElementById('addPresetBtn').onclick = addPreset;
         document.getElementById('presetsToggle').onclick = togglePresetsPanel;
+        
+        // Initialize token context menu
+        const tokenContextMenu = document.getElementById('token-context-menu');
+        tokenContextMenu.addEventListener('click', (e) => {
+            const action = e.target.dataset.action;
+            if (!action || !currentContextTokenId) return;
+            
+            const tokenData = tacticalTokens.get(currentContextTokenId);
+            if (!tokenData) return;
+            
+            if (action === 'delete-token') {
+                deleteToken(currentContextTokenId);
+            } else if (action === 'toggle-hp-tracking') {
+                tokenData.hpTracking = !tokenData.hpTracking;
+                if (tokenData.hpTracking) {
+                    addHPCounter(currentContextTokenId);
+                } else {
+                    const counter = tokenData.element.querySelector('.token-hp-counter');
+                    if (counter) counter.remove();
+                }
+                
+                // Broadcast HP tracking change
+                if (socket) {
+                    socket.emit('token-hp-tracking-changed', {
+                        id: currentContextTokenId,
+                        hpTracking: tokenData.hpTracking,
+                        hp: tokenData.hp
+                    });
+                }
+            }
+            
+            tokenContextMenu.classList.remove('active');
+        });
+        
+        // Close token context menu on outside click
+        document.addEventListener('click', (e) => {
+            if (!tokenContextMenu.contains(e.target) && !e.target.closest('.tactical-token')) {
+                tokenContextMenu.classList.remove('active');
+            }
+        });
     </script>
 </body>
 </html>
