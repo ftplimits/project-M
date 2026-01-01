@@ -267,6 +267,30 @@ io.on('connection', (socket) => {
         console.log(`Dice rolled: ${data.formula} = ${data.total}`);
     });
     
+    // Tactical mode handlers
+    socket.on('tactical-mode-toggle', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('tactical-mode-toggle', data);
+        console.log(`Tactical mode: ${data.active}`);
+    });
+    
+    socket.on('token-added', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('token-added', data);
+        console.log(`Token added: ${data.id}`);
+    });
+    
+    socket.on('token-moved', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('token-moved', data);
+    });
+    
+    socket.on('token-removed', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('token-removed', data);
+        console.log(`Token removed: ${data.id}`);
+    });
+    
     // Avatar flip handler
     socket.on('avatar-flipped', (data) => {
         if (!currentRoom) return;
@@ -303,16 +327,6 @@ io.on('connection', (socket) => {
         socket.to(currentRoom).emit('avatar-lock-toggle', data);
         
         console.log(`Avatar ${data.avatarId} lock: ${data.locked}`);
-    });
-    
-    // Board header handler
-    socket.on('board-header-update', (data) => {
-        if (!currentRoom) return;
-        
-        // Broadcast to all other players in room
-        socket.to(currentRoom).emit('board-header-update', data);
-        
-        console.log(`Board header updated: ${data.text}`);
     });
 
     socket.on('disconnect', () => {
