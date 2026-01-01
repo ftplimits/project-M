@@ -238,6 +238,24 @@
             position: relative;
             background: radial-gradient(ellipse at center, #2a2a2a 0%, var(--bg-primary) 70%);
             overflow: hidden;
+            box-shadow: 
+                inset -80px 0 100px -40px rgba(139, 0, 0, 0.9),  /* Left crimson glow */
+                inset 80px 0 100px -40px rgba(139, 0, 0, 0.9);   /* Right crimson glow */
+        }
+        
+        /* Crimson side glow effect overlay */
+        .canvas-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 100;
+            box-shadow: 
+                inset -80px 0 120px -20px rgba(139, 0, 0, 0.8),  /* Additional left glow */
+                inset 80px 0 120px -20px rgba(139, 0, 0, 0.8);   /* Additional right glow */
         }
         
         /* Board Header */
@@ -249,28 +267,20 @@
             font-family: 'Times New Roman', Times, serif;
             font-size: 48px;
             font-weight: bold;
-            color: var(--accent-gold);
+            color: var(--accent-red);
             text-align: center;
             text-shadow: 
-                0 0 20px rgba(212, 175, 55, 0.8),
-                0 0 40px rgba(212, 175, 55, 0.5),
-                3px 3px 6px rgba(0, 0, 0, 0.9);
+                0 0 20px rgba(139, 0, 0, 0.9),
+                0 0 40px rgba(139, 0, 0, 0.7),
+                0 0 60px rgba(0, 0, 0, 0.9),
+                0 0 80px rgba(0, 0, 0, 0.6),
+                3px 3px 6px rgba(0, 0, 0, 1);
             letter-spacing: 4px;
             text-transform: uppercase;
             z-index: 60;
             cursor: pointer;
             padding: 20px 40px;
-            background: linear-gradient(180deg, 
-                rgba(26, 26, 26, 0.95) 0%, 
-                rgba(26, 26, 26, 0.85) 50%,
-                rgba(26, 26, 26, 0.7) 100%);
-            border: 3px solid var(--accent-gold);
-            border-radius: 8px;
-            box-shadow: 
-                0 0 30px rgba(212, 175, 55, 0.6),
-                inset 0 0 20px rgba(0, 0, 0, 0.5);
-            max-width: 80%;
-            word-wrap: break-word;
+            white-space: nowrap;
             user-select: none;
         }
         
@@ -280,11 +290,11 @@
         
         .board-header:hover {
             color: #fff;
-            border-color: var(--accent-red);
             text-shadow: 
                 0 0 30px rgba(255, 255, 255, 0.9),
-                0 0 50px rgba(212, 175, 55, 0.7),
-                3px 3px 6px rgba(0, 0, 0, 0.9);
+                0 0 50px rgba(139, 0, 0, 0.7),
+                0 0 70px rgba(0, 0, 0, 0.9),
+                3px 3px 6px rgba(0, 0, 0, 1);
         }
         
         /* Stage floor effect */
@@ -325,12 +335,6 @@
             width: 100% !important;  /* Fill canvas width */
             height: 100% !important; /* Fill canvas height */
             background: var(--accent-red); /* Dark crimson background */
-            box-shadow: 
-                -40px 0 80px 10px rgba(139, 0, 0, 0.9),  /* Left crimson glow - larger, brighter */
-                40px 0 80px 10px rgba(139, 0, 0, 0.9),   /* Right crimson glow - larger, brighter */
-                0 0 0 3px var(--bg-primary),
-                0 0 30px rgba(212, 175, 55, 0.4),
-                inset 0 0 40px rgba(0, 0, 0, 0.3);
         }
         
         .image-token:hover {
