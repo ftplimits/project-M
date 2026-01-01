@@ -315,6 +315,7 @@
                 0 0 30px rgba(212, 175, 55, 0.4),
                 inset 0 0 40px rgba(0, 0, 0, 0.3);
             background: var(--bg-secondary);
+            box-sizing: border-box; /* Include border in width/height */
         }
         
         .image-token:hover {
@@ -396,7 +397,7 @@
         
         .avatar-name-banner {
             position: absolute;
-            bottom: -35px;
+            bottom: 10px; /* Overlap bottom of avatar instead of sitting below */
             left: 50%;
             transform: translateX(-50%);
             background: var(--accent-red);
@@ -424,7 +425,7 @@
         }
         
         .host-avatar .avatar-name-banner {
-            bottom: -45px;
+            bottom: 15px; /* Larger overlap for host */
             font-size: 16px;
             padding: 8px 20px;
         }
@@ -2328,12 +2329,14 @@
             const canvas = document.getElementById('canvas');
             const canvasRect = canvas.getBoundingClientRect();
             
+            const GRID_Y_OFFSET = 50; // Shift grid down 50px so avatars can sit lower
+            
             snapGrid.rows = [];
             snapGrid.cols = [];
             
-            // Calculate row positions (5 rows)
+            // Calculate row positions (5 rows) with 50px downward offset
             for (let i = 0; i <= GRID_ROWS; i++) {
-                snapGrid.rows.push((canvasRect.height / GRID_ROWS) * i);
+                snapGrid.rows.push((canvasRect.height / GRID_ROWS) * i + GRID_Y_OFFSET);
             }
             
             // Calculate column positions (10 columns)
@@ -2421,9 +2424,9 @@
             // Constrain to canvas
             x = Math.max(0, Math.min(x, canvasRect.width - draggedImage.offsetWidth));
             
-            // For avatars, account for name banner below (-35px for player, -45px for host)
+            // For avatars, minimal constraint since banner now overlaps
             if (isAvatar) {
-                const bannerOffset = draggedImage.classList.contains('host-avatar') ? 45 : 35;
+                const bannerOffset = 5; // Just keep 5px visible at bottom
                 y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight - bannerOffset));
             } else {
                 y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight));
