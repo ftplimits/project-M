@@ -597,7 +597,6 @@
             width: 56px;
             height: 112px;
             cursor: move;
-            z-index: 20;
             display: none;
             border: 2px solid var(--accent-gold);
             border-radius: 4px;
@@ -1007,6 +1006,7 @@
         let isHost = false;
         let mySocketId = null;
         let pendingPlayer = null;
+        let hasEnteredName = false; // Track if name has been entered
         
         // Image tracking
         let images = new Map();
@@ -1082,6 +1082,9 @@
                 
                 // Receive room status and show appropriate name prompt
                 socket.on('room-status', async (data) => {
+                    // Only prompt for name if not already entered
+                    if (hasEnteredName) return;
+                    
                     let promptMessage;
                     if (data.hasHost) {
                         promptMessage = 'Please enter player name';
@@ -1090,6 +1093,8 @@
                     }
                     
                     const playerName = await showInputModal(promptMessage);
+                    hasEnteredName = true; // Mark as entered
+                    
                     if (!playerName || !playerName.trim()) {
                         // Default name if canceled
                         const defaultName = data.hasHost ? 'Player' : 'Host';
@@ -2987,6 +2992,12 @@
                 hp: hp
             });
             
+            // Calculate and set initial z-index based on grid row
+            const snapped = snapToGrid(x, y);
+            const baseZIndex = 20;
+            const rowOffset = snapped.row * 10;
+            tokenEl.style.zIndex = baseZIndex + rowOffset;
+            
             // Add HP counter if tracking enabled
             if (hpTracking) {
                 addHPCounter(tokenId);
@@ -2994,6 +3005,9 @@
             
             // Setup dragging
             tokenEl.addEventListener('mousedown', (e) => {
+                // Only start drag on left-click (button 0)
+                if (e.button !== 0) return;
+                
                 // Don't start drag if clicking HP counter
                 if (e.target.classList.contains('token-hp-counter') || e.target.classList.contains('token-hp-input')) {
                     return;
@@ -3139,6 +3153,12 @@
                     tokenData.element.style.left = snapped.x + 'px';
                     tokenData.element.style.top = snapped.y + 'px';
                     
+                    // Set z-index based on row for proper isometric stacking
+                    // Higher row numbers (further down/forward) = higher z-index
+                    const baseZIndex = 20;
+                    const rowOffset = snapped.row * 10;
+                    tokenData.element.style.zIndex = baseZIndex + rowOffset;
+                    
                     // Broadcast position
                     if (socket) {
                         socket.emit('token-moved', { id: draggedToken, x: tokenData.x, y: tokenData.y });
@@ -3185,11 +3205,11 @@
             const snappedCenterX = offsetX + (snappedCol - snappedRow) * (tileWidth / 2);
             const snappedCenterY = offsetY + (snappedCol + snappedRow) * (tileHeight / 2);
             
-            // Convert center back to top-left
-            const snappedX = snappedCenterX - tokenWidth / 2;
+            // Convert center back to top-left with adjustment
+            const snappedX = snappedCenterX - tokenWidth / 2 - 10; // Adjust 10px left
             const snappedY = snappedCenterY - tokenHeight / 2;
             
-            return { x: snappedX, y: snappedY };
+            return { x: snappedX, y: snappedY, row: snappedRow };
         }
         
         function deleteToken(tokenId) {
