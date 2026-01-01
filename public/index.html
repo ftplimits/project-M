@@ -324,13 +324,13 @@
             left: 0 !important;
             width: 100% !important;  /* Fill canvas width */
             height: 100% !important; /* Fill canvas height */
-            background: #8b7428; /* Darker gold background for definition */
+            background: var(--accent-red); /* Dark crimson background */
             box-shadow: 
+                -40px 0 80px 10px rgba(139, 0, 0, 0.9),  /* Left crimson glow - larger, brighter */
+                40px 0 80px 10px rgba(139, 0, 0, 0.9),   /* Right crimson glow - larger, brighter */
                 0 0 0 3px var(--bg-primary),
                 0 0 30px rgba(212, 175, 55, 0.4),
-                inset 0 0 40px rgba(0, 0, 0, 0.3),
-                -25px 0 50px rgba(139, 0, 0, 0.7),  /* Left crimson glow */
-                25px 0 50px rgba(139, 0, 0, 0.7);   /* Right crimson glow */
+                inset 0 0 40px rgba(0, 0, 0, 0.3);
         }
         
         .image-token:hover {
