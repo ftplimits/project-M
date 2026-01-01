@@ -346,6 +346,13 @@
             border-radius: 2px;
         }
         
+        /* Scene images - inset image to stay inside border on all sides */
+        .image-token.scene-image img {
+            width: calc(100% - 24px); /* Subtract 12px border on each side */
+            height: calc(100% - 24px); /* Subtract 12px border on each side */
+            margin: 12px; /* Push image inward by border width */
+        }
+        
         /* Player Avatars */
         .avatar-token {
             position: absolute;
