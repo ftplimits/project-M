@@ -1,7 +1,7 @@
 // ===== WEATHER EFFECTS SYSTEM =====
 // This file handles all weather particle animations for Monomyth VTT
 
-function toggleWeatherMenu(event) {
+window.toggleWeatherMenu = function(event) {
     const menu = document.getElementById('weatherMenu');
     
     if (menu.style.display === 'block') {
@@ -42,7 +42,7 @@ function toggleWeatherMenu(event) {
         item.textContent = `${option.emoji} ${option.name}`;
         
         item.onclick = () => {
-            setWeatherEffect(option.value);
+            window.setWeatherEffect(option.value);
             menu.style.display = 'none';
         };
 
@@ -55,17 +55,17 @@ function toggleWeatherMenu(event) {
     menu.style.top = event.clientY + 'px';
 }
 
-function setWeatherEffect(effect) {
+window.setWeatherEffect = function(effect) {
     window.currentWeatherEffect = effect;
     if (effect) {
-        startWeatherEffect(effect);
+        window.startWeatherEffect(effect);
     } else {
-        stopWeatherEffect();
+        window.stopWeatherEffect();
     }
 }
 
-function startWeatherEffect(effect) {
-    stopWeatherEffect();
+window.startWeatherEffect = function(effect) {
+    window.stopWeatherEffect();
     
     const canvas = document.getElementById('weatherCanvas');
     const ctx = canvas.getContext('2d');
@@ -444,7 +444,7 @@ function startWeatherEffect(effect) {
     window.addEventListener('resize', resizeCanvas);
 }
 
-function stopWeatherEffect() {
+window.stopWeatherEffect = function() {
     if (window.weatherAnimationId) {
         cancelAnimationFrame(window.weatherAnimationId);
         window.weatherAnimationId = null;
