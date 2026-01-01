@@ -1540,6 +1540,85 @@
                     players.set(data.socketId, data.name);
                     updatePlayerList();
                     updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
+                    
+                    // If I'm the host, broadcast current state to new player
+                    if (isHost && socket) {
+                        console.log('Broadcasting current state to new player:', data.socketId);
+                        
+                        // Send all avatars
+                        avatars.forEach((avatar, id) => {
+                            if (id !== 'host') {
+                                socket.emit('avatar-added', {
+                                    id: id,
+                                    src: avatar.src
+                                });
+                                socket.emit('avatar-moved', {
+                                    id: id,
+                                    x: avatar.x,
+                                    y: avatar.y
+                                });
+                            }
+                        });
+                        
+                        // Send host avatar if exists
+                        const hostAvatar = document.querySelector('.host-avatar');
+                        if (hostAvatar) {
+                            const hostImg = hostAvatar.querySelector('.character-portrait');
+                            if (hostImg) {
+                                socket.emit('host-avatar-added', {
+                                    src: hostImg.src
+                                });
+                            }
+                        }
+                        
+                        // Send all scene images
+                        images.forEach((imageData, id) => {
+                            if (!avatars.has(id)) { // Don't resend avatars
+                                socket.emit('image-added', {
+                                    id: id,
+                                    src: imageData.src,
+                                    x: imageData.x,
+                                    y: imageData.y,
+                                    width: imageData.element.offsetWidth,
+                                    height: imageData.element.offsetHeight,
+                                    locked: hardLockedAvatars.has(id)
+                                });
+                            }
+                        });
+                        
+                        // Send tactical mode status
+                        if (tacticalModeActive) {
+                            socket.emit('tactical-mode-toggle', { active: true });
+                        }
+                        
+                        // Send all tactical tokens
+                        tacticalTokens.forEach((tokenData, tokenId) => {
+                            socket.emit('token-added', {
+                                id: tokenId,
+                                src: tokenData.src,
+                                x: tokenData.x,
+                                y: tokenData.y,
+                                hpTracking: tokenData.hpTracking,
+                                hp: tokenData.hp
+                            });
+                            
+                            // Send token condition if set
+                            if (tokenData.conditionEmoji) {
+                                socket.emit('token-condition-changed', {
+                                    id: tokenId,
+                                    conditionEmoji: tokenData.conditionEmoji
+                                });
+                            }
+                            
+                            // Send token size if not standard
+                            if (tokenData.size && tokenData.size !== 'standard') {
+                                socket.emit('token-size-changed', {
+                                    id: tokenId,
+                                    size: tokenData.size
+                                });
+                            }
+                        });
+                    }
                 });
 
                 socket.on('player-left', (data) => {
@@ -3144,7 +3223,15 @@
                     
                     // Broadcast to other players
                     if (socket) {
-                        socket.emit('add-image', { id, src: e.target.result, x, y, width, height, locked: true });
+                        socket.emit('add-image', { 
+                            id, 
+                            src: e.target.result, 
+                            x: 0, 
+                            y: 0, 
+                            width: 0, 
+                            height: 0, 
+                            locked: true 
+                        });
                     }
                 };
                 img.src = e.target.result;
