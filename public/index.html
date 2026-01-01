@@ -549,7 +549,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.9);
+            background: rgba(0, 0, 0, 0.8);
             pointer-events: none;
             z-index: 15;
             display: none;
@@ -571,6 +571,25 @@
         
         .tactical-grid.active {
             display: block;
+        }
+        
+        /* Player avatars go under grid in tactical mode (host stays above) */
+        body.tactical-mode-active .avatar-token:not(.host-avatar) {
+            z-index: 14; /* Below overlay (15) and grid (16) */
+        }
+        
+        /* When activated, player avatars pop above grid */
+        body.tactical-mode-active .avatar-token:not(.host-avatar).speaking {
+            z-index: 30; /* Above grid */
+        }
+        
+        body.tactical-mode-active .avatar-token:not(.host-avatar):hover {
+            z-index: 30; /* Above grid when hovering */
+        }
+        
+        /* Host avatar always stays above grid */
+        .host-avatar {
+            z-index: 50 !important;
         }
         
         .tactical-token {
@@ -1235,6 +1254,7 @@
                     if (tacticalModeActive) {
                         overlay.classList.add('active');
                         grid.classList.add('active');
+                        document.body.classList.add('tactical-mode-active');
                         drawIsometricGrid();
                         tacticalTokens.forEach(tokenData => {
                             tokenData.element.classList.add('active');
@@ -1242,6 +1262,7 @@
                     } else {
                         overlay.classList.remove('active');
                         grid.classList.remove('active');
+                        document.body.classList.remove('tactical-mode-active');
                         tacticalTokens.forEach(tokenData => {
                             tokenData.element.classList.remove('active');
                         });
@@ -2727,6 +2748,7 @@
             if (tacticalModeActive) {
                 overlay.classList.add('active');
                 grid.classList.add('active');
+                document.body.classList.add('tactical-mode-active');
                 drawIsometricGrid();
                 
                 // Show all tokens
@@ -2736,6 +2758,7 @@
             } else {
                 overlay.classList.remove('active');
                 grid.classList.remove('active');
+                document.body.classList.remove('tactical-mode-active');
                 
                 // Hide all tokens
                 tacticalTokens.forEach(tokenData => {
