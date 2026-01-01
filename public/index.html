@@ -810,11 +810,13 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
-            z-index: 5;
+            z-index: 25;
+            cursor: default;
         }
         
         .drawing-canvas.active {
             pointer-events: auto;
+            cursor: crosshair;
         }
         
         /* Dice System */
@@ -2189,7 +2191,16 @@
         
         // ===== BOARD HEADER =====
         // ===== SESSION SAVE/LOAD =====
-        function saveSession() {
+        async function saveSession() {
+            // Prompt for filename
+            const defaultFilename = `monomyth-session-${new Date().toISOString().split('T')[0]}`;
+            const filename = await showInputModal(`Enter filename for save (without .json):`);
+            
+            if (!filename || !filename.trim()) {
+                console.log('Save cancelled');
+                return;
+            }
+            
             const sessionData = {
                 version: "1.0",
                 channelId: roomId,
@@ -2247,7 +2258,6 @@
                         enabled: hotkeyData.enabled
                     } : null
                 };
-            }
             
             // Save scene images
             images.forEach((data, imageId) => {
@@ -2263,19 +2273,23 @@
                 });
             });
             
-            // Create download
+            // Create and trigger download
             const dataStr = JSON.stringify(sessionData, null, 2);
             const dataBlob = new Blob([dataStr], { type: 'application/json' });
             const url = URL.createObjectURL(dataBlob);
             
             const downloadLink = document.createElement('a');
             downloadLink.href = url;
-            downloadLink.download = `monomyth-session-${new Date().toISOString().split('T')[0]}.json`;
+            downloadLink.download = `${filename.trim()}.json`;
+            document.body.appendChild(downloadLink);
             downloadLink.click();
+            document.body.removeChild(downloadLink);
             
-            URL.revokeObjectURL(url);
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+            }, 100);
             
-            console.log('✓ Session saved:', sessionData);
+            console.log('✓ Session saved:', filename + '.json', sessionData);
         }
         
         function loadSession() {
@@ -3262,12 +3276,20 @@
                 if (value) {
                     // Smart math: +5, -3, or absolute value
                     let newHP = tokenData.hp;
-                    if (value.startsWith('+') || value.startsWith('-')) {
-                        const change = parseInt(value);
+                    if (value.startsWith('+')) {
+                        // Addition: parse the number after the +
+                        const change = parseInt(value.substring(1));
                         if (!isNaN(change)) {
                             newHP = tokenData.hp + change;
                         }
+                    } else if (value.startsWith('-')) {
+                        // Subtraction: parse the number after the - and subtract
+                        const change = parseInt(value.substring(1));
+                        if (!isNaN(change)) {
+                            newHP = tokenData.hp - change;
+                        }
                     } else {
+                        // Absolute value: set to exact number
                         const absolute = parseInt(value);
                         if (!isNaN(absolute)) {
                             newHP = absolute;
@@ -3441,7 +3463,9 @@
             if (drawingToolActive) {
                 toolbox.classList.add('active');
                 canvas.classList.add('active');
-                initDrawingCanvas();
+                if (!drawingCanvas) {
+                    initDrawingCanvas();
+                }
             } else {
                 toolbox.classList.remove('active');
                 canvas.classList.remove('active');
@@ -3452,11 +3476,13 @@
             drawingCanvas = document.getElementById('drawing-canvas');
             drawingCtx = drawingCanvas.getContext('2d');
             
-            // Set up canvas event listeners
+            // Set up canvas event listeners (only once)
             drawingCanvas.addEventListener('mousedown', startDrawing);
             drawingCanvas.addEventListener('mousemove', draw);
             drawingCanvas.addEventListener('mouseup', stopDrawing);
             drawingCanvas.addEventListener('mouseleave', stopDrawing);
+            
+            console.log('Drawing canvas initialized');
         }
         
         function startDrawing(e) {
