@@ -237,25 +237,7 @@
             height: 100%;
             position: relative;
             background: radial-gradient(ellipse at center, #2a2a2a 0%, var(--bg-primary) 70%);
-            overflow: hidden;
-            box-shadow: 
-                inset -80px 0 100px -40px rgba(139, 0, 0, 0.9),  /* Left crimson glow */
-                inset 80px 0 100px -40px rgba(139, 0, 0, 0.9);   /* Right crimson glow */
-        }
-        
-        /* Crimson side glow effect overlay */
-        .canvas-area::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            pointer-events: none;
-            z-index: 100;
-            box-shadow: 
-                inset -80px 0 120px -20px rgba(139, 0, 0, 0.8),  /* Additional left glow */
-                inset 80px 0 120px -20px rgba(139, 0, 0, 0.8);   /* Additional right glow */
+            overflow: visible; /* Allow glow to extend beyond canvas */
         }
         
         /* Board Header */
@@ -335,6 +317,9 @@
             width: 100% !important;  /* Fill canvas width */
             height: 100% !important; /* Fill canvas height */
             background: var(--accent-red); /* Dark crimson background */
+            box-shadow: 
+                -60px 0 100px 20px rgba(139, 0, 0, 0.8),  /* Left outward crimson glow */
+                60px 0 100px 20px rgba(139, 0, 0, 0.8);   /* Right outward crimson glow */
         }
         
         .image-token:hover {
