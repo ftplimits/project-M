@@ -296,13 +296,11 @@
         
         .avatar-token:hover {
             border-color: var(--accent-red);
-            transform: scale(1.1);
             box-shadow: 0 8px 20px rgba(212, 175, 55, 0.4);
-            z-index: 14;
         }
         
         .avatar-token.flipped:hover {
-            transform: scaleX(-1) scale(1.1);
+            /* No transform needed */
         }
         
         .avatar-token.speaking {
@@ -3242,44 +3240,45 @@
             // Clear canvas
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
             
-            // Grid settings for 20x20 isometric grid (50% larger)
-            const gridSize = 20;
-            const tileWidth = 90;  // Width of isometric tile (increased from 60)
-            const tileHeight = 45; // Height of isometric tile (increased from 30)
+            // Center point
+            const centerX = canvasWidth / 2;
+            const centerY = canvasHeight / 2;
             
-            // Calculate grid offset to center it properly
-            // Isometric grid forms a diamond shape
-            const gridWidth = gridSize * tileWidth;
-            const gridHeight = gridSize * tileHeight;
-            const offsetX = canvasWidth / 2;
-            const offsetY = (canvasHeight - gridHeight) / 2;
+            // Three concentric circles with distance labels
+            // Each circle represents ~6 grid squares wider than the last
+            const circles = [
+                { radiusX: 135, radiusY: 67.5, label: '30' },   // Inner circle (~6 squares)
+                { radiusX: 270, radiusY: 135, label: '60' },    // Middle circle (~12 squares)
+                { radiusX: 405, radiusY: 202.5, label: '90' }   // Outer circle (~18 squares)
+            ];
             
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
             ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
             
-            // Draw isometric grid
-            for (let row = 0; row <= gridSize; row++) {
-                for (let col = 0; col <= gridSize; col++) {
-                    const x = offsetX + (col - row) * (tileWidth / 2);
-                    const y = offsetY + (col + row) * (tileHeight / 2);
-                    
-                    // Draw horizontal lines
-                    if (col < gridSize) {
-                        ctx.beginPath();
-                        ctx.moveTo(x, y);
-                        ctx.lineTo(x + tileWidth / 2, y + tileHeight / 2);
-                        ctx.stroke();
-                    }
-                    
-                    // Draw vertical lines
-                    if (row < gridSize) {
-                        ctx.beginPath();
-                        ctx.moveTo(x, y);
-                        ctx.lineTo(x - tileWidth / 2, y + tileHeight / 2);
-                        ctx.stroke();
-                    }
-                }
-            }
+            circles.forEach(circle => {
+                // Draw ellipse with gap at bottom for label
+                const gapAngle = 0.15; // Small gap at bottom for text
+                
+                ctx.beginPath();
+                ctx.ellipse(
+                    centerX, 
+                    centerY, 
+                    circle.radiusX, 
+                    circle.radiusY, 
+                    0, 
+                    Math.PI / 2 + gapAngle, // Start past bottom
+                    Math.PI / 2 - gapAngle + Math.PI * 2 // End before bottom
+                );
+                ctx.stroke();
+                
+                // Draw distance label at bottom center of circle
+                const labelY = centerY + circle.radiusY + 8;
+                ctx.fillText(circle.label, centerX, labelY);
+            });
         }
         
         function handleTokenUpload(event) {
