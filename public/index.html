@@ -805,6 +805,25 @@
     
     <div id="diceNotification" style="display: none;"></div>
     <div id="diceCountMenu" style="display: none; position: fixed; background-color: #1a1a1a; border: 2px solid var(--accent-gold); border-radius: 8px; padding: 8px; z-index: 3000; box-shadow: 0 4px 12px rgba(0,0,0,0.8);"></div>
+    
+    <!-- Dice Presets Panel -->
+    <div id="presetsPanel" style="position: fixed; right: -350px; top: 80px; width: 320px; max-height: 500px; z-index: 2000; background-color: #1a1a1a; border: 2px solid var(--accent-gold); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); transition: right 0.3s ease-in-out; display: flex; flex-direction: column;">
+        <div style="font-size: 16px; font-weight: bold; color: var(--accent-gold); margin-bottom: 12px; font-family: 'Times New Roman', Times, serif; border-bottom: 1px solid var(--accent-gold); padding-bottom: 8px; text-align: center;">
+            🎲 Dice Presets
+        </div>
+        <div style="margin-bottom: 12px; padding: 10px; background-color: #2a2a2a; border-radius: 6px; border: 1px solid #444;">
+            <input type="text" id="presetNameInput" placeholder="Preset Name" style="width: 100%; padding: 6px; margin-bottom: 6px; background-color: #1a1a1a; color: #e0e0e0; border: 1px solid var(--accent-gold); border-radius: 4px; font-size: 12px; font-family: Arial, sans-serif;" />
+            <input type="text" id="presetFormulaInput" placeholder="Formula (e.g., 2d6+3)" style="width: 100%; padding: 6px; margin-bottom: 6px; background-color: #1a1a1a; color: #e0e0e0; border: 1px solid var(--accent-gold); border-radius: 4px; font-size: 12px; font-family: Arial, sans-serif;" />
+            <button id="addPresetBtn" style="width: 100%; padding: 6px; background-color: #28a745; color: #fff; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: Arial, sans-serif;">
+                + Add Preset
+            </button>
+        </div>
+        <div id="presetsList" style="overflow-y: auto; flex: 1;"></div>
+    </div>
+    
+    <div id="presetsToggle" style="position: fixed; right: 5px; top: 80px; z-index: 2000; background-color: #1a1a1a; padding: 8px 6px; border-radius: 8px 0 0 8px; border: 2px solid var(--accent-gold); border-right: none; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; transition: right 0.3s ease-in-out, background-color 0.2s; user-select: none;" onmouseenter="this.style.backgroundColor='#2a2a2a';" onmouseleave="this.style.backgroundColor='#1a1a1a';">
+        <div style="font-size: 16px; color: var(--accent-gold); font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">🎲 PRESETS</div>
+    </div>
 
     <script>
         const CLIENT_ID = '1455487225490837526';
@@ -2507,8 +2526,11 @@
         let diceRollLog = [];
         let diceNotificationTimeout = null;
         let selectedDice = [];
-        let spinningDie = null;
+        let spinningDice = new Set();
         let diceModifiers = {};
+        let dicePresets = [];
+        let presetsVisible = false;
+        let spinningPreset = null;
         
         function initDiceSystem() {
             const container = document.getElementById('diceContainer');
@@ -2540,10 +2562,10 @@
                 img.oncontextmenu = (e) => handleDieRightClick(e, die);
                 img.onwheel = (e) => handleDieWheel(e, die.type);
                 img.onmouseenter = () => { 
-                    if (spinningDie !== die.type) img.style.transform = 'scale(1.1)'; 
+                    if (!spinningDice.has(die.type)) img.style.transform = 'scale(1.1)'; 
                 };
                 img.onmouseleave = () => { 
-                    if (spinningDie !== die.type) {
+                    if (!spinningDice.has(die.type)) {
                         const isSelected = selectedDice.some(d => d.type === die.type);
                         img.style.transform = isSelected ? 'scale(1.1)' : 'scale(1)';
                     }
@@ -2753,14 +2775,14 @@
         
         function animateDieSpin(dieType) {
             const img = document.getElementById(`die-${dieType}`);
-            if (!img || spinningDie) return;
+            if (!img) return;
             
-            spinningDie = dieType;
+            spinningDice.add(dieType);
             img.style.animation = 'spin 0.5s ease-in-out';
             
             setTimeout(() => {
                 img.style.animation = '';
-                spinningDie = null;
+                spinningDice.delete(dieType);
             }, 500);
         }
         
@@ -2823,11 +2845,38 @@
                 const rollDiv = document.createElement('div');
                 rollDiv.style.cssText = 'padding: 8px; margin-bottom: 6px; background-color: #2a2a2a; border-radius: 6px; border: 1px solid #444; font-size: 12px; font-family: Arial, sans-serif;';
                 
-                let html = `<div style="color: var(--accent-gold); font-weight: bold; margin-bottom: 3px; font-size: 11px;">${roll.playerName || 'Player'}</div>`;
-                html += `<div style="color: var(--text-primary); margin-bottom: 2px;">${roll.formula}</div>`;
+                let html = `<div style="color: var(--accent-gold); font-weight: bold; margin-bottom: 3px; font-size: 11px;">${roll.playerName || 'Player'}`;
+                if (roll.presetName) {
+                    html += ` - "${roll.presetName}"`;
+                }
+                html += `</div>`;
                 
-                if (roll.rolls && roll.rolls.length > 1) {
-                    html += `<div style="color: #888; font-size: 10px;">Rolls: [${roll.rolls.join(', ')}]</div>`;
+                // Handle preset formula rolls with groupResults
+                if (roll.groupResults) {
+                    html += `<div style="color: var(--text-primary); margin-bottom: 4px;">${roll.formula}</div>`;
+                    roll.groupResults.forEach((group) => {
+                        html += `<div style="color: #888; font-size: 10px; margin-bottom: 2px; padding-left: 4px;">`;
+                        html += `${group.count}d${group.sides}`;
+                        if (group.keepHighest) html += ` (keep highest ${group.keepHighest})`;
+                        if (group.keepLowest) html += ` (keep lowest ${group.keepLowest})`;
+                        html += `: [`;
+                        group.rolls.forEach((r, i) => {
+                            const isKept = group.keptRolls.includes(r);
+                            const isDropped = group.droppedRolls.includes(r);
+                            const color = isKept ? '#4ecdc4' : (isDropped ? '#666' : '#888');
+                            const decoration = isDropped ? 'line-through' : 'none';
+                            const weight = (isKept && (group.keepHighest || group.keepLowest)) ? 'bold' : 'normal';
+                            html += `<span style="color: ${color}; text-decoration: ${decoration}; font-weight: ${weight};">${r}${i < group.rolls.length - 1 ? ', ' : ''}</span>`;
+                        });
+                        html += `] = ${group.sum}</div>`;
+                    });
+                } else {
+                    // Handle simple dice rolls
+                    html += `<div style="color: var(--text-primary); margin-bottom: 2px;">${roll.formula}</div>`;
+                    
+                    if (roll.rolls && roll.rolls.length > 1) {
+                        html += `<div style="color: #888; font-size: 10px;">Rolls: [${roll.rolls.join(', ')}]</div>`;
+                    }
                 }
                 
                 html += `<div style="color: #4ecdc4; font-weight: bold; margin-top: 2px; font-size: 13px;">Total: ${roll.total}</div>`;
@@ -2854,11 +2903,11 @@
                 // Single die type roll (from rollDiceWithCount) - rolls is array of numbers
                 for (let roll of rollData.rolls) {
                     if (roll === 20) {
-                        criticalMessage = 'CRITICAL SUCCESS';
+                        criticalMessage = 'CRITICAL SUCCESS!';
                         criticalClass = 'critical-success';
                         break;
                     } else if (roll === 1) {
-                        criticalMessage = 'CRITICAL FAILURE';
+                        criticalMessage = 'CRITICAL FAILURE!';
                         criticalClass = 'critical-failure';
                         break;
                     }
@@ -2868,22 +2917,43 @@
                 for (let roll of rollData.rolls) {
                     if (typeof roll === 'object' && roll.die === 'd20') {
                         if (roll.result === 20) {
-                            criticalMessage = 'CRITICAL SUCCESS';
+                            criticalMessage = 'CRITICAL SUCCESS!';
                             criticalClass = 'critical-success';
                             break;
                         } else if (roll.result === 1) {
-                            criticalMessage = 'CRITICAL FAILURE';
+                            criticalMessage = 'CRITICAL FAILURE!';
                             criticalClass = 'critical-failure';
                             break;
                         }
                     }
                 }
+            } else if (rollData.groupResults && Array.isArray(rollData.groupResults)) {
+                // Preset formula roll - check for d20 in groupResults
+                for (let group of rollData.groupResults) {
+                    if (group.sides === 20) {
+                        for (let roll of group.rolls) {
+                            if (roll === 20) {
+                                criticalMessage = 'CRITICAL SUCCESS!';
+                                criticalClass = 'critical-success';
+                                break;
+                            } else if (roll === 1) {
+                                criticalMessage = 'CRITICAL FAILURE!';
+                                criticalClass = 'critical-failure';
+                                break;
+                            }
+                        }
+                        if (criticalMessage) break;
+                    }
+                }
             }
+            
+            // Display preset name if available, otherwise use formula
+            const displayFormula = rollData.presetName || rollData.formula;
             
             notification.className = 'dice-notification';
             notification.innerHTML = `
                 <div class="dice-notification-player">${rollData.playerName}</div>
-                <div class="dice-notification-formula">${rollData.formula}</div>
+                <div class="dice-notification-formula">${displayFormula}</div>
                 <div class="dice-notification-result">${rollData.total}</div>
                 ${criticalMessage ? `<div class="dice-notification-critical ${criticalClass}">${criticalMessage}</div>` : ''}
             `;
@@ -2892,6 +2962,220 @@
             diceNotificationTimeout = setTimeout(() => {
                 notification.style.display = 'none';
             }, 3000);
+        }
+        
+        // ===== DICE FORMULA PARSING & ROLLING =====
+        function parseDiceFormula(formula) {
+            formula = formula.replace(/\s+/g, '');
+            const dicePattern = /(\d+)d(\d+)(?:kh(\d+)|kl(\d+))?/gi;
+            const modifierPattern = /([+-]\d+)(?!d)/g;
+            const diceGroups = [];
+            let match;
+            
+            while ((match = dicePattern.exec(formula)) !== null) {
+                const count = parseInt(match[1]);
+                const sides = parseInt(match[2]);
+                const keepHighest = match[3] ? parseInt(match[3]) : null;
+                const keepLowest = match[4] ? parseInt(match[4]) : null;
+                
+                if (keepHighest && keepHighest > count) return null;
+                if (keepLowest && keepLowest > count) return null;
+                
+                diceGroups.push({ count, sides, keepHighest, keepLowest });
+            }
+            
+            let modifier = 0;
+            while ((match = modifierPattern.exec(formula)) !== null) {
+                modifier += parseInt(match[1]);
+            }
+            
+            if (diceGroups.length === 0) return null;
+            return { diceGroups, modifier };
+        }
+
+        function rollDiceFormula(formula, presetName, presetId = null) {
+            const parsed = parseDiceFormula(formula);
+            if (!parsed) {
+                alert('Invalid dice formula');
+                return;
+            }
+            
+            const { diceGroups, modifier } = parsed;
+            const groupResults = [];
+            let grandTotal = 0;
+            
+            diceGroups.forEach(group => {
+                const { count, sides, keepHighest, keepLowest } = group;
+                const rolls = [];
+                
+                for (let i = 0; i < count; i++) {
+                    rolls.push(Math.floor(Math.random() * sides) + 1);
+                }
+                
+                const sortedRolls = [...rolls].sort((a, b) => b - a);
+                let keptRolls = rolls;
+                let droppedRolls = [];
+                
+                if (keepHighest) {
+                    keptRolls = sortedRolls.slice(0, keepHighest);
+                    droppedRolls = sortedRolls.slice(keepHighest);
+                } else if (keepLowest) {
+                    keptRolls = sortedRolls.slice(-keepLowest);
+                    droppedRolls = sortedRolls.slice(0, -keepLowest);
+                }
+                
+                const groupSum = keptRolls.reduce((a, b) => a + b, 0);
+                grandTotal += groupSum;
+                
+                groupResults.push({
+                    sides,
+                    count,
+                    rolls,
+                    keptRolls,
+                    droppedRolls,
+                    sum: groupSum,
+                    keepHighest,
+                    keepLowest
+                });
+            });
+            
+            grandTotal += modifier;
+            
+            const rollData = {
+                playerName: 'Host',
+                presetName: presetName,
+                formula: formula,
+                groupResults: groupResults,
+                total: grandTotal,
+                modifier: modifier
+            };
+            
+            addRollToLog(rollData);
+            showDiceNotification(rollData);
+            
+            if (presetId) {
+                spinningPreset = presetId;
+                updatePresetsPanel();
+                setTimeout(() => { 
+                    spinningPreset = null; 
+                    updatePresetsPanel();
+                }, 500);
+            }
+            
+            if (socket) {
+                socket.emit('dice-roll', rollData);
+            }
+        }
+        
+        // ===== DICE PRESET FUNCTIONS =====
+        function addPreset() {
+            const nameInput = document.getElementById('presetNameInput');
+            const formulaInput = document.getElementById('presetFormulaInput');
+            const newPresetName = nameInput.value;
+            const newPresetFormula = formulaInput.value;
+            
+            if (!newPresetName.trim() || !newPresetFormula.trim()) {
+                alert('Please enter both name and formula');
+                return;
+            }
+            if (!parseDiceFormula(newPresetFormula)) {
+                alert('Invalid dice formula. Examples:\n• 2d6+3\n• 2d20kh1 (advantage)\n• 2d20kl1 (disadvantage)\n• 1d6+1d8+2');
+                return;
+            }
+            const newPreset = {
+                id: Date.now(),
+                name: newPresetName.trim(),
+                formula: newPresetFormula.trim()
+            };
+            dicePresets.push(newPreset);
+            
+            nameInput.value = '';
+            formulaInput.value = '';
+            
+            saveDicePresets();
+            updatePresetsPanel();
+        }
+
+        function deletePreset(id) {
+            if (confirm(`Delete this preset?`)) {
+                dicePresets = dicePresets.filter(p => p.id !== id);
+                saveDicePresets();
+                updatePresetsPanel();
+            }
+        }
+
+        function saveDicePresets() {
+            localStorage.setItem('vttDicePresets', JSON.stringify(dicePresets));
+        }
+
+        function loadDicePresets() {
+            const saved = localStorage.getItem('vttDicePresets');
+            if (saved) {
+                dicePresets = JSON.parse(saved);
+            }
+        }
+
+        function togglePresetsPanel() {
+            presetsVisible = !presetsVisible;
+            const panel = document.getElementById('presetsPanel');
+            const toggle = document.getElementById('presetsToggle');
+            
+            if (presetsVisible) {
+                panel.style.right = '10px';
+                toggle.style.right = '330px';
+                toggle.style.borderRight = '2px solid var(--accent-gold)';
+                toggle.innerHTML = '<div style="font-size: 16px; color: var(--accent-gold); font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">▶</div>';
+            } else {
+                panel.style.right = '-350px';
+                toggle.style.right = '5px';
+                toggle.style.borderRight = 'none';
+                toggle.innerHTML = '<div style="font-size: 16px; color: var(--accent-gold); font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">🎲 PRESETS</div>';
+            }
+            updatePresetsPanel();
+        }
+
+        function updatePresetsPanel() {
+            const presetsList = document.getElementById('presetsList');
+            if (!presetsList) return;
+            
+            presetsList.innerHTML = '';
+            dicePresets.forEach(preset => {
+                const presetDiv = document.createElement('div');
+                presetDiv.style.cssText = 'padding: 10px; margin-bottom: 8px; background-color: #2a2a2a; border-radius: 6px; border: 1px solid #444; display: flex; justify-content: space-between; align-items: center;';
+                
+                const infoDiv = document.createElement('div');
+                infoDiv.style.flex = '1';
+                infoDiv.innerHTML = `
+                    <div style="color: var(--accent-gold); font-size: 13px; font-weight: bold; font-family: 'Times New Roman', Times, serif; margin-bottom: 3px;">${preset.name}</div>
+                    <div style="color: #888; font-size: 11px; font-family: Arial, sans-serif;">${preset.formula}</div>
+                `;
+                
+                const buttonsDiv = document.createElement('div');
+                buttonsDiv.style.cssText = 'display: flex; gap: 6px; align-items: center;';
+                
+                const rollBtn = document.createElement('button');
+                rollBtn.textContent = '🎲';
+                rollBtn.style.cssText = 'padding: 6px 8px; background-color: transparent; color: var(--accent-gold); border: none; border-radius: 4px; font-size: 18px; cursor: pointer; transition: transform 0.1s;';
+                rollBtn.onclick = () => rollDiceFormula(preset.formula, preset.name, preset.id);
+                rollBtn.onmouseenter = () => { if (spinningPreset !== preset.id) rollBtn.style.transform = 'scale(1.2)'; };
+                rollBtn.onmouseleave = () => { rollBtn.style.transform = 'scale(1)'; };
+                if (spinningPreset === preset.id) {
+                    rollBtn.style.animation = 'spin 0.5s ease-in-out';
+                }
+                
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '🗑️';
+                delBtn.style.cssText = 'padding: 6px 8px; background-color: transparent; color: #dc3545; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; transition: transform 0.1s;';
+                delBtn.onclick = () => deletePreset(preset.id);
+                delBtn.onmouseenter = () => { delBtn.style.transform = 'scale(1.2)'; };
+                delBtn.onmouseleave = () => { delBtn.style.transform = 'scale(1)'; };
+                
+                buttonsDiv.appendChild(rollBtn);
+                buttonsDiv.appendChild(delBtn);
+                presetDiv.appendChild(infoDiv);
+                presetDiv.appendChild(buttonsDiv);
+                presetsList.appendChild(presetDiv);
+            });
         }
         
         // Add CSS animation for dice spinning
@@ -2907,6 +3191,12 @@
         
         // Initialize dice system on load
         initDiceSystem();
+        
+        // Initialize presets
+        loadDicePresets();
+        updatePresetsPanel();
+        document.getElementById('addPresetBtn').onclick = addPreset;
+        document.getElementById('presetsToggle').onclick = togglePresetsPanel;
     </script>
 </body>
 </html>
