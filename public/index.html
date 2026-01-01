@@ -324,6 +324,13 @@
             left: 0 !important;
             width: 100% !important;  /* Fill canvas width */
             height: 100% !important; /* Fill canvas height */
+            background: #8b7428; /* Darker gold background for definition */
+            box-shadow: 
+                0 0 0 3px var(--bg-primary),
+                0 0 30px rgba(212, 175, 55, 0.4),
+                inset 0 0 40px rgba(0, 0, 0, 0.3),
+                -25px 0 50px rgba(139, 0, 0, 0.7),  /* Left crimson glow */
+                25px 0 50px rgba(139, 0, 0, 0.7);   /* Right crimson glow */
         }
         
         .image-token:hover {
