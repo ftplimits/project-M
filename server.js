@@ -302,6 +302,16 @@ io.on('connection', (socket) => {
         console.log(`Token removed: ${data.id}`);
     });
     
+    socket.on('token-hp-changed', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('token-hp-changed', data);
+    });
+    
+    socket.on('token-hp-tracking-changed', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('token-hp-tracking-changed', data);
+    });
+    
     // Avatar flip handler
     socket.on('avatar-flipped', (data) => {
         if (!currentRoom) return;
