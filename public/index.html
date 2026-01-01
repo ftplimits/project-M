@@ -298,7 +298,7 @@
             border-color: var(--accent-red);
             transform: scale(1.1);
             box-shadow: 0 8px 20px rgba(212, 175, 55, 0.4);
-            z-index: 30;
+            z-index: 14;
         }
         
         .avatar-token.flipped:hover {
@@ -1093,7 +1093,6 @@
             }
         }
     </style>
-    <script src="Assets/weather-effects.js"></script>
 </head>
 <body>
     <div class="container">
@@ -1830,9 +1829,13 @@
                         toggleDrawingTool();
                         contextMenu.classList.remove('active');
                     } else if (action === 'toggle-weather-menu') {
-                        const rect = contextMenu.getBoundingClientRect();
-                        toggleWeatherMenu({ clientX: rect.left, clientY: rect.top + rect.height / 2 });
-                        contextMenu.classList.remove('active');
+                        if (typeof window.toggleWeatherMenu === 'function') {
+                            const rect = contextMenu.getBoundingClientRect();
+                            window.toggleWeatherMenu({ clientX: rect.left, clientY: rect.top + rect.height / 2 });
+                            contextMenu.classList.remove('active');
+                        } else {
+                            console.error('Weather effects not loaded. Please refresh the page.');
+                        }
                     } else if (action === 'upload-handout') {
                         uploadHandout();
                         contextMenu.classList.remove('active');
@@ -4626,5 +4629,6 @@
             toolboxDragging = false;
         });
     </script>
+    <script src="Assets/weather-effects.js"></script>
 </body>
 </html>
