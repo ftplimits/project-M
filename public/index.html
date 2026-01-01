@@ -2874,8 +2874,22 @@
                     // Handle simple dice rolls
                     html += `<div style="color: var(--text-primary); margin-bottom: 2px;">${roll.formula}</div>`;
                     
-                    if (roll.rolls && roll.rolls.length > 1) {
-                        html += `<div style="color: #888; font-size: 10px;">Rolls: [${roll.rolls.join(', ')}]</div>`;
+                    // Check if rolls are objects (from rollSelectedDice) or numbers (from rollDiceWithCount)
+                    if (roll.rolls && roll.rolls.length > 0) {
+                        if (typeof roll.rolls[0] === 'object') {
+                            // Rolls from rollSelectedDice - array of {die, result, modifier}
+                            roll.rolls.forEach((r) => {
+                                html += `<div style="color: #888; font-size: 10px; margin-bottom: 2px; padding-left: 4px;">`;
+                                html += `${r.die}: [${r.result}]`;
+                                if (r.modifier !== 0) {
+                                    html += ` ${r.modifier > 0 ? '+' : ''}${r.modifier}`;
+                                }
+                                html += ` = ${r.result + r.modifier}</div>`;
+                            });
+                        } else if (roll.rolls.length > 1) {
+                            // Rolls from rollDiceWithCount - array of numbers
+                            html += `<div style="color: #888; font-size: 10px;">Rolls: [${roll.rolls.join(', ')}]</div>`;
+                        }
                     }
                 }
                 
