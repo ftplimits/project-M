@@ -245,6 +245,7 @@
             box-shadow: 
                 -30px 0 50px 10px rgba(139, 0, 0, 0.2),  /* Left outward crimson glow */
                 30px 0 50px 10px rgba(139, 0, 0, 0.2);   /* Right outward crimson glow */
+            cursor: default; /* Override move cursor */
         }
         
         .image-token:hover {
@@ -541,6 +542,72 @@
             color: #000;
         }
         
+        /* Tactical Mode */
+        .tactical-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            pointer-events: none;
+            z-index: 15;
+            display: none;
+        }
+        
+        .tactical-overlay.active {
+            display: block;
+        }
+        
+        .tactical-grid {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 16;
+            display: none;
+        }
+        
+        .tactical-grid.active {
+            display: block;
+        }
+        
+        .tactical-token {
+            position: absolute;
+            width: 75px;
+            height: 150px;
+            cursor: move;
+            z-index: 20;
+            display: none;
+            border: 2px solid var(--accent-gold);
+            border-radius: 4px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6);
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        
+        .tactical-token.active {
+            display: block;
+        }
+        
+        .tactical-token:hover {
+            border-color: #fff;
+            transform: scale(1.05);
+        }
+        
+        .tactical-token.dragging {
+            opacity: 0.8;
+            z-index: 1000;
+        }
+        
+        .tactical-token img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            pointer-events: none;
+            border-radius: 2px;
+        }
+        
         /* Dice System */
         .dice-container {
             position: fixed;
@@ -721,6 +788,9 @@
             <div class="context-item" data-action="add-host-avatar">👑 Add Host Avatar</div>
             <div class="context-item" data-action="add-scene-image">🖼️ Add Scene Image</div>
             <div class="context-divider"></div>
+            <div class="context-item" data-action="toggle-tactical-mode">⚔️ Toggle Tactical Mode</div>
+            <div class="context-item" data-action="upload-tokens">🎯 Upload Tokens</div>
+            <div class="context-divider"></div>
             <div class="context-item" data-action="save-session">💾 Save Session</div>
             <div class="context-item" data-action="load-session">📂 Load Session</div>
         </div>
@@ -763,6 +833,7 @@
         <input type="file" id="scene-image-input" accept="image/*" style="display: none;">
         <input type="file" id="alternate-image-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
         <input type="file" id="load-session-input" accept="application/json,.json" style="display: none;">
+        <input type="file" id="token-upload-input" accept="image/png,image/jpg,image/jpeg,image/webp" multiple style="display: none;">
         
         <!-- Info Badge -->
         <div class="info-badge" id="info-badge">
@@ -777,6 +848,12 @@
         <div class="canvas-wrapper">
             <div class="canvas-area" id="canvas">
                 <!-- Images and avatars will be added here -->
+                
+                <!-- Tactical Mode Overlay (darkens scene and avatars) -->
+                <div class="tactical-overlay" id="tactical-overlay"></div>
+                
+                <!-- Tactical Mode Grid -->
+                <canvas class="tactical-grid" id="tactical-grid" width="1920" height="1080"></canvas>
             </div>
         </div>
     </div>
@@ -860,6 +937,12 @@
         
         // Alternate images
         let currentContextAvatarId = null;
+        
+        // Tactical Mode system
+        let tacticalModeActive = false;
+        let tacticalTokens = new Map(); // tokenId -> {element, x, y, src}
+        let draggedToken = null;
+        let tokenIdCounter = 1;
 
         // Initialize
         (async function init() {
@@ -1121,6 +1204,43 @@
                     showDiceNotification(data);
                 });
 
+                socket.on('tactical-mode-toggle', (data) => {
+                    tacticalModeActive = data.active;
+                    const overlay = document.getElementById('tactical-overlay');
+                    const grid = document.getElementById('tactical-grid');
+                    
+                    if (tacticalModeActive) {
+                        overlay.classList.add('active');
+                        grid.classList.add('active');
+                        drawIsometricGrid();
+                        tacticalTokens.forEach(tokenData => {
+                            tokenData.element.classList.add('active');
+                        });
+                    } else {
+                        overlay.classList.remove('active');
+                        grid.classList.remove('active');
+                        tacticalTokens.forEach(tokenData => {
+                            tokenData.element.classList.remove('active');
+                        });
+                    }
+                });
+
+                socket.on('token-added', (data) => {
+                    addTokenToCanvas(data.id, data.src, data.x, data.y, false);
+                });
+
+                socket.on('token-moved', (data) => {
+                    moveToken(data.id, data.x, data.y);
+                });
+
+                socket.on('token-removed', (data) => {
+                    const tokenData = tacticalTokens.get(data.id);
+                    if (tokenData) {
+                        tokenData.element.remove();
+                        tacticalTokens.delete(data.id);
+                    }
+                });
+
                 // Initial UI update
                 updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
 
@@ -1223,6 +1343,12 @@
                     } else if (action === 'add-scene-image') {
                         document.getElementById('scene-image-input').click();
                         contextMenu.classList.remove('active');
+                    } else if (action === 'toggle-tactical-mode') {
+                        toggleTacticalMode();
+                        contextMenu.classList.remove('active');
+                    } else if (action === 'upload-tokens') {
+                        document.getElementById('token-upload-input').click();
+                        contextMenu.classList.remove('active');
                     } else if (action === 'save-session') {
                         saveSession();
                         contextMenu.classList.remove('active');
@@ -1257,6 +1383,7 @@
             document.getElementById('scene-image-input').addEventListener('change', handleImageUpload);
             document.getElementById('alternate-image-input').addEventListener('change', handleAlternateImageUpload);
             document.getElementById('load-session-input').addEventListener('change', handleLoadSession);
+            document.getElementById('token-upload-input').addEventListener('change', handleTokenUpload);
             
             // Info badge click to toggle player list
             document.getElementById('info-badge').addEventListener('click', togglePlayerList);
@@ -2508,6 +2635,221 @@
             imageData.element.style.top = y + 'px';
             imageData.x = x;
             imageData.y = y;
+        }
+
+        // ===== TACTICAL MODE SYSTEM =====
+        function toggleTacticalMode() {
+            tacticalModeActive = !tacticalModeActive;
+            const overlay = document.getElementById('tactical-overlay');
+            const grid = document.getElementById('tactical-grid');
+            
+            if (tacticalModeActive) {
+                overlay.classList.add('active');
+                grid.classList.add('active');
+                drawIsometricGrid();
+                
+                // Show all tokens
+                tacticalTokens.forEach(tokenData => {
+                    tokenData.element.classList.add('active');
+                });
+            } else {
+                overlay.classList.remove('active');
+                grid.classList.remove('active');
+                
+                // Hide all tokens
+                tacticalTokens.forEach(tokenData => {
+                    tokenData.element.classList.remove('active');
+                });
+            }
+            
+            // Broadcast tactical mode state
+            if (socket) {
+                socket.emit('tactical-mode-toggle', { active: tacticalModeActive });
+            }
+        }
+        
+        function drawIsometricGrid() {
+            const canvas = document.getElementById('tactical-grid');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            const canvasWidth = 1920;
+            const canvasHeight = 1080;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            // Grid settings for 20x20 isometric grid
+            const gridSize = 20;
+            const tileWidth = 60;  // Width of isometric tile
+            const tileHeight = 30; // Height of isometric tile
+            
+            // Calculate grid offset to center it
+            const gridWidth = gridSize * tileWidth;
+            const gridHeight = gridSize * tileHeight / 2;
+            const offsetX = (canvasWidth - gridWidth) / 2;
+            const offsetY = (canvasHeight - gridHeight) / 2;
+            
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 1;
+            
+            // Draw isometric grid
+            for (let row = 0; row <= gridSize; row++) {
+                for (let col = 0; col <= gridSize; col++) {
+                    const x = offsetX + (col - row) * (tileWidth / 2);
+                    const y = offsetY + (col + row) * (tileHeight / 2);
+                    
+                    // Draw horizontal lines
+                    if (col < gridSize) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(x + tileWidth / 2, y + tileHeight / 2);
+                        ctx.stroke();
+                    }
+                    
+                    // Draw vertical lines
+                    if (row < gridSize) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(x - tileWidth / 2, y + tileHeight / 2);
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+        
+        function handleTokenUpload(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+            
+            Array.from(files).forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    // Place tokens in a grid pattern initially
+                    const tokenId = `token-${tokenIdCounter++}`;
+                    const x = 100 + (index % 5) * 100;
+                    const y = 100 + Math.floor(index / 5) * 170;
+                    
+                    addTokenToCanvas(tokenId, e.target.result, x, y);
+                    
+                    // Broadcast to other players
+                    if (socket) {
+                        socket.emit('token-added', { id: tokenId, src: e.target.result, x, y });
+                    }
+                };
+                reader.readAsDataURL(file);
+            });
+            
+            // Clear input
+            event.target.value = '';
+        }
+        
+        function addTokenToCanvas(tokenId, src, x, y, isLocal = true) {
+            const canvas = document.getElementById('canvas');
+            
+            const tokenEl = document.createElement('div');
+            tokenEl.className = 'tactical-token';
+            if (tacticalModeActive) {
+                tokenEl.classList.add('active');
+            }
+            tokenEl.id = tokenId;
+            tokenEl.style.left = x + 'px';
+            tokenEl.style.top = y + 'px';
+            
+            const img = document.createElement('img');
+            img.src = src;
+            img.draggable = false;
+            
+            tokenEl.appendChild(img);
+            canvas.appendChild(tokenEl);
+            
+            // Store token data
+            tacticalTokens.set(tokenId, {
+                element: tokenEl,
+                x: x,
+                y: y,
+                src: src
+            });
+            
+            // Setup dragging
+            tokenEl.addEventListener('mousedown', (e) => startDragToken(e, tokenId));
+            tokenEl.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if (confirm('Delete this token?')) {
+                    deleteToken(tokenId);
+                }
+            });
+        }
+        
+        function startDragToken(e, tokenId) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const tokenData = tacticalTokens.get(tokenId);
+            if (!tokenData) return;
+            
+            draggedToken = tokenId;
+            tokenData.element.classList.add('dragging');
+            
+            const rect = tokenData.element.getBoundingClientRect();
+            const canvas = document.getElementById('canvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            
+            const drag = (e) => {
+                if (!draggedToken) return;
+                
+                const x = e.clientX - canvasRect.left - dragOffset.x;
+                const y = e.clientY - canvasRect.top - dragOffset.y;
+                
+                tokenData.element.style.left = x + 'px';
+                tokenData.element.style.top = y + 'px';
+                tokenData.x = x;
+                tokenData.y = y;
+            };
+            
+            const stopDrag = () => {
+                if (draggedToken) {
+                    tokenData.element.classList.remove('dragging');
+                    
+                    // Broadcast position
+                    if (socket) {
+                        socket.emit('token-moved', { id: draggedToken, x: tokenData.x, y: tokenData.y });
+                    }
+                    
+                    draggedToken = null;
+                }
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', stopDrag);
+            };
+            
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', stopDrag);
+        }
+        
+        function deleteToken(tokenId) {
+            const tokenData = tacticalTokens.get(tokenId);
+            if (tokenData) {
+                tokenData.element.remove();
+                tacticalTokens.delete(tokenId);
+                
+                // Broadcast deletion
+                if (socket) {
+                    socket.emit('token-removed', { id: tokenId });
+                }
+            }
+        }
+        
+        function moveToken(id, x, y) {
+            const tokenData = tacticalTokens.get(id);
+            if (!tokenData) return;
+            
+            tokenData.element.style.left = x + 'px';
+            tokenData.element.style.top = y + 'px';
+            tokenData.x = x;
+            tokenData.y = y;
         }
 
         // ===== DICE SYSTEM =====
