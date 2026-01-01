@@ -654,6 +654,63 @@
             font-weight: bold;
             font-family: 'Times New Roman', Times, serif;
         }
+        
+        .dice-notification-critical {
+            font-size: 18px;
+            font-weight: bold;
+            font-family: Arial, sans-serif;
+            margin-top: 12px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .critical-success {
+            color: #28a745;
+            text-shadow: 
+                0 0 10px rgba(40, 167, 69, 0.8),
+                0 0 20px rgba(40, 167, 69, 0.6),
+                0 0 30px rgba(40, 167, 69, 0.4);
+            animation: pulse-green 1.5s ease-in-out infinite;
+        }
+        
+        .critical-failure {
+            color: #ff8c00;
+            text-shadow: 
+                0 0 10px rgba(255, 140, 0, 0.8),
+                0 0 20px rgba(255, 140, 0, 0.6),
+                0 0 30px rgba(255, 140, 0, 0.4);
+            animation: pulse-orange 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse-green {
+            0%, 100% { 
+                text-shadow: 
+                    0 0 10px rgba(40, 167, 69, 0.8),
+                    0 0 20px rgba(40, 167, 69, 0.6),
+                    0 0 30px rgba(40, 167, 69, 0.4);
+            }
+            50% { 
+                text-shadow: 
+                    0 0 20px rgba(40, 167, 69, 1),
+                    0 0 30px rgba(40, 167, 69, 0.8),
+                    0 0 40px rgba(40, 167, 69, 0.6);
+            }
+        }
+        
+        @keyframes pulse-orange {
+            0%, 100% { 
+                text-shadow: 
+                    0 0 10px rgba(255, 140, 0, 0.8),
+                    0 0 20px rgba(255, 140, 0, 0.6),
+                    0 0 30px rgba(255, 140, 0, 0.4);
+            }
+            50% { 
+                text-shadow: 
+                    0 0 20px rgba(255, 140, 0, 1),
+                    0 0 30px rgba(255, 140, 0, 0.8),
+                    0 0 40px rgba(255, 140, 0, 0.6);
+            }
+        }
     </style>
 </head>
 <body>
@@ -1042,7 +1099,7 @@
 
                 socket.on('dice-roll', (data) => {
                     addRollToLog(data);
-                    showDiceNotification(data.playerName, data.formula, data.total);
+                    showDiceNotification(data);
                 });
 
                 // Initial UI update
@@ -2592,7 +2649,7 @@
             };
             
             addRollToLog(rollData);
-            showDiceNotification('Host', formula, totalResult);
+            showDiceNotification(rollData);
             
             if (socket) {
                 socket.emit('dice-roll', rollData);
@@ -2680,11 +2737,13 @@
                 formula: formula,
                 total: total,
                 rolls: rolls,
-                modifier: modifier
+                modifier: modifier,
+                dieType: die.type,
+                dieSides: die.sides
             };
             
             addRollToLog(rollData);
-            showDiceNotification('Host', formula, total);
+            showDiceNotification(rollData);
             animateDieSpin(die.type);
             
             if (socket) {
@@ -2778,7 +2837,7 @@
             });
         }
         
-        function showDiceNotification(playerName, formula, result) {
+        function showDiceNotification(rollData) {
             const notification = document.getElementById('diceNotification');
             if (!notification) return;
             
@@ -2786,11 +2845,47 @@
                 clearTimeout(diceNotificationTimeout);
             }
             
+            // Check for d20 critical success/failure
+            let criticalMessage = '';
+            let criticalClass = '';
+            
+            // Check if this roll includes a d20
+            if (rollData.dieType === 'd20' && rollData.dieSides === 20 && rollData.rolls) {
+                // Single die type roll (from rollDiceWithCount) - rolls is array of numbers
+                for (let roll of rollData.rolls) {
+                    if (roll === 20) {
+                        criticalMessage = 'CRITICAL SUCCESS';
+                        criticalClass = 'critical-success';
+                        break;
+                    } else if (roll === 1) {
+                        criticalMessage = 'CRITICAL FAILURE';
+                        criticalClass = 'critical-failure';
+                        break;
+                    }
+                }
+            } else if (rollData.rolls && Array.isArray(rollData.rolls)) {
+                // Multiple dice types roll (from rollSelectedDice) - rolls is array of objects
+                for (let roll of rollData.rolls) {
+                    if (typeof roll === 'object' && roll.die === 'd20') {
+                        if (roll.result === 20) {
+                            criticalMessage = 'CRITICAL SUCCESS';
+                            criticalClass = 'critical-success';
+                            break;
+                        } else if (roll.result === 1) {
+                            criticalMessage = 'CRITICAL FAILURE';
+                            criticalClass = 'critical-failure';
+                            break;
+                        }
+                    }
+                }
+            }
+            
             notification.className = 'dice-notification';
             notification.innerHTML = `
-                <div class="dice-notification-player">${playerName}</div>
-                <div class="dice-notification-formula">${formula}</div>
-                <div class="dice-notification-result">${result}</div>
+                <div class="dice-notification-player">${rollData.playerName}</div>
+                <div class="dice-notification-formula">${rollData.formula}</div>
+                <div class="dice-notification-result">${rollData.total}</div>
+                ${criticalMessage ? `<div class="dice-notification-critical ${criticalClass}">${criticalMessage}</div>` : ''}
             `;
             notification.style.display = 'block';
             
