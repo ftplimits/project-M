@@ -195,42 +195,6 @@
             display: block;
         }
         
-        /* Dice Notification */
-        .dice-notification {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(0);
-            background: var(--bg-panel);
-            border: 3px solid var(--accent-gold);
-            border-radius: 8px;
-            padding: 30px 50px;
-            text-align: center;
-            z-index: 9999;
-            box-shadow: 0 0 40px rgba(212, 175, 55, 0.6);
-            pointer-events: none;
-            transition: transform 0.3s ease;
-        }
-        
-        .dice-notification.show {
-            transform: translate(-50%, -50%) scale(1);
-        }
-        
-        .dice-notification .result-value {
-            font-size: 72px;
-            font-weight: bold;
-            color: var(--accent-gold);
-            text-shadow: 0 0 20px rgba(212, 175, 55, 0.8);
-        }
-        
-        .dice-notification .result-label {
-            font-size: 18px;
-            color: var(--text-secondary);
-            margin-top: 10px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-        
         /* Canvas Area - The Stage */
         .canvas-area {
             width: 100%;
@@ -238,41 +202,6 @@
             position: relative;
             background: radial-gradient(ellipse at center, #2a2a2a 0%, var(--bg-primary) 70%);
             overflow: visible; /* Allow glow to extend beyond canvas */
-        }
-        
-        /* Board Header */
-        .board-header {
-            position: absolute;
-            top: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 48px;
-            font-weight: bold;
-            color: var(--accent-red);
-            text-align: center;
-            text-shadow: 
-                0 0 20px rgba(139, 0, 0, 0.9),
-                0 0 40px rgba(139, 0, 0, 0.7),
-                0 0 60px rgba(0, 0, 0, 0.9),
-                0 0 80px rgba(0, 0, 0, 0.6),
-                3px 3px 6px rgba(0, 0, 0, 1);
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            z-index: 60;
-            cursor: pointer;
-            padding: 20px 40px;
-            white-space: nowrap;
-            user-select: none;
-        }
-        
-        .board-header:hover {
-            color: #fff;
-            text-shadow: 
-                0 0 30px rgba(255, 255, 255, 0.9),
-                0 0 50px rgba(139, 0, 0, 0.7),
-                0 0 70px rgba(0, 0, 0, 0.9),
-                3px 3px 6px rgba(0, 0, 0, 1);
         }
         
         /* Stage floor effect */
@@ -731,23 +660,9 @@
     <div class="container">
         <!-- Context Menu -->
         <div id="context-menu" class="context-menu">
-            <div class="context-item" data-action="dice-submenu">
-                🎲 Roll Dice →
-                <div class="submenu">
-                    <div class="context-item" data-action="roll" data-sides="4">D4</div>
-                    <div class="context-item" data-action="roll" data-sides="6">D6</div>
-                    <div class="context-item" data-action="roll" data-sides="8">D8</div>
-                    <div class="context-item" data-action="roll" data-sides="10">D10</div>
-                    <div class="context-item" data-action="roll" data-sides="12">D12</div>
-                    <div class="context-item" data-action="roll" data-sides="20">D20</div>
-                    <div class="context-item" data-action="roll" data-sides="100">D100</div>
-                </div>
-            </div>
-            <div class="context-divider"></div>
             <div class="context-item" data-action="add-player-avatar">🎭 Add Player Avatar</div>
             <div class="context-item" data-action="add-host-avatar">👑 Add Host Avatar</div>
             <div class="context-item" data-action="add-scene-image">🖼️ Add Scene Image</div>
-            <div class="context-item" data-action="set-board-header">📜 Set Board Header</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="save-session">💾 Save Session</div>
             <div class="context-item" data-action="load-session">📂 Load Session</div>
@@ -792,9 +707,6 @@
         <input type="file" id="alternate-image-input" accept="image/png,image/jpg,image/jpeg,image/webp" style="display: none;">
         <input type="file" id="load-session-input" accept="application/json,.json" style="display: none;">
         
-        <!-- Dice Result Notification -->
-        <div id="dice-notification" class="dice-notification"></div>
-        
         <!-- Info Badge -->
         <div class="info-badge" id="info-badge">
             <div class="info-badge-header">
@@ -807,8 +719,6 @@
         <!-- The Stage - Fixed 16:9 aspect ratio wrapper -->
         <div class="canvas-wrapper">
             <div class="canvas-area" id="canvas">
-                <!-- Board Header -->
-                <div class="board-header" id="board-header" style="display: none;"></div>
                 <!-- Images and avatars will be added here -->
             </div>
         </div>
@@ -962,10 +872,6 @@
                     players.delete(data.socketId);
                     updatePlayerList();
                     updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
-                });
-
-                socket.on('dice-roll', (data) => {
-                    displayDiceResult(data.sides, data.result, data.playerId);
                 });
 
                 socket.on('image-added', (data) => {
@@ -1124,19 +1030,6 @@
                     }
                 });
                 
-                socket.on('board-header-update', (data) => {
-                    const header = document.getElementById('board-header');
-                    if (header) {
-                        header.textContent = data.text;
-                        // Show/hide based on content
-                        if (data.text.trim()) {
-                            header.style.display = 'block';
-                        } else {
-                            header.style.display = 'none';
-                        }
-                    }
-                });
-
                 socket.on('avatar-removed', (data) => {
                     const avatarData = avatars.get(data.avatarId);
                     if (avatarData) {
@@ -1244,12 +1137,8 @@
                 item.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const action = item.dataset.action;
-                    const sides = item.dataset.sides;
                     
-                    if (action === 'roll' && sides) {
-                        rollDie(parseInt(sides));
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'add-player-avatar') {
+                    if (action === 'add-player-avatar') {
                         document.getElementById('player-avatar-input').click();
                         contextMenu.classList.remove('active');
                     } else if (action === 'add-host-avatar') {
@@ -1257,9 +1146,6 @@
                         contextMenu.classList.remove('active');
                     } else if (action === 'add-scene-image') {
                         document.getElementById('scene-image-input').click();
-                        contextMenu.classList.remove('active');
-                    } else if (action === 'set-board-header') {
-                        setBoardHeader();
                         contextMenu.classList.remove('active');
                     } else if (action === 'save-session') {
                         saveSession();
@@ -1701,75 +1587,12 @@
         }
         
         // ===== BOARD HEADER =====
-        function setBoardHeader() {
-            showModal(
-                'Set Board Header',
-                '<input type="text" id="header-input" placeholder="Enter board header..." style="width: 100%; padding: 10px; font-size: 16px; font-family: \'Times New Roman\', Times, serif; background: var(--bg-secondary); color: var(--text-primary); border: 2px solid var(--accent-gold); border-radius: 4px;">',
-                [
-                    { 
-                        text: 'Set Header', 
-                        class: '', 
-                        callback: () => {
-                            const input = document.getElementById('header-input');
-                            const headerText = input ? input.value.trim() : '';
-                            updateBoardHeader(headerText);
-                        }
-                    },
-                    { text: 'Cancel', class: 'cancel' }
-                ]
-            );
-            
-            // Focus input after modal opens
-            setTimeout(() => {
-                const input = document.getElementById('header-input');
-                if (input) {
-                    const currentHeader = document.getElementById('board-header');
-                    if (currentHeader) {
-                        input.value = currentHeader.textContent;
-                    }
-                    input.focus();
-                    input.select();
-                }
-            }, 100);
-        }
-        
-        function updateBoardHeader(text) {
-            const header = document.getElementById('board-header');
-            if (!header) return;
-            
-            header.textContent = text;
-            
-            // Show/hide based on content
-            if (text.trim()) {
-                header.style.display = 'block';
-            } else {
-                header.style.display = 'none';
-            }
-            
-            // Broadcast to other players
-            if (socket) {
-                socket.emit('board-header-update', { text: text });
-            }
-        }
-        
-        function setupBoardHeaderEditing() {
-            const header = document.getElementById('board-header');
-            if (!header) return;
-            
-            // Double-click to edit
-            header.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                setBoardHeader();
-            });
-        }
-        
         // ===== SESSION SAVE/LOAD =====
         function saveSession() {
             const sessionData = {
                 version: "1.0",
                 channelId: roomId,
                 savedAt: new Date().toISOString(),
-                boardHeader: document.getElementById('board-header')?.textContent || '',
                 avatars: [],
                 hostAvatar: null,
                 images: []
@@ -1881,15 +1704,6 @@
                         data.element.remove();
                     });
                     images.clear();
-                    
-                    // Restore board header
-                    if (sessionData.boardHeader) {
-                        const header = document.getElementById('board-header');
-                        if (header) {
-                            header.textContent = sessionData.boardHeader;
-                            header.style.display = 'block';
-                        }
-                    }
                     
                     // Load scene images first (background)
                     if (sessionData.images) {
@@ -2235,32 +2049,6 @@
         
         function handleVoiceStateUpdate(voiceState) {
             // Deprecated - using hotkeys instead
-        }
-
-        // ===== DICE ROLLING =====
-        function rollDie(sides) {
-            const result = Math.floor(Math.random() * sides) + 1;
-            displayDiceResult(sides, result);
-            
-            // Broadcast to other players
-            if (socket) {
-                socket.emit('dice-roll', { sides, result });
-            }
-        }
-
-        function displayDiceResult(sides, result, playerId = 'You') {
-            const notification = document.getElementById('dice-notification');
-            
-            notification.innerHTML = `
-                <div class="result-value">${result}</div>
-                <div class="result-label">D${sides} • ${playerId}</div>
-            `;
-            
-            notification.classList.add('show');
-            
-            setTimeout(() => {
-                notification.classList.remove('show');
-            }, 2000);
         }
 
         // ===== IMAGE UPLOAD & MOVEMENT =====
@@ -3024,12 +2812,6 @@
         
         // Initialize dice system on load
         initDiceSystem();
-        
-        // Hide board header if empty
-        const boardHeader = document.getElementById('board-header');
-        if (boardHeader && !boardHeader.textContent.trim()) {
-            boardHeader.style.display = 'none';
-        }
     </script>
 </body>
 </html>
