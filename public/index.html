@@ -615,6 +615,120 @@
             background: var(--text-secondary);
             color: #000;
         }
+        
+        /* Dice System */
+        .dice-container {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            display: flex;
+            gap: 10px;
+            z-index: 2000;
+            background-color: #1a1a1a;
+            padding: 11px;
+            border-radius: 12px;
+            border: 2px solid var(--accent-gold);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+            transition: left 0.3s ease-in-out;
+        }
+        
+        .dice-container.hidden {
+            left: -580px;
+        }
+        
+        .dice-container.visible {
+            left: 0;
+        }
+        
+        .dice-toggle {
+            position: fixed;
+            bottom: 45px;
+            left: 5px;
+            z-index: 2000;
+            background-color: #1a1a1a;
+            padding: 6px 9px;
+            border-radius: 0 8px 8px 0;
+            border: 2px solid var(--accent-gold);
+            border-left: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+            cursor: pointer;
+            transition: left 0.3s ease-in-out, background-color 0.2s;
+            user-select: none;
+        }
+        
+        .dice-toggle.open {
+            left: 495px;
+            border-left: 2px solid var(--accent-gold);
+        }
+        
+        .dice-toggle:hover {
+            background-color: #2a2a2a;
+        }
+        
+        .roll-log-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 280px;
+            max-height: 400px;
+            z-index: 2000;
+            background-color: #1a1a1a;
+            border: 2px solid var(--accent-gold);
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .dice-notification {
+            position: fixed;
+            top: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(26, 26, 26, 0.95);
+            border: 3px solid var(--accent-gold);
+            border-radius: 12px;
+            padding: 20px 30px;
+            z-index: 10001;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+            animation: dice-notification-appear 0.3s ease-out;
+            min-width: 300px;
+            text-align: center;
+        }
+        
+        @keyframes dice-notification-appear {
+            0% {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-20px) scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0) scale(1);
+            }
+        }
+        
+        .dice-notification-player {
+            color: var(--accent-gold);
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-family: 'Times New Roman', Times, serif;
+        }
+        
+        .dice-notification-formula {
+            color: var(--text-primary);
+            font-size: 18px;
+            margin-bottom: 12px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .dice-notification-result {
+            color: #4ecdc4;
+            font-size: 36px;
+            font-weight: bold;
+            font-family: 'Times New Roman', Times, serif;
+        }
     </style>
 </head>
 <body>
@@ -703,6 +817,25 @@
             </div>
         </div>
     </div>
+
+    <!-- Dice System -->
+    <div id="diceToggle" class="dice-toggle">
+        <div style="font-size: 16px; color: var(--accent-gold); font-weight: bold;">🎲</div>
+    </div>
+    <div id="diceContainer" class="dice-container hidden"></div>
+    
+    <div id="rollLog" class="roll-log-container" style="display: none;">
+        <div style="font-size: 14px; font-weight: bold; color: var(--accent-gold); margin-bottom: 8px; font-family: 'Times New Roman', Times, serif; border-bottom: 1px solid var(--accent-gold); padding-bottom: 5px; text-align: center;">
+            🎲 Dice Roll Log
+        </div>
+        <div id="rollLogContent" style="overflow-y: auto; flex: 1; padding-right: 5px;"></div>
+    </div>
+    
+    <div id="rollLogToggle" style="position: fixed; right: 5px; bottom: 20px; z-index: 2000; background-color: #1a1a1a; padding: 8px 6px; border-radius: 8px 0 0 8px; border: 2px solid var(--accent-gold); border-right: none; box-shadow: 0 4px 12px rgba(0,0,0,0.6); cursor: pointer; transition: right 0.3s ease-in-out, background-color 0.2s; user-select: none;">
+        <div style="font-size: 16px; color: var(--accent-gold); font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">📜 ROLL LOG</div>
+    </div>
+    
+    <div id="diceNotification" style="display: none;"></div>
 
     <script>
         const CLIENT_ID = '1455487225490837526';
@@ -1004,6 +1137,11 @@
                         avatarHotkeys.delete(data.avatarId);
                         activeAvatars.delete(data.avatarId);
                     }
+                });
+
+                socket.on('dice-roll', (data) => {
+                    addRollToLog(data);
+                    showDiceNotification(data.playerName, data.formula, data.total);
                 });
 
                 // Initial UI update
@@ -2491,6 +2629,196 @@
             imageData.x = x;
             imageData.y = y;
         }
+
+        // ===== DICE SYSTEM =====
+        const dice = [
+            { type: 'd4',  sides: 4,  image: 'assets/4.png' },
+            { type: 'd6',  sides: 6,  image: 'assets/6.png' },
+            { type: 'd8',  sides: 8,  image: 'assets/8.png' },
+            { type: 'd10', sides: 10, image: 'assets/10.png' },
+            { type: 'd12', sides: 12, image: 'assets/12.png' },
+            { type: 'd20', sides: 20, image: 'assets/20.png' },
+            { type: 'd100', sides: 100, image: 'assets/100.png' }
+        ];
+        
+        let diceVisible = false;
+        let rollLogVisible = false;
+        let diceRollLog = [];
+        let diceNotificationTimeout = null;
+        let selectedDice = [];
+        let spinningDie = null;
+        
+        function initDiceSystem() {
+            const container = document.getElementById('diceContainer');
+            container.innerHTML = '';
+            
+            dice.forEach(die => {
+                const dieEl = document.createElement('div');
+                dieEl.style.position = 'relative';
+                dieEl.style.display = 'flex';
+                dieEl.style.flexDirection = 'column';
+                dieEl.style.alignItems = 'center';
+                
+                const img = document.createElement('img');
+                img.src = die.image;
+                img.alt = die.type;
+                img.id = `die-${die.type}`;
+                img.style.width = '60px';
+                img.style.height = '60px';
+                img.style.objectFit = 'contain';
+                img.style.cursor = 'pointer';
+                img.style.transition = 'transform 0.1s, filter 0.2s';
+                img.style.filter = 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))';
+                img.draggable = false;
+                
+                img.onclick = () => rollSingleDie(die);
+                img.onmouseenter = () => { 
+                    if (spinningDie !== die.type) img.style.transform = 'scale(1.1)'; 
+                };
+                img.onmouseleave = () => { 
+                    if (spinningDie !== die.type) img.style.transform = 'scale(1)'; 
+                };
+                
+                dieEl.appendChild(img);
+                container.appendChild(dieEl);
+            });
+            
+            // Setup toggle listeners
+            document.getElementById('diceToggle').onclick = toggleDiceContainer;
+            document.getElementById('rollLogToggle').onclick = toggleRollLog;
+        }
+        
+        function toggleDiceContainer() {
+            diceVisible = !diceVisible;
+            const container = document.getElementById('diceContainer');
+            const toggle = document.getElementById('diceToggle');
+            
+            if (diceVisible) {
+                container.classList.remove('hidden');
+                container.classList.add('visible');
+                toggle.classList.add('open');
+                toggle.innerHTML = '<div style="font-size: 16px; color: var(--accent-gold); font-weight: bold;">◀</div>';
+            } else {
+                container.classList.remove('visible');
+                container.classList.add('hidden');
+                toggle.classList.remove('open');
+                toggle.innerHTML = '<div style="font-size: 16px; color: var(--accent-gold); font-weight: bold;">🎲</div>';
+            }
+        }
+        
+        function toggleRollLog() {
+            rollLogVisible = !rollLogVisible;
+            const rollLog = document.getElementById('rollLog');
+            const toggle = document.getElementById('rollLogToggle');
+            
+            if (rollLogVisible) {
+                rollLog.style.display = 'flex';
+                toggle.style.right = '300px';
+                toggle.style.borderRight = '2px solid var(--accent-gold)';
+                toggle.innerHTML = '<div style="font-size: 16px; color: var(--accent-gold); font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">▶</div>';
+            } else {
+                rollLog.style.display = 'none';
+                toggle.style.right = '5px';
+                toggle.style.borderRight = 'none';
+                toggle.innerHTML = '<div style="font-size: 16px; color: var(--accent-gold); font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">📜 ROLL LOG</div>';
+            }
+        }
+        
+        function rollSingleDie(die) {
+            const img = document.getElementById(`die-${die.type}`);
+            if (!img || spinningDie) return;
+            
+            spinningDie = die.type;
+            img.style.animation = 'spin 0.5s ease-in-out';
+            
+            setTimeout(() => {
+                const result = Math.floor(Math.random() * die.sides) + 1;
+                img.style.animation = '';
+                spinningDie = null;
+                
+                // Add to log
+                const rollData = {
+                    playerName: 'Host',
+                    type: die.type,
+                    result: result,
+                    total: result,
+                    formula: die.type
+                };
+                addRollToLog(rollData);
+                showDiceNotification('Host', die.type, result);
+                
+                // Broadcast if multiplayer
+                if (socket) {
+                    socket.emit('dice-roll', rollData);
+                }
+            }, 500);
+        }
+        
+        function addRollToLog(rollData) {
+            diceRollLog.unshift(rollData);
+            if (diceRollLog.length > 12) {
+                diceRollLog = diceRollLog.slice(0, 12);
+            }
+            updateRollLogDisplay();
+        }
+        
+        function updateRollLogDisplay() {
+            const logContent = document.getElementById('rollLogContent');
+            if (!logContent) return;
+            
+            if (diceRollLog.length === 0) {
+                logContent.innerHTML = '<div style="color: #888; font-size: 12px; padding: 10px; text-align: center;">No rolls yet</div>';
+                return;
+            }
+            
+            logContent.innerHTML = '';
+            diceRollLog.forEach((roll) => {
+                const rollDiv = document.createElement('div');
+                rollDiv.style.cssText = 'padding: 8px; margin-bottom: 6px; background-color: #2a2a2a; border-radius: 6px; border: 1px solid #444; font-size: 12px; font-family: Arial, sans-serif;';
+                
+                let html = `<div style="color: var(--accent-gold); font-weight: bold; margin-bottom: 3px; font-size: 11px;">${roll.playerName || 'Player'}</div>`;
+                html += `<div style="color: var(--text-primary); margin-bottom: 2px;">${roll.formula}</div>`;
+                html += `<div style="color: #4ecdc4; font-weight: bold; margin-top: 2px; font-size: 13px;">Result: ${roll.total}</div>`;
+                
+                rollDiv.innerHTML = html;
+                logContent.appendChild(rollDiv);
+            });
+        }
+        
+        function showDiceNotification(playerName, formula, result) {
+            const notification = document.getElementById('diceNotification');
+            if (!notification) return;
+            
+            if (diceNotificationTimeout) {
+                clearTimeout(diceNotificationTimeout);
+            }
+            
+            notification.className = 'dice-notification';
+            notification.innerHTML = `
+                <div class="dice-notification-player">${playerName}</div>
+                <div class="dice-notification-formula">${formula}</div>
+                <div class="dice-notification-result">${result}</div>
+            `;
+            notification.style.display = 'block';
+            
+            diceNotificationTimeout = setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+        
+        // Add CSS animation for dice spinning
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes spin {
+                0% { transform: rotate(0deg) scale(1); }
+                50% { transform: rotate(180deg) scale(1.2); }
+                100% { transform: rotate(360deg) scale(1); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Initialize dice system on load
+        initDiceSystem();
     </script>
 </body>
 </html>
