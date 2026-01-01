@@ -1,6 +1,8 @@
 // ===== WEATHER EFFECTS SYSTEM =====
 // This file handles all weather particle animations for Monomyth VTT
 
+console.log('✓ Weather effects system loaded');
+
 window.toggleWeatherMenu = function(event) {
     const menu = document.getElementById('weatherMenu');
     
