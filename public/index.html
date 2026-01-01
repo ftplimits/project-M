@@ -573,16 +573,12 @@
         
         /* Player avatars go under grid in tactical mode (host stays above) */
         body.tactical-mode-active .avatar-token:not(.host-avatar) {
-            z-index: 14; /* Below overlay (15) and grid (16) */
+            z-index: 14 !important; /* Below overlay (15) and grid (16) - forced */
         }
         
         /* When activated, player avatars pop above grid */
         body.tactical-mode-active .avatar-token:not(.host-avatar).speaking {
-            z-index: 30; /* Above grid */
-        }
-        
-        body.tactical-mode-active .avatar-token:not(.host-avatar):hover {
-            z-index: 30; /* Above grid when hovering */
+            z-index: 30 !important; /* Above grid when speaking/activated */
         }
         
         /* Host avatar always stays above grid */
@@ -3247,9 +3243,9 @@
             // Three concentric circles with distance labels
             // Each circle represents ~6 grid squares wider than the last
             const circles = [
-                { radiusX: 270, radiusY: 135, label: '30' },    // Inner circle (doubled)
-                { radiusX: 540, radiusY: 270, label: '60' },    // Middle circle (doubled)
-                { radiusX: 810, radiusY: 405, label: '90' }     // Outer circle (doubled)
+                { radiusX: 297, radiusY: 148.5, label: '30' },    // Inner circle (110% of doubled)
+                { radiusX: 594, radiusY: 297, label: '60' },      // Middle circle (110% of doubled)
+                { radiusX: 891, radiusY: 445.5, label: '90' }     // Outer circle (110% of doubled)
             ];
             
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
