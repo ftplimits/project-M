@@ -3247,9 +3247,9 @@
             // Three concentric circles with distance labels
             // Each circle represents ~6 grid squares wider than the last
             const circles = [
-                { radiusX: 135, radiusY: 67.5, label: '30' },   // Inner circle (~6 squares)
-                { radiusX: 270, radiusY: 135, label: '60' },    // Middle circle (~12 squares)
-                { radiusX: 405, radiusY: 202.5, label: '90' }   // Outer circle (~18 squares)
+                { radiusX: 270, radiusY: 135, label: '30' },    // Inner circle (doubled)
+                { radiusX: 540, radiusY: 270, label: '60' },    // Middle circle (doubled)
+                { radiusX: 810, radiusY: 405, label: '90' }     // Outer circle (doubled)
             ];
             
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
