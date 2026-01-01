@@ -318,6 +318,16 @@
             box-sizing: border-box; /* Include border in width/height */
         }
         
+        /* Scene images fill entire canvas */
+        .image-token.scene-image {
+            top: 0 !important;
+            left: 0 !important;
+            right: 0;
+            bottom: 0;
+            width: auto !important;
+            height: auto !important;
+        }
+        
         .image-token:hover {
             border-color: var(--accent-gold);
         }
@@ -397,7 +407,7 @@
         
         .avatar-name-banner {
             position: absolute;
-            bottom: 10px; /* Overlap bottom of avatar instead of sitting below */
+            bottom: 0px; /* Bottom of banner flush with bottom of avatar */
             left: 50%;
             transform: translateX(-50%);
             background: var(--accent-red);
@@ -425,7 +435,7 @@
         }
         
         .host-avatar .avatar-name-banner {
-            bottom: 15px; /* Larger overlap for host */
+            bottom: 0px; /* Same - flush with bottom */
             font-size: 16px;
             padding: 8px 20px;
         }
@@ -825,11 +835,14 @@
                 socket.on('image-added', (data) => {
                     addImageToCanvas(data.id, data.src, data.x, data.y, data.width, data.height, false);
                     
-                    // Lock image if specified
-                    if (data.locked) {
-                        hardLockedAvatars.add(data.id);
-                        const imageData = images.get(data.id);
-                        if (imageData) {
+                    const imageData = images.get(data.id);
+                    if (imageData) {
+                        // Add scene-image class for automatic canvas filling
+                        imageData.element.classList.add('scene-image');
+                        
+                        // Lock image if specified
+                        if (data.locked) {
+                            hardLockedAvatars.add(data.id);
                             imageData.element.style.cursor = 'not-allowed';
                             imageData.element.style.opacity = '0.9';
                         }
@@ -1728,11 +1741,14 @@
                         sessionData.images.forEach(imgData => {
                             addImageToCanvas(imgData.id, imgData.src, imgData.x, imgData.y, imgData.width, imgData.height, true);
                             
-                            // Restore lock state
-                            if (imgData.locked) {
-                                hardLockedAvatars.add(imgData.id);
-                                const imageData = images.get(imgData.id);
-                                if (imageData) {
+                            const imageData = images.get(imgData.id);
+                            if (imageData) {
+                                // Add scene-image class for automatic canvas filling
+                                imageData.element.classList.add('scene-image');
+                                
+                                // Restore lock state
+                                if (imgData.locked) {
+                                    hardLockedAvatars.add(imgData.id);
                                     imageData.element.style.cursor = 'not-allowed';
                                     imageData.element.style.opacity = '0.9';
                                 }
@@ -2251,44 +2267,21 @@
                 const img = new Image();
                 img.onload = () => {
                     const id = Date.now().toString();
-                    const canvas = document.getElementById('canvas');
-                    const canvasRect = canvas.getBoundingClientRect();
-                    const canvasWidth = canvasRect.width;
-                    const canvasHeight = canvasRect.height;
                     
-                    console.log('Canvas dimensions:', canvasWidth, 'x', canvasHeight);
-                    console.log('Image dimensions:', img.width, 'x', img.height);
+                    // Scene images fill the canvas automatically via CSS
+                    // No need to calculate dimensions
+                    addImageToCanvas(id, e.target.result, 0, 0, 0, 0, true);
                     
-                    // Use COVER logic - fill entire canvas, crop if needed
-                    const imgAspect = img.width / img.height;
-                    const canvasAspect = canvasWidth / canvasHeight;
-                    
-                    let width, height;
-                    if (imgAspect > canvasAspect) {
-                        // Image is wider - fit to HEIGHT (crop sides)
-                        height = canvasHeight;
-                        width = canvasHeight * imgAspect;
-                    } else {
-                        // Image is taller - fit to WIDTH (crop top/bottom)
-                        width = canvasWidth;
-                        height = canvasWidth / imgAspect;
-                    }
-                    
-                    console.log('Calculated scene image size:', width, 'x', height);
-                    
-                    // Center the image (will overflow and be cropped by object-fit: cover)
-                    const x = (canvasWidth - width) / 2;
-                    const y = (canvasHeight - height) / 2;
-                    
-                    addImageToCanvas(id, e.target.result, x, y, width, height, true);
-                    
-                    // Auto-lock scene images
-                    hardLockedAvatars.add(id);
+                    // Add scene-image class for automatic canvas filling
                     const imageData = images.get(id);
                     if (imageData) {
+                        imageData.element.classList.add('scene-image');
                         imageData.element.style.cursor = 'not-allowed';
                         imageData.element.style.opacity = '0.9';
                     }
+                    
+                    // Auto-lock scene images
+                    hardLockedAvatars.add(id);
                     
                     // Broadcast to other players
                     if (socket) {
@@ -2424,9 +2417,10 @@
             // Constrain to canvas
             x = Math.max(0, Math.min(x, canvasRect.width - draggedImage.offsetWidth));
             
-            // For avatars, minimal constraint since banner now overlaps
+            // For avatars, account for name banner extending below
             if (isAvatar) {
-                const bannerOffset = 5; // Just keep 5px visible at bottom
+                // Banner height: ~30px for player, ~36px for host
+                const bannerOffset = draggedImage.classList.contains('host-avatar') ? 36 : 30;
                 y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight - bannerOffset));
             } else {
                 y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight));
