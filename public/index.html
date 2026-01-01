@@ -73,7 +73,7 @@
         .info-badge {
             position: absolute;
             top: 20px;
-            right: 20px;
+            left: 20px;
             background: var(--bg-panel);
             border: 2px solid var(--accent-gold);
             border-radius: 4px;
@@ -981,11 +981,34 @@
                     console.log('✓ Connected to server');
                     mySocketId = socket.id;
                     
-                    // Request to join room
-                    socket.emit('request-join', { 
-                        roomId: roomId,
-                        playerName: 'Player'
-                    });
+                    // First, check if this room has a host
+                    socket.emit('check-room-status', { roomId: roomId });
+                });
+                
+                // Receive room status and show appropriate name prompt
+                socket.on('room-status', async (data) => {
+                    let promptMessage;
+                    if (data.hasHost) {
+                        promptMessage = 'Please enter player name';
+                    } else {
+                        promptMessage = 'Please enter host name';
+                    }
+                    
+                    const playerName = await showInputModal(promptMessage);
+                    if (!playerName || !playerName.trim()) {
+                        // Default name if canceled
+                        const defaultName = data.hasHost ? 'Player' : 'Host';
+                        socket.emit('request-join', { 
+                            roomId: roomId,
+                            playerName: defaultName
+                        });
+                    } else {
+                        // Request to join room with entered name
+                        socket.emit('request-join', { 
+                            roomId: roomId,
+                            playerName: playerName.trim()
+                        });
+                    }
                 });
                 
                 // Host receives join requests
@@ -1488,6 +1511,64 @@
             });
             
             overlay.classList.add('active');
+        }
+        
+        function showInputModal(promptText) {
+            return new Promise((resolve) => {
+                const overlay = document.getElementById('modal-overlay');
+                const modalTitle = document.getElementById('modal-title');
+                const modalContent = document.getElementById('modal-content');
+                const modalButtons = document.getElementById('modal-buttons');
+                
+                modalTitle.textContent = promptText;
+                
+                // Create input field
+                const inputDiv = document.createElement('div');
+                inputDiv.style.cssText = 'margin: 15px 0;';
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.placeholder = 'Enter name...';
+                input.style.cssText = 'width: 100%; padding: 10px; background: var(--bg-secondary); border: 2px solid var(--accent-gold); border-radius: 4px; color: var(--text-primary); font-size: 14px; font-family: Arial, sans-serif;';
+                inputDiv.appendChild(input);
+                
+                modalContent.innerHTML = '';
+                modalContent.appendChild(inputDiv);
+                
+                // Create buttons
+                modalButtons.innerHTML = '';
+                
+                const confirmBtn = document.createElement('button');
+                confirmBtn.className = 'modal-button confirm';
+                confirmBtn.textContent = 'Confirm';
+                confirmBtn.onclick = () => {
+                    overlay.classList.remove('active');
+                    resolve(input.value);
+                };
+                
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'modal-button cancel';
+                cancelBtn.textContent = 'Cancel';
+                cancelBtn.onclick = () => {
+                    overlay.classList.remove('active');
+                    resolve('');
+                };
+                
+                modalButtons.appendChild(confirmBtn);
+                modalButtons.appendChild(cancelBtn);
+                
+                overlay.classList.add('active');
+                
+                // Focus input and allow Enter key
+                setTimeout(() => {
+                    input.focus();
+                    input.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            overlay.classList.remove('active');
+                            resolve(input.value);
+                        }
+                    });
+                }, 100);
+            });
         }
         
         function showAvatarContextMenu(e, avatarId, isHost = false) {
@@ -2679,15 +2760,16 @@
             // Clear canvas
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
             
-            // Grid settings for 20x20 isometric grid
+            // Grid settings for 20x20 isometric grid (50% larger)
             const gridSize = 20;
-            const tileWidth = 60;  // Width of isometric tile
-            const tileHeight = 30; // Height of isometric tile
+            const tileWidth = 90;  // Width of isometric tile (increased from 60)
+            const tileHeight = 45; // Height of isometric tile (increased from 30)
             
-            // Calculate grid offset to center it
+            // Calculate grid offset to center it properly
+            // Isometric grid forms a diamond shape
             const gridWidth = gridSize * tileWidth;
-            const gridHeight = gridSize * tileHeight / 2;
-            const offsetX = (canvasWidth - gridWidth) / 2;
+            const gridHeight = gridSize * tileHeight;
+            const offsetX = canvasWidth / 2;
             const offsetY = (canvasHeight - gridHeight) / 2;
             
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
