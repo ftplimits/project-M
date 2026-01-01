@@ -613,7 +613,6 @@
         }
         
         .tactical-token.dragging {
-            opacity: 0.8;
             z-index: 1000;
         }
         
@@ -1347,8 +1346,8 @@
         let toolboxOffset = { x: 0, y: 0 };
         
         // Weather effects system
-        let currentWeatherEffect = null;
-        let weatherAnimationId = null;
+        window.currentWeatherEffect = null;
+        window.weatherAnimationId = null;
         
         // Handouts system
         let handoutVisible = false;
@@ -3458,6 +3457,8 @@
             
             input.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
+                    e.preventDefault();
+                    input.removeEventListener('blur', finishEdit); // Prevent double-trigger
                     finishEdit();
                 }
             });
