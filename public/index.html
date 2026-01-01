@@ -851,6 +851,22 @@
             z-index: 10000;
         }
         
+        #tacticalThemeCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 15;
+            opacity: 0.5;
+            display: none;
+        }
+        
+        #tacticalThemeCanvas.active {
+            display: block;
+        }
+        
         .weather-menu {
             position: fixed;
             background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
@@ -1128,6 +1144,7 @@
             <div class="context-item" data-action="upload-tokens">🎯 Upload Tokens</div>
             <div class="context-item" data-action="toggle-drawing-tool">✏️ Toggle Drawing Tool</div>
             <div class="context-item" data-action="toggle-weather-menu">🌦️ Weather Effects</div>
+            <div class="context-item" data-action="toggle-tactical-theme-menu">🗺️ Tactical Themes</div>
             <div class="context-item" data-action="upload-handout">📄 Upload Handout</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="save-session">💾 Save Session</div>
@@ -1191,6 +1208,9 @@
                 <!-- Tactical Mode Overlay (darkens scene and avatars) -->
                 <div class="tactical-overlay" id="tactical-overlay"></div>
                 
+                <!-- Tactical Theme Canvas -->
+                <canvas id="tacticalThemeCanvas" width="1920" height="1080"></canvas>
+                
                 <!-- Tactical Mode Grid -->
                 <canvas class="tactical-grid" id="tactical-grid" width="1920" height="1080"></canvas>
                 
@@ -1205,6 +1225,9 @@
     
     <!-- Weather Menu -->
     <div id="weatherMenu" class="weather-menu"></div>
+    
+    <!-- Tactical Theme Menu -->
+    <div id="tacticalThemeMenu" class="weather-menu"></div>
 
     <!-- Dice System -->
     <div id="diceToggle" class="dice-toggle">
@@ -1400,6 +1423,10 @@
         // Weather effects system
         window.currentWeatherEffect = null;
         window.weatherAnimationId = null;
+        
+        // Tactical theme system
+        window.currentTacticalTheme = null;
+        window.tacticalThemeAnimationId = null;
         
         // Handouts system
         let handoutVisible = false;
@@ -1896,6 +1923,14 @@
                             contextMenu.classList.remove('active');
                         } else {
                             console.error('Weather effects not loaded. Please refresh the page.');
+                        }
+                    } else if (action === 'toggle-tactical-theme-menu') {
+                        if (typeof window.toggleTacticalThemeMenu === 'function') {
+                            const rect = contextMenu.getBoundingClientRect();
+                            window.toggleTacticalThemeMenu({ clientX: rect.left, clientY: rect.top + rect.height / 2 });
+                            contextMenu.classList.remove('active');
+                        } else {
+                            console.error('Tactical themes not loaded. Please refresh the page.');
                         }
                     } else if (action === 'upload-handout') {
                         uploadHandout();
@@ -3320,12 +3355,18 @@
             tacticalModeActive = !tacticalModeActive;
             const overlay = document.getElementById('tactical-overlay');
             const grid = document.getElementById('tactical-grid');
+            const themeCanvas = document.getElementById('tacticalThemeCanvas');
             
             if (tacticalModeActive) {
                 overlay.classList.add('active');
                 grid.classList.add('active');
                 document.body.classList.add('tactical-mode-active');
                 drawIsometricGrid();
+                
+                // Restore theme if one was active
+                if (window.currentTacticalTheme) {
+                    themeCanvas.classList.add('active');
+                }
                 
                 // Show all tokens
                 tacticalTokens.forEach(tokenData => {
@@ -3334,6 +3375,7 @@
             } else {
                 overlay.classList.remove('active');
                 grid.classList.remove('active');
+                themeCanvas.classList.remove('active');
                 document.body.classList.remove('tactical-mode-active');
                 
                 // Hide all tokens
@@ -4056,6 +4098,100 @@
         }
 
         window.stopWeatherEffect = function() {if (window.weatherAnimationId) {cancelAnimationFrame(window.weatherAnimationId);window.weatherAnimationId = null;}const canvas = document.getElementById('weatherCanvas');if (canvas) {const ctx = canvas.getContext('2d');ctx.clearRect(0, 0, canvas.width, canvas.height);}}
+
+        // ===== TACTICAL THEME SYSTEM =====
+        console.log('✓ Tactical theme system loaded');
+
+        window.toggleTacticalThemeMenu = function(event) {
+            const menu = document.getElementById('tacticalThemeMenu');
+            if (menu.style.display === 'block') {menu.style.display = 'none';return;}
+            menu.innerHTML = '';
+            const header = document.createElement('div');header.className = 'weather-menu-item header';header.textContent = 'Tactical Themes';menu.appendChild(header);
+            const themeOptions = [{name:'None',value:null,emoji:'⭕'},{name:'Stone',value:'stone',emoji:'🪨'},{name:'Sand',value:'sand',emoji:'🏜️'},{name:'Light Grass',value:'lightgrass',emoji:'🌿'},{name:'Dark Grass',value:'darkgrass',emoji:'🟢'},{name:'Water',value:'water',emoji:'🌊'}];
+            themeOptions.forEach(option => {const item = document.createElement('div');item.className = 'weather-menu-item';if (window.currentTacticalTheme === option.value) item.classList.add('active');item.textContent = `${option.emoji} ${option.name}`;item.onclick = () => {window.setTacticalTheme(option.value);menu.style.display = 'none';};menu.appendChild(item);});
+            menu.style.display = 'block';menu.style.left = event.clientX + 'px';menu.style.top = event.clientY + 'px';
+        }
+
+        window.setTacticalTheme = function(theme) {window.currentTacticalTheme = theme;if (theme) window.startTacticalTheme(theme);else window.stopTacticalTheme();}
+
+        window.startTacticalTheme = function(theme) {
+            window.stopTacticalTheme();
+            const canvas = document.getElementById('tacticalThemeCanvas');if (!canvas) return;
+            canvas.classList.add('active');
+            const ctx = canvas.getContext('2d');const w = 1920;const h = 1080;
+            
+            if (theme === 'stone') {
+                // Static stone texture
+                ctx.fillStyle = '#5a5a5a';ctx.fillRect(0, 0, w, h);
+                for (let i = 0; i < 200; i++) {
+                    const x = Math.random() * w;const y = Math.random() * h;const size = Math.random() * 30 + 10;
+                    ctx.fillStyle = `rgba(${80 + Math.random() * 40}, ${80 + Math.random() * 40}, ${80 + Math.random() * 40}, 0.3)`;
+                    ctx.fillRect(x, y, size, size);
+                }
+            } else if (theme === 'sand') {
+                // Static sand texture
+                ctx.fillStyle = '#d2b48c';ctx.fillRect(0, 0, w, h);
+                for (let i = 0; i < 1000; i++) {
+                    ctx.fillStyle = `rgba(${194 + Math.random() * 30}, ${178 + Math.random() * 30}, ${128 + Math.random() * 30}, 0.2)`;
+                    ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+                }
+            } else if (theme === 'darkgrass') {
+                // Static dark grass texture
+                ctx.fillStyle = '#2d5016';ctx.fillRect(0, 0, w, h);
+                for (let i = 0; i < 500; i++) {
+                    const x = Math.random() * w;const y = Math.random() * h;
+                    ctx.strokeStyle = `rgba(${30 + Math.random() * 30}, ${60 + Math.random() * 30}, ${10 + Math.random() * 20}, 0.3)`;
+                    ctx.lineWidth = 1;ctx.beginPath();ctx.moveTo(x, y);ctx.lineTo(x + (Math.random() - 0.5) * 10, y - Math.random() * 15);ctx.stroke();
+                }
+            } else if (theme === 'water') {
+                // Static water texture
+                ctx.fillStyle = '#4682b4';ctx.fillRect(0, 0, w, h);
+                for (let y = 0; y < h; y += 20) {
+                    ctx.strokeStyle = `rgba(100, 149, 237, ${0.1 + Math.random() * 0.2})`;
+                    ctx.lineWidth = 2;ctx.beginPath();
+                    for (let x = 0; x < w; x += 10) {ctx.lineTo(x, y + Math.sin(x * 0.05) * 3);}
+                    ctx.stroke();
+                }
+            } else if (theme === 'lightgrass') {
+                // Animated light grass
+                const grassBlades = [];
+                for (let i = 0; i < 800; i++) {
+                    grassBlades.push({
+                        x: Math.random() * w,
+                        y: Math.random() * h,
+                        height: 10 + Math.random() * 20,
+                        sway: Math.random() * Math.PI * 2,
+                        swaySpeed: 0.01 + Math.random() * 0.02,
+                        color: {r: 100 + Math.random() * 40, g: 160 + Math.random() * 40, b: 60 + Math.random() * 30}
+                    });
+                }
+                
+                const animate = () => {
+                    ctx.fillStyle = '#7cb342';ctx.fillRect(0, 0, w, h);
+                    
+                    grassBlades.forEach(blade => {
+                        blade.sway += blade.swaySpeed;
+                        const swayX = Math.sin(blade.sway) * 3;
+                        
+                        ctx.strokeStyle = `rgba(${blade.color.r}, ${blade.color.g}, ${blade.color.b}, 0.4)`;
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(blade.x, blade.y);
+                        ctx.lineTo(blade.x + swayX, blade.y - blade.height);
+                        ctx.stroke();
+                    });
+                    
+                    window.tacticalThemeAnimationId = requestAnimationFrame(animate);
+                };
+                animate();
+            }
+        }
+
+        window.stopTacticalTheme = function() {
+            if (window.tacticalThemeAnimationId) {cancelAnimationFrame(window.tacticalThemeAnimationId);window.tacticalThemeAnimationId = null;}
+            const canvas = document.getElementById('tacticalThemeCanvas');
+            if (canvas) {canvas.classList.remove('active');const ctx = canvas.getContext('2d');ctx.clearRect(0, 0, canvas.width, canvas.height);}
+        }
 
         // ===== DICE SYSTEM =====
         const dice = [
