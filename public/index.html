@@ -591,8 +591,8 @@
         
         .tactical-token {
             position: absolute;
-            width: 90px;
-            height: 165px;
+            width: var(--token-width, 90px);
+            height: var(--token-height, 165px);
             cursor: move;
             display: none;
             border: 2px solid var(--accent-gold);
@@ -1480,7 +1480,18 @@
                 }
             });
             
+            // Update token sizes based on canvas scale
+            const scale = height / 1080; // Base reference: 1080p
+            const tokenWidth = Math.round(90 * scale);
+            const tokenHeight = Math.round(165 * scale);
+            
+            // Set CSS custom properties for token sizing
+            document.documentElement.style.setProperty('--token-width', `${tokenWidth}px`);
+            document.documentElement.style.setProperty('--token-height', `${tokenHeight}px`);
+            
             console.log(`📐 Canvases resized to ${width}x${height} (DPR: ${dpr})`);
+            console.log(`🎲 Token size scaled to ${tokenWidth}x${tokenHeight} (scale: ${scale.toFixed(3)})`);
+
             
             // Redraw tactical grid if active
             if (document.body.classList.contains('tactical-mode-active')) {
@@ -1800,7 +1811,8 @@
                     canvas.appendChild(hostAvatar);
                     
                     avatars.set('host', {
-                        element: hostAvatar
+                        element: hostAvatar,
+                        src: data.src // Store src for re-broadcasting
                     });
                 });
 
@@ -3214,7 +3226,8 @@
                 
                 // Store host avatar data
                 avatars.set('host', {
-                    element: hostAvatar
+                    element: hostAvatar,
+                    src: optimizedSrc // Store src for broadcasting
                 });
                 
                 // Broadcast to other players
@@ -3315,6 +3328,7 @@
             canvas.appendChild(avatar);
             avatars.set(id, { 
                 element: avatar, 
+                src: src, // Store src for broadcasting
                 x, 
                 y, 
                 width: avatarWidth, 
@@ -3386,7 +3400,7 @@
             token.addEventListener('mousedown', startDrag);
             
             canvas.appendChild(token);
-            images.set(id, { element: token, x, y, width, height });
+            images.set(id, { element: token, src: src, x, y, width, height });
         }
 
         // ===== GRID SNAPPING SYSTEM =====
