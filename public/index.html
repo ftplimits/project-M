@@ -1543,16 +1543,18 @@
                     
                     // If I'm the host, broadcast current state to new player
                     if (isHost && socket) {
-                        console.log('Broadcasting current state to new player:', data.socketId);
+                        console.log('🎯 Broadcasting current state to new player:', data.socketId);
                         
                         // Send all avatars
+                        console.log(`📤 Broadcasting ${avatars.size} avatars`);
                         avatars.forEach((avatar, id) => {
                             if (id !== 'host') {
-                                socket.emit('avatar-added', {
+                                console.log(`  📤 Avatar: ${id}`);
+                                socket.emit('add-avatar', {
                                     id: id,
                                     src: avatar.src
                                 });
-                                socket.emit('avatar-moved', {
+                                socket.emit('move-avatar', {
                                     id: id,
                                     x: avatar.x,
                                     y: avatar.y
@@ -1565,16 +1567,19 @@
                         if (hostAvatar) {
                             const hostImg = hostAvatar.querySelector('.character-portrait');
                             if (hostImg) {
-                                socket.emit('host-avatar-added', {
+                                console.log('📤 Broadcasting host avatar');
+                                socket.emit('add-host-avatar', {
                                     src: hostImg.src
                                 });
                             }
                         }
                         
                         // Send all scene images
+                        console.log(`📤 Broadcasting ${images.size} images`);
                         images.forEach((imageData, id) => {
                             if (!avatars.has(id)) { // Don't resend avatars
-                                socket.emit('image-added', {
+                                console.log(`  📤 Image: ${id}`);
+                                socket.emit('add-image', {
                                     id: id,
                                     src: imageData.src,
                                     x: imageData.x,
@@ -1588,11 +1593,14 @@
                         
                         // Send tactical mode status
                         if (tacticalModeActive) {
+                            console.log('📤 Broadcasting tactical mode: ON');
                             socket.emit('tactical-mode-toggle', { active: true });
                         }
                         
                         // Send all tactical tokens
+                        console.log(`📤 Broadcasting ${tacticalTokens.size} tokens`);
                         tacticalTokens.forEach((tokenData, tokenId) => {
+                            console.log(`  📤 Token: ${tokenId}`);
                             socket.emit('token-added', {
                                 id: tokenId,
                                 src: tokenData.src,
