@@ -1745,20 +1745,18 @@
                     if (isHost && socket) {
                         console.log('🎯 Broadcasting current state to new player:', data.socketId);
                         
-                        // Send all avatars
+                        // Send all avatars (with position data)
                         console.log(`📤 Broadcasting ${avatars.size} avatars`);
                         avatars.forEach((avatar, id) => {
                             if (id !== 'host') {
                                 console.log(`  📤 Avatar: ${id}`);
-                                socket.emit('add-avatar', {
-                                    id: id,
-                                    src: avatar.src
-                                });
                                 // Broadcast normalized coordinates if available, otherwise convert from pixels
                                 const normalizedX = avatar.normalizedX !== undefined ? avatar.normalizedX : pixelToNormalized(avatar.x, avatar.y).x;
                                 const normalizedY = avatar.normalizedY !== undefined ? avatar.normalizedY : pixelToNormalized(avatar.x, avatar.y).y;
-                                socket.emit('move-avatar', {
+                                
+                                socket.emit('add-avatar', {
                                     id: id,
+                                    src: avatar.src,
                                     normalizedX: normalizedX,
                                     normalizedY: normalizedY
                                 });
@@ -1877,7 +1875,13 @@
                 socket.on('avatar-added', (data) => {
                     try {
                         console.log('🎭 Received avatar-added:', data.id);
-                        addAvatarToStage(data.id, data.src, false);
+                        // If position data provided, use it; otherwise let addAvatarToStage calculate
+                        if (data.normalizedX !== undefined && data.normalizedY !== undefined) {
+                            const pixel = normalizedToPixel(data.normalizedX, data.normalizedY);
+                            addAvatarToStage(data.id, data.src, false, pixel.x, pixel.y);
+                        } else {
+                            addAvatarToStage(data.id, data.src, false);
+                        }
                     } catch (error) {
                         console.error('❌ Error handling avatar-added:', error);
                     }
@@ -3369,9 +3373,20 @@
                 const id = Date.now().toString();
                 addAvatarToStage(id, optimizedSrc, true);
                 
-                // Broadcast to other players
+                // Broadcast to other players (with position data)
                 if (socket) {
-                    socket.emit('add-avatar', { id, src: optimizedSrc });
+                    const avatarData = avatars.get(id);
+                    if (avatarData) {
+                        const normalizedX = avatarData.normalizedX !== undefined ? avatarData.normalizedX : pixelToNormalized(avatarData.x, avatarData.y).x;
+                        const normalizedY = avatarData.normalizedY !== undefined ? avatarData.normalizedY : pixelToNormalized(avatarData.x, avatarData.y).y;
+                        
+                        socket.emit('add-avatar', { 
+                            id, 
+                            src: optimizedSrc,
+                            normalizedX: normalizedX,
+                            normalizedY: normalizedY
+                        });
+                    }
                 }
             } catch (error) {
                 console.error('❌ Failed to upload avatar:', error.message);
@@ -3382,7 +3397,7 @@
             event.target.value = '';
         }
 
-        function addAvatarToStage(id, src, isLocal = true) {
+        function addAvatarToStage(id, src, isLocal = true, providedX = null, providedY = null) {
             const canvas = document.getElementById('canvas');
             const canvasWidth = canvas.clientWidth;
             const canvasHeight = canvas.clientHeight;
@@ -3393,26 +3408,33 @@
             const avatarHeight = parseInt(computedStyle.getPropertyValue('--avatar-height')) || 250;
             const scale = canvasHeight / 1080; // Base reference: 1080p
             
-            // Position in lower third, centered, alternating left/right
-            const avatarCount = avatars.size;
-            const spacing = Math.round(240 * scale); // Space between avatars scales with canvas
-            
-            // Calculate position
             let x, y;
-            y = canvasHeight - avatarHeight - Math.round(100 * scale); // Lower third, scaled margin from bottom
             
-            if (avatarCount === 0) {
-                // First avatar: dead center
-                x = (canvasWidth - avatarWidth) / 2;
+            // Use provided position if available, otherwise calculate
+            if (providedX !== null && providedY !== null) {
+                x = providedX;
+                y = providedY;
             } else {
-                // Alternate left and right
-                const offset = Math.ceil(avatarCount / 2) * spacing;
-                if (avatarCount % 2 === 1) {
-                    // Odd number: go left
-                    x = (canvasWidth / 2) - offset - (avatarWidth / 2);
+                // Position in lower third, centered, alternating left/right
+                const avatarCount = avatars.size;
+                const spacing = Math.round(240 * scale); // Space between avatars scales with canvas
+                
+                // Calculate position
+                y = canvasHeight - avatarHeight - Math.round(100 * scale); // Lower third, scaled margin from bottom
+                
+                if (avatarCount === 0) {
+                    // First avatar: dead center
+                    x = (canvasWidth - avatarWidth) / 2;
                 } else {
-                    // Even number: go right
-                    x = (canvasWidth / 2) + offset - (avatarWidth / 2);
+                    // Alternate left and right
+                    const offset = Math.ceil(avatarCount / 2) * spacing;
+                    if (avatarCount % 2 === 1) {
+                        // Odd number: go left
+                        x = (canvasWidth / 2) - offset - (avatarWidth / 2);
+                    } else {
+                        // Even number: go right
+                        x = (canvasWidth / 2) + offset - (avatarWidth / 2);
+                    }
                 }
             }
             
