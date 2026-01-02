@@ -1629,6 +1629,7 @@
                 });
 
                 socket.on('image-added', (data) => {
+                    console.log('📷 Received image-added:', data.id);
                     addImageToCanvas(data.id, data.src, data.x, data.y, data.width, data.height, false);
                     
                     const imageData = images.get(data.id);
@@ -1646,18 +1647,22 @@
                 });
 
                 socket.on('image-moved', (data) => {
+                    console.log('📷 Received image-moved:', data.id);
                     moveImage(data.id, data.x, data.y, false);
                 });
 
                 socket.on('avatar-added', (data) => {
+                    console.log('🎭 Received avatar-added:', data.id);
                     addAvatarToStage(data.id, data.src, false);
                 });
 
                 socket.on('avatar-moved', (data) => {
+                    console.log('🎭 Received avatar-moved:', data.id);
                     moveImage(data.id, data.x, data.y, false);
                 });
 
                 socket.on('host-avatar-added', (data) => {
+                    console.log('👑 Received host-avatar-added');
                     // Remove existing host avatar if any
                     const existingHost = document.querySelector('.host-avatar');
                     if (existingHost) {
@@ -1800,6 +1805,7 @@
                 });
 
                 socket.on('tactical-mode-toggle', (data) => {
+                    console.log('⚔️ Received tactical-mode-toggle:', data.active);
                     tacticalModeActive = data.active;
                     const overlay = document.getElementById('tactical-overlay');
                     const grid = document.getElementById('tactical-grid');
@@ -1823,10 +1829,12 @@
                 });
 
                 socket.on('token-added', (data) => {
+                    console.log('🎲 Received token-added:', data.id);
                     addTokenToCanvas(data.id, data.src, data.x, data.y, false, data.hpTracking || false, data.hp || 10);
                 });
 
                 socket.on('token-moved', (data) => {
+                    console.log('🎲 Received token-moved:', data.id);
                     moveToken(data.id, data.x, data.y);
                 });
 
