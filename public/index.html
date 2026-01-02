@@ -3936,10 +3936,17 @@
             });
             
             // Calculate and set initial z-index based on grid row
-            const snapped = snapToGrid(x, y);
+            // Pass element for accurate dimension calculation
+            const snapped = snapToGrid(x, y, tokenEl);
             const baseZIndex = 20;
-            const rowOffset = snapped.row * 10;
-            tokenEl.style.zIndex = baseZIndex + rowOffset;
+            // Clamp row to reasonable range (-20 to 20) to prevent extreme z-index values
+            const clampedRow = Math.max(-20, Math.min(20, snapped.row));
+            const rowOffset = clampedRow * 10;
+            // Ensure z-index never goes below 15 (scene images are at 10)
+            const finalZIndex = Math.max(15, baseZIndex + rowOffset);
+            tokenEl.style.zIndex = finalZIndex;
+            
+            console.log(`🎲 Token created with z-index: ${finalZIndex} (row: ${snapped.row.toFixed(1)})`);
             
             // Apply default standard size (90×165px)
             setTokenSize(tokenId, 'standard');
@@ -4102,8 +4109,8 @@
                 if (draggedToken) {
                     tokenData.element.classList.remove('dragging');
                     
-                    // Apply grid snapping (50% snap)
-                    const snapped = snapToGrid(tokenData.x, tokenData.y);
+                    // Apply grid snapping - pass element for accurate dimension calculation
+                    const snapped = snapToGrid(tokenData.x, tokenData.y, tokenData.element);
                     tokenData.x = snapped.x;
                     tokenData.y = snapped.y;
                     tokenData.element.style.left = snapped.x + 'px';
@@ -4117,8 +4124,14 @@
                     // Set z-index based on row for proper isometric stacking
                     // Higher row numbers (further down/forward) = higher z-index
                     const baseZIndex = 20;
-                    const rowOffset = snapped.row * 10;
-                    tokenData.element.style.zIndex = baseZIndex + rowOffset;
+                    // Clamp row to reasonable range (-20 to 20) to prevent extreme z-index values
+                    const clampedRow = Math.max(-20, Math.min(20, snapped.row));
+                    const rowOffset = clampedRow * 10;
+                    // Ensure z-index never goes below 15 (scene images are at 10)
+                    const finalZIndex = Math.max(15, baseZIndex + rowOffset);
+                    tokenData.element.style.zIndex = finalZIndex;
+                    
+                    console.log(`🎲 Token z-index: ${finalZIndex} (row: ${snapped.row.toFixed(1)}, clamped: ${clampedRow})`);
                     
                     // Broadcast position (use normalized coordinates)
                     if (socket) {
@@ -4135,7 +4148,7 @@
             document.addEventListener('mouseup', stopDrag);
         }
         
-        function snapToGrid(x, y) {
+        function snapToGrid(x, y, tokenElement = null) {
             // Get actual canvas dimensions
             const canvas = document.getElementById('canvas');
             const canvasRect = canvas.getBoundingClientRect();
@@ -4151,9 +4164,17 @@
             const offsetX = canvasWidth / 2;
             const offsetY = (canvasHeight - gridHeight) / 2;
             
-            // Token dimensions (using standard size for snap calculation)
-            const tokenWidth = 90;
-            const tokenHeight = 165;
+            // Token dimensions - use actual element dimensions if provided, otherwise use scaled standard size
+            let tokenWidth, tokenHeight;
+            if (tokenElement) {
+                tokenWidth = tokenElement.offsetWidth;
+                tokenHeight = tokenElement.offsetHeight;
+            } else {
+                // Fallback to scaled standard size
+                const computedStyle = getComputedStyle(document.documentElement);
+                tokenWidth = parseInt(computedStyle.getPropertyValue('--token-width')) || 90;
+                tokenHeight = parseInt(computedStyle.getPropertyValue('--token-height')) || 165;
+            }
             
             // Convert token top-left to center
             const centerX = x + tokenWidth / 2;
@@ -4175,7 +4196,7 @@
             const snappedX = snappedCenterX - tokenWidth / 2 - 10; // Adjust 10px left
             const snappedY = snappedCenterY - tokenHeight / 2;
             
-            return { x: snappedX, y: snappedY, row: snappedRow };
+            return { x: snappedX, y: snappedY, row: snappedRow, col: snappedCol };
         }
         
         function deleteToken(tokenId) {
