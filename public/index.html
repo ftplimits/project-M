@@ -1749,10 +1749,11 @@
                         console.log(`📤 Broadcasting ${avatars.size} avatars`);
                         avatars.forEach((avatar, id) => {
                             if (id !== 'host') {
-                                console.log(`  📤 Avatar: ${id}`);
                                 // Broadcast normalized coordinates if available, otherwise convert from pixels
-                                const normalizedX = avatar.normalizedX !== undefined ? avatar.normalizedX : pixelToNormalized(avatar.x, avatar.y).x;
-                                const normalizedY = avatar.normalizedY !== undefined ? avatar.normalizedY : pixelToNormalized(avatar.x, avatar.y).y;
+                                const normalizedX = avatar.normalizedX !== undefined ? avatar.normalizedX : (avatar.x !== undefined ? pixelToNormalized(avatar.x, avatar.y).x : 0.5);
+                                const normalizedY = avatar.normalizedY !== undefined ? avatar.normalizedY : (avatar.y !== undefined ? pixelToNormalized(avatar.x, avatar.y).y : 0.7);
+                                
+                                console.log(`  📤 Avatar ${id}: pos=(${avatar.x}, ${avatar.y}) normalized=(${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)})`);
                                 
                                 socket.emit('add-avatar', {
                                     id: id,
@@ -1874,12 +1875,14 @@
 
                 socket.on('avatar-added', (data) => {
                     try {
-                        console.log('🎭 Received avatar-added:', data.id);
+                        console.log(`🎭 Received avatar-added: ${data.id}, pos=(${data.normalizedX?.toFixed(3)}, ${data.normalizedY?.toFixed(3)})`);
                         // If position data provided, use it; otherwise let addAvatarToStage calculate
                         if (data.normalizedX !== undefined && data.normalizedY !== undefined) {
                             const pixel = normalizedToPixel(data.normalizedX, data.normalizedY);
+                            console.log(`  → Converting to pixel: (${pixel.x.toFixed(0)}, ${pixel.y.toFixed(0)})`);
                             addAvatarToStage(data.id, data.src, false, pixel.x, pixel.y);
                         } else {
+                            console.log('  → No position data, calculating automatically');
                             addAvatarToStage(data.id, data.src, false);
                         }
                     } catch (error) {
@@ -2119,7 +2122,7 @@
                 });
                 
                 socket.on('token-size-changed', (data) => {
-                    setTokenSize(data.id, data.size);
+                    setTokenSize(data.id, data.size, false); // Don't re-broadcast received changes
                 });
                 
                 // Handout sync
@@ -3163,9 +3166,9 @@
                                     setTokenCondition(tokenData.id, tokenData.conditionEmoji);
                                 }
                                 
-                                // Restore size
+                                // Restore size - don't broadcast during session restore
                                 if (tokenData.size && tokenData.size !== 'standard') {
-                                    setTokenSize(tokenData.id, tokenData.size);
+                                    setTokenSize(tokenData.id, tokenData.size, false);
                                 }
                             }
                         });
@@ -3468,6 +3471,8 @@
             
             // Convert to normalized coordinates for consistent positioning across screen sizes
             const normalized = pixelToNormalized(x, y);
+            
+            console.log(`📍 Storing avatar ${id}: pixel=(${x.toFixed(0)}, ${y.toFixed(0)}) normalized=(${normalized.x.toFixed(3)}, ${normalized.y.toFixed(3)})`);
             
             avatars.set(id, { 
                 element: avatar, 
@@ -3970,8 +3975,8 @@
             
             console.log(`🎲 Token created with z-index: ${finalZIndex} (row: ${snapped.row.toFixed(1)})`);
             
-            // Apply default standard size (90×165px)
-            setTokenSize(tokenId, 'standard');
+            // Apply default standard size (90×165px) - don't broadcast, it's initial creation
+            setTokenSize(tokenId, 'standard', false);
             
             // Add HP counter if tracking enabled
             if (hpTracking) {
@@ -4260,9 +4265,15 @@
             }
         }
         
-        function setTokenSize(tokenId, size) {
+        function setTokenSize(tokenId, size, shouldBroadcast = true) {
             const tokenData = tacticalTokens.get(tokenId);
             if (!tokenData) return;
+            
+            // Only update if size actually changed
+            const oldSize = tokenData.size;
+            if (oldSize === size && shouldBroadcast === false) {
+                return; // No change, skip update
+            }
             
             tokenData.size = size;
             const tokenEl = tokenData.element;
@@ -4289,8 +4300,8 @@
             tokenEl.style.width = finalWidth + 'px';
             tokenEl.style.height = finalHeight + 'px';
             
-            // Broadcast size change
-            if (socket) {
+            // Only broadcast if explicitly requested
+            if (socket && shouldBroadcast) {
                 socket.emit('token-size-changed', {
                     id: tokenId,
                     size: size
