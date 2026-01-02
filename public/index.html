@@ -323,8 +323,8 @@
         }
         
         .avatar-token .character-portrait {
-            width: 200px;
-            height: 250px;
+            width: var(--avatar-width, 200px);
+            height: var(--avatar-height, 250px);
             border-radius: 6px;
             pointer-events: none;
             object-fit: cover;
@@ -340,7 +340,7 @@
             color: #fff;
             padding: 6px 16px;
             border-radius: 4px;
-            font-size: 14px;
+            font-size: var(--avatar-name-font-size, 14px);
             font-weight: bold;
             text-align: center;
             white-space: nowrap;
@@ -362,7 +362,7 @@
         
         .host-avatar .avatar-name-banner {
             bottom: 0px; /* Same - flush with bottom */
-            font-size: 16px;
+            font-size: var(--host-name-font-size, 16px);
             padding: 8px 20px;
         }
         
@@ -375,8 +375,8 @@
             position: absolute;
             top: 80px;
             left: 40px;
-            width: 240px;
-            height: 240px;
+            width: var(--host-avatar-size, 240px);
+            height: var(--host-avatar-size, 240px);
             border: 4px solid var(--accent-red);
             border-radius: 50%;
             box-shadow: 0 0 30px rgba(139, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.8);
@@ -1480,17 +1480,37 @@
                 }
             });
             
-            // Update token sizes based on canvas scale
+            // Update all element sizes based on canvas scale
             const scale = height / 1080; // Base reference: 1080p
+            
+            // Token sizes (90×165 at 1080p)
             const tokenWidth = Math.round(90 * scale);
             const tokenHeight = Math.round(165 * scale);
-            
-            // Set CSS custom properties for token sizing
             document.documentElement.style.setProperty('--token-width', `${tokenWidth}px`);
             document.documentElement.style.setProperty('--token-height', `${tokenHeight}px`);
             
+            // Player avatar sizes (200×250 at 1080p)
+            const avatarWidth = Math.round(200 * scale);
+            const avatarHeight = Math.round(250 * scale);
+            document.documentElement.style.setProperty('--avatar-width', `${avatarWidth}px`);
+            document.documentElement.style.setProperty('--avatar-height', `${avatarHeight}px`);
+            
+            // Host avatar size (240×240 at 1080p)
+            const hostAvatarSize = Math.round(240 * scale);
+            document.documentElement.style.setProperty('--host-avatar-size', `${hostAvatarSize}px`);
+            
+            // Name banner font sizes (14px player, 16px host at 1080p)
+            const avatarNameFontSize = Math.max(10, Math.round(14 * scale)); // Min 10px
+            const hostNameFontSize = Math.max(12, Math.round(16 * scale)); // Min 12px
+            document.documentElement.style.setProperty('--avatar-name-font-size', `${avatarNameFontSize}px`);
+            document.documentElement.style.setProperty('--host-name-font-size', `${hostNameFontSize}px`);
+            
             console.log(`📐 Canvases resized to ${width}x${height} (DPR: ${dpr})`);
-            console.log(`🎲 Token size scaled to ${tokenWidth}x${tokenHeight} (scale: ${scale.toFixed(3)})`);
+            console.log(`🎲 Token: ${tokenWidth}×${tokenHeight}`);
+            console.log(`👤 Avatar: ${avatarWidth}×${avatarHeight}`);
+            console.log(`👑 Host avatar: ${hostAvatarSize}×${hostAvatarSize}`);
+            console.log(`📝 Font sizes: ${avatarNameFontSize}px / ${hostNameFontSize}px`);
+            console.log(`📏 Scale: ${scale.toFixed(3)}`);
 
             
             // Redraw tactical grid if active
@@ -3345,17 +3365,19 @@
             const canvasWidth = canvas.clientWidth;
             const canvasHeight = canvas.clientHeight;
             
-            // Avatar size (250 height x 200 width)
-            const avatarWidth = 200;
-            const avatarHeight = 250;
+            // Get scaled avatar size from CSS variables (or use defaults)
+            const computedStyle = getComputedStyle(document.documentElement);
+            const avatarWidth = parseInt(computedStyle.getPropertyValue('--avatar-width')) || 200;
+            const avatarHeight = parseInt(computedStyle.getPropertyValue('--avatar-height')) || 250;
+            const scale = canvasHeight / 1080; // Base reference: 1080p
             
             // Position in lower third, centered, alternating left/right
             const avatarCount = avatars.size;
-            const spacing = 240; // Space between avatars
+            const spacing = Math.round(240 * scale); // Space between avatars scales with canvas
             
             // Calculate position
             let x, y;
-            y = canvasHeight - avatarHeight - 100; // Lower third, 100px from bottom
+            y = canvasHeight - avatarHeight - Math.round(100 * scale); // Lower third, scaled margin from bottom
             
             if (avatarCount === 0) {
                 // First avatar: dead center
@@ -3467,8 +3489,7 @@
             token.className = 'image-token';
             token.style.left = x + 'px';
             token.style.top = y + 'px';
-            token.style.width = width + 'px';
-            token.style.height = height + 'px';
+            // Don't set explicit width/height - CSS handles it (scene-image class = 100%)
             token.dataset.id = id;
             
             const img = document.createElement('img');
