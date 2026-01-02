@@ -7,6 +7,7 @@
     <!-- Socket.IO served by our server -->
     <script src="/socket.io/socket.io.js"></script>
     <script src="discord-sdk.js"></script>
+    <script src="image-optimization.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -1473,6 +1474,22 @@
                     socket.emit('check-room-status', { roomId: roomId });
                 });
                 
+                socket.on('disconnect', (reason) => {
+                    console.warn('⚠️ Disconnected from server:', reason);
+                    if (reason === 'io server disconnect') {
+                        // Server disconnected us, try to reconnect
+                        socket.connect();
+                    }
+                });
+                
+                socket.on('connect_error', (error) => {
+                    console.error('❌ Connection error:', error.message);
+                });
+                
+                socket.on('error', (error) => {
+                    console.error('❌ Socket error:', error);
+                });
+                
                 // Receive room status and show appropriate name prompt
                 socket.on('room-status', async (data) => {
                     // Only prompt for name if not already entered
@@ -1637,31 +1654,43 @@
                 });
 
                 socket.on('image-added', (data) => {
-                    console.log('📷 Received image-added:', data.id);
-                    addImageToCanvas(data.id, data.src, data.x, data.y, data.width, data.height, false);
-                    
-                    const imageData = images.get(data.id);
-                    if (imageData) {
-                        // Add scene-image class for automatic canvas filling
-                        imageData.element.classList.add('scene-image');
+                    try {
+                        console.log('📷 Received image-added:', data.id);
+                        addImageToCanvas(data.id, data.src, data.x, data.y, data.width, data.height, false);
                         
-                        // Lock image if specified
-                        if (data.locked) {
-                            hardLockedAvatars.add(data.id);
-                            imageData.element.style.cursor = 'default';
-                            imageData.element.style.opacity = '0.9';
+                        const imageData = images.get(data.id);
+                        if (imageData) {
+                            // Add scene-image class for automatic canvas filling
+                            imageData.element.classList.add('scene-image');
+                            
+                            // Lock image if specified
+                            if (data.locked) {
+                                hardLockedAvatars.add(data.id);
+                                imageData.element.style.cursor = 'default';
+                                imageData.element.style.opacity = '0.9';
+                            }
                         }
+                    } catch (error) {
+                        console.error('❌ Error handling image-added:', error);
                     }
                 });
 
                 socket.on('image-moved', (data) => {
-                    console.log('📷 Received image-moved:', data.id);
-                    moveImage(data.id, data.x, data.y, false);
+                    try {
+                        console.log('📷 Received image-moved:', data.id);
+                        moveImage(data.id, data.x, data.y, false);
+                    } catch (error) {
+                        console.error('❌ Error handling image-moved:', error);
+                    }
                 });
 
                 socket.on('avatar-added', (data) => {
-                    console.log('🎭 Received avatar-added:', data.id);
-                    addAvatarToStage(data.id, data.src, false);
+                    try {
+                        console.log('🎭 Received avatar-added:', data.id);
+                        addAvatarToStage(data.id, data.src, false);
+                    } catch (error) {
+                        console.error('❌ Error handling avatar-added:', error);
+                    }
                 });
 
                 socket.on('avatar-moved', (data) => {
@@ -1837,13 +1866,21 @@
                 });
 
                 socket.on('token-added', (data) => {
-                    console.log('🎲 Received token-added:', data.id);
-                    addTokenToCanvas(data.id, data.src, data.x, data.y, false, data.hpTracking || false, data.hp || 10);
+                    try {
+                        console.log('🎲 Received token-added:', data.id);
+                        addTokenToCanvas(data.id, data.src, data.x, data.y, false, data.hpTracking || false, data.hp || 10);
+                    } catch (error) {
+                        console.error('❌ Error handling token-added:', error);
+                    }
                 });
 
                 socket.on('token-moved', (data) => {
-                    console.log('🎲 Received token-moved:', data.id);
-                    moveToken(data.id, data.x, data.y);
+                    try {
+                        console.log('🎲 Received token-moved:', data.id);
+                        moveToken(data.id, data.x, data.y);
+                    } catch (error) {
+                        console.error('❌ Error handling token-moved:', error);
+                    }
                 });
 
                 socket.on('token-removed', (data) => {
@@ -3060,7 +3097,7 @@
         }
 
         // ===== IMAGE UPLOAD & MOVEMENT =====
-        function handleHostAvatarUpload(event) {
+        async function handleHostAvatarUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
             
@@ -3073,8 +3110,10 @@
                 activeAvatars.delete('host');
             }
             
-            const reader = new FileReader();
-            reader.onload = (e) => {
+            try {
+                console.log('👑 Optimizing host avatar...');
+                const optimizedSrc = await optimizeImage(file, 'avatar');
+                
                 const canvas = document.getElementById('canvas');
                 const hostAvatar = document.createElement('div');
                 hostAvatar.className = 'host-avatar';
@@ -3082,7 +3121,7 @@
                 
                 const characterImg = document.createElement('img');
                 characterImg.className = 'character-portrait';
-                characterImg.src = e.target.result;
+                characterImg.src = optimizedSrc;
                 hostAvatar.appendChild(characterImg);
                 
                 // Add drag handlers
@@ -3108,34 +3147,36 @@
                 
                 // Broadcast to other players
                 if (socket) {
-                    socket.emit('add-host-avatar', { src: e.target.result });
+                    socket.emit('add-host-avatar', { src: optimizedSrc });
                 }
-            };
-            reader.readAsDataURL(file);
+            } catch (error) {
+                console.error('❌ Failed to upload host avatar:', error.message);
+                alert(`Failed to upload host avatar: ${error.message}`);
+            }
             
             // Reset input
             event.target.value = '';
         }
 
-        function handlePlayerAvatarUpload(event) {
+        async function handlePlayerAvatarUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
             
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const id = Date.now().toString();
-                    addAvatarToStage(id, e.target.result, true);
-                    
-                    // Broadcast to other players
-                    if (socket) {
-                        socket.emit('add-avatar', { id, src: e.target.result });
-                    }
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
+            try {
+                console.log('👤 Optimizing player avatar...');
+                const optimizedSrc = await optimizeImage(file, 'avatar');
+                
+                const id = Date.now().toString();
+                addAvatarToStage(id, optimizedSrc, true);
+                
+                // Broadcast to other players
+                if (socket) {
+                    socket.emit('add-avatar', { id, src: optimizedSrc });
+                }
+            } catch (error) {
+                console.error('❌ Failed to upload avatar:', error.message);
+                alert(`Failed to upload avatar: ${error.message}`);
+            }
             
             // Reset input
             event.target.value = '';
@@ -3209,47 +3250,47 @@
             });
         }
 
-        function handleImageUpload(event) {
+        async function handleImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
             
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const id = Date.now().toString();
-                    
-                    // Scene images fill the canvas automatically via CSS
-                    // No need to calculate dimensions
-                    addImageToCanvas(id, e.target.result, 0, 0, 0, 0, true);
-                    
-                    // Add scene-image class for automatic canvas filling
-                    const imageData = images.get(id);
-                    if (imageData) {
-                        imageData.element.classList.add('scene-image');
-                        imageData.element.style.cursor = 'default';
-                        imageData.element.style.opacity = '0.9';
-                    }
-                    
-                    // Auto-lock scene images
-                    hardLockedAvatars.add(id);
-                    
-                    // Broadcast to other players
-                    if (socket) {
-                        socket.emit('add-image', { 
-                            id, 
-                            src: e.target.result, 
-                            x: 0, 
-                            y: 0, 
-                            width: 0, 
-                            height: 0, 
-                            locked: true 
-                        });
-                    }
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
+            try {
+                console.log('🖼️ Optimizing scene image...');
+                const optimizedSrc = await optimizeImage(file, 'sceneImage');
+                
+                const id = Date.now().toString();
+                
+                // Scene images fill the canvas automatically via CSS
+                // No need to calculate dimensions
+                addImageToCanvas(id, optimizedSrc, 0, 0, 0, 0, true);
+                
+                // Add scene-image class for automatic canvas filling
+                const imageData = images.get(id);
+                if (imageData) {
+                    imageData.element.classList.add('scene-image');
+                    imageData.element.style.cursor = 'default';
+                    imageData.element.style.opacity = '0.9';
+                }
+                
+                // Auto-lock scene images
+                hardLockedAvatars.add(id);
+                
+                // Broadcast to other players
+                if (socket) {
+                    socket.emit('add-image', { 
+                        id, 
+                        src: optimizedSrc, 
+                        x: 0, 
+                        y: 0, 
+                        width: 0, 
+                        height: 0, 
+                        locked: true 
+                    });
+                }
+            } catch (error) {
+                console.error('❌ Failed to upload image:', error.message);
+                alert(`Failed to upload image: ${error.message}`);
+            }
             
             // Reset input
             event.target.value = '';
@@ -3542,13 +3583,19 @@
             });
         }
         
-        function handleTokenUpload(event) {
+        async function handleTokenUpload(event) {
             const files = event.target.files;
             if (!files || files.length === 0) return;
             
-            Array.from(files).forEach((file, index) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
+            console.log(`🎲 Optimizing ${files.length} token(s)...`);
+            
+            // Process tokens sequentially to avoid overwhelming the browser
+            for (let index = 0; index < files.length; index++) {
+                const file = files[index];
+                
+                try {
+                    const optimizedSrc = await optimizeImage(file, 'token');
+                    
                     // Place tokens centered on grid in a pattern
                     const tokenId = `token-${tokenIdCounter++}`;
                     
@@ -3562,22 +3609,23 @@
                     const x = centerX + Math.cos(angle) * radius;
                     const y = centerY + Math.sin(angle) * radius;
                     
-                    addTokenToCanvas(tokenId, e.target.result, x, y, true, false, 10);
+                    addTokenToCanvas(tokenId, optimizedSrc, x, y, true, false, 10);
                     
                     // Broadcast to other players
                     if (socket) {
                         socket.emit('token-added', { 
                             id: tokenId, 
-                            src: e.target.result, 
+                            src: optimizedSrc, 
                             x, 
                             y,
                             hpTracking: false,
                             hp: 10
                         });
                     }
-                };
-                reader.readAsDataURL(file);
-            });
+                } catch (error) {
+                    console.error(`❌ Failed to upload token ${index + 1}:`, error.message);
+                }
+            }
             
             // Clear input
             event.target.value = '';
