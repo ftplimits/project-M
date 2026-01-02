@@ -312,6 +312,20 @@ io.on('connection', (socket) => {
         socket.to(currentRoom).emit('token-hp-tracking-changed', data);
     });
     
+    // Token condition changed handler
+    socket.on('token-condition-changed', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('token-condition-changed', data);
+        console.log(`Token ${data.id} condition changed to ${data.conditionEmoji || 'none'}`);
+    });
+    
+    // Token size changed handler
+    socket.on('token-size-changed', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('token-size-changed', data);
+        console.log(`Token ${data.id} size changed to ${data.size}`);
+    });
+    
     // Avatar flip handler
     socket.on('avatar-flipped', (data) => {
         if (!currentRoom) return;
