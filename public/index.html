@@ -563,6 +563,8 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
+            width: 100%;
+            height: 100%;
             pointer-events: none;
             z-index: 16;
             display: none;
@@ -1210,13 +1212,13 @@
                 <div class="tactical-overlay" id="tactical-overlay"></div>
                 
                 <!-- Tactical Theme Canvas -->
-                <canvas id="tacticalThemeCanvas" width="1920" height="1080"></canvas>
+                <canvas id="tacticalThemeCanvas"></canvas>
                 
                 <!-- Tactical Mode Grid -->
-                <canvas class="tactical-grid" id="tactical-grid" width="1920" height="1080"></canvas>
+                <canvas class="tactical-grid" id="tactical-grid"></canvas>
                 
                 <!-- Drawing Canvas -->
-                <canvas class="drawing-canvas" id="drawing-canvas" width="1920" height="1080"></canvas>
+                <canvas class="drawing-canvas" id="drawing-canvas"></canvas>
             </div>
         </div>
     </div>
@@ -1432,6 +1434,70 @@
         // Handouts system
         let handoutVisible = false;
         let handoutImage = null;
+
+        // Canvas resize handler for responsive scaling
+        function resizeCanvases() {
+            const canvasArea = document.getElementById('canvas');
+            if (!canvasArea) return;
+            
+            const rect = canvasArea.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
+            const dpr = window.devicePixelRatio || 1;
+            
+            // Resize all canvas elements
+            const canvases = [
+                document.getElementById('tactical-grid'),
+                document.getElementById('drawing-canvas'),
+                document.getElementById('tacticalThemeCanvas'),
+                document.getElementById('weatherCanvas')
+            ];
+            
+            canvases.forEach(canvas => {
+                if (!canvas) return;
+                
+                // Special handling for weatherCanvas (fullscreen)
+                if (canvas.id === 'weatherCanvas') {
+                    canvas.width = window.innerWidth * dpr;
+                    canvas.height = window.innerHeight * dpr;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) ctx.scale(dpr, dpr);
+                    return;
+                }
+                
+                // Set display size (CSS pixels)
+                canvas.style.width = width + 'px';
+                canvas.style.height = height + 'px';
+                
+                // Set internal resolution (actual pixels)
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
+                
+                // Scale context to match device pixel ratio
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.scale(dpr, dpr);
+                }
+            });
+            
+            console.log(`📐 Canvases resized to ${width}x${height} (DPR: ${dpr})`);
+            
+            // Redraw tactical grid if active
+            if (document.body.classList.contains('tactical-mode-active')) {
+                drawTacticalGrid();
+            }
+            
+            // Redraw tactical theme if active
+            const themeCanvas = document.getElementById('tacticalThemeCanvas');
+            if (themeCanvas && themeCanvas.classList.contains('active') && window.currentTacticalTheme) {
+                window.tacticalThemes[window.currentTacticalTheme].start();
+            }
+        }
+        
+        // Alias for drawing the tactical grid (just calls drawIsometricGrid)
+        function drawTacticalGrid() {
+            drawIsometricGrid();
+        }
 
         // Initialize
         (async function init() {
@@ -1942,7 +2008,13 @@
                 calculateSnapGrid();
                 
                 // Recalculate grid on window resize
-                window.addEventListener('resize', calculateSnapGrid);
+                window.addEventListener('resize', () => {
+                    calculateSnapGrid();
+                    resizeCanvases();
+                });
+                
+                // Initial canvas resize
+                resizeCanvases();
                 
                 // Start autoflip timer
                 startAutoflip();
@@ -3536,8 +3608,10 @@
             if (!canvas) return;
             
             const ctx = canvas.getContext('2d');
-            const canvasWidth = 1920;
-            const canvasHeight = 1080;
+            
+            // Use actual canvas dimensions (not hardcoded)
+            const canvasWidth = canvas.width / (window.devicePixelRatio || 1);
+            const canvasHeight = canvas.height / (window.devicePixelRatio || 1);
             
             // Clear canvas
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -3547,17 +3621,18 @@
             const centerY = canvasHeight / 2;
             
             // Three concentric circles with distance labels
-            // Each circle represents ~6 grid squares wider than the last
+            // Scale circles based on canvas size (using height as reference)
+            const scale = canvasHeight / 1080;
             const circles = [
-                { radiusX: 297, radiusY: 148.5, label: '30' },    // Inner circle (110% of doubled)
-                { radiusX: 594, radiusY: 297, label: '60' },      // Middle circle (110% of doubled)
-                { radiusX: 891, radiusY: 445.5, label: '90' }     // Outer circle (110% of doubled)
+                { radiusX: 297 * scale, radiusY: 148.5 * scale, label: '30' },
+                { radiusX: 594 * scale, radiusY: 297 * scale, label: '60' },
+                { radiusX: 891 * scale, radiusY: 445.5 * scale, label: '90' }
             ];
             
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2 * scale;
             ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            ctx.font = 'bold 24px Arial';
+            ctx.font = `bold ${Math.round(24 * scale)}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             
@@ -3599,12 +3674,18 @@
                     // Place tokens centered on grid in a pattern
                     const tokenId = `token-${tokenIdCounter++}`;
                     
+                    // Get actual canvas dimensions
+                    const canvas = document.getElementById('canvas');
+                    const canvasRect = canvas.getBoundingClientRect();
+                    const canvasWidth = canvasRect.width;
+                    const canvasHeight = canvasRect.height;
+                    
                     // Center of canvas/grid (using standard token size: 90×165)
-                    const centerX = 960 - 45; // Half canvas width minus half token width (90/2)
-                    const centerY = 540 - 82.5; // Half canvas height minus half token height (165/2)
+                    const centerX = canvasWidth / 2 - 45; // Half canvas width minus half token width (90/2)
+                    const centerY = canvasHeight / 2 - 82.5; // Half canvas height minus half token height (165/2)
                     
                     // Arrange in a circle around center
-                    const radius = 150;
+                    const radius = Math.min(canvasWidth, canvasHeight) * 0.15; // 15% of smallest dimension
                     const angle = (index / Math.max(files.length, 1)) * 2 * Math.PI;
                     const x = centerX + Math.cos(angle) * radius;
                     const y = centerY + Math.sin(angle) * radius;
@@ -3865,12 +3946,17 @@
         }
         
         function snapToGrid(x, y) {
-            // Grid settings (must match drawIsometricGrid)
-            const tileWidth = 90;
-            const tileHeight = 45;
+            // Get actual canvas dimensions
+            const canvas = document.getElementById('canvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            const canvasWidth = canvasRect.width;
+            const canvasHeight = canvasRect.height;
+            
+            // Grid settings (scaled to canvas size)
+            const scale = canvasHeight / 1080;
+            const tileWidth = 90 * scale;
+            const tileHeight = 45 * scale;
             const gridSize = 20;
-            const canvasWidth = 1920;
-            const canvasHeight = 1080;
             const gridHeight = gridSize * tileHeight;
             const offsetX = canvasWidth / 2;
             const offsetY = (canvasHeight - gridHeight) / 2;
@@ -4266,7 +4352,9 @@
             window.stopTacticalTheme();
             const canvas = document.getElementById('tacticalThemeCanvas');if (!canvas) return;
             canvas.classList.add('active');
-            const ctx = canvas.getContext('2d');const w = 1920;const h = 1080;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width / (window.devicePixelRatio || 1);
+            const h = canvas.height / (window.devicePixelRatio || 1);
             
             if (theme === 'stone') {
                 // Static stone texture
