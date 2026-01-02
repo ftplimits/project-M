@@ -9,7 +9,10 @@ const io = new Server(httpServer, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
-    }
+    },
+    maxHttpBufferSize: 10e6, // 10MB - allow large image uploads
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 const PORT = process.env.PORT || 3000;
@@ -160,17 +163,22 @@ io.on('connection', (socket) => {
 
     // Image upload and movement
     socket.on('add-image', (data) => {
-        if (!currentRoom) return;
-        
-        const room = rooms.get(currentRoom);
-        if (room) {
-            room.images.set(data.id, data);
+        try {
+            if (!currentRoom) return;
+            
+            const room = rooms.get(currentRoom);
+            if (room) {
+                room.images.set(data.id, data);
+            }
+            
+            // Broadcast to all other players
+            console.log(`Broadcasting image ${data.id} to room ${currentRoom}, size: ${(JSON.stringify(data).length / 1024).toFixed(2)}KB`);
+            socket.to(currentRoom).emit('image-added', data);
+            
+            console.log(`Player ${socket.id} added image ${data.id}`);
+        } catch (error) {
+            console.error(`Error handling add-image from ${socket.id}:`, error.message);
         }
-        
-        // Broadcast to all other players
-        socket.to(currentRoom).emit('image-added', data);
-        
-        console.log(`Player ${socket.id} added image ${data.id}`);
     });
 
     socket.on('move-image', (data) => {
@@ -189,17 +197,22 @@ io.on('connection', (socket) => {
 
     // Avatar upload and movement
     socket.on('add-avatar', (data) => {
-        if (!currentRoom) return;
-        
-        const room = rooms.get(currentRoom);
-        if (room) {
-            room.avatars.set(data.id, data);
+        try {
+            if (!currentRoom) return;
+            
+            const room = rooms.get(currentRoom);
+            if (room) {
+                room.avatars.set(data.id, data);
+            }
+            
+            // Broadcast to all other players
+            console.log(`Broadcasting avatar ${data.id} to room ${currentRoom}, size: ${(JSON.stringify(data).length / 1024).toFixed(2)}KB`);
+            socket.to(currentRoom).emit('avatar-added', data);
+            
+            console.log(`Player ${socket.id} added avatar ${data.id}`);
+        } catch (error) {
+            console.error(`Error handling add-avatar from ${socket.id}:`, error.message);
         }
-        
-        // Broadcast to all other players
-        socket.to(currentRoom).emit('avatar-added', data);
-        
-        console.log(`Player ${socket.id} added avatar ${data.id}`);
     });
 
     socket.on('move-avatar', (data) => {
@@ -286,9 +299,14 @@ io.on('connection', (socket) => {
     });
     
     socket.on('token-added', (data) => {
-        if (!currentRoom) return;
-        socket.to(currentRoom).emit('token-added', data);
-        console.log(`Token added: ${data.id}`);
+        try {
+            if (!currentRoom) return;
+            console.log(`Broadcasting token ${data.id} to room ${currentRoom}, size: ${(JSON.stringify(data).length / 1024).toFixed(2)}KB`);
+            socket.to(currentRoom).emit('token-added', data);
+            console.log(`Token added: ${data.id}`);
+        } catch (error) {
+            console.error(`Error handling token-added from ${socket.id}:`, error.message);
+        }
     });
     
     socket.on('token-moved', (data) => {
