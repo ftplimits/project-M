@@ -1503,11 +1503,75 @@
             if (themeCanvas && themeCanvas.classList.contains('active') && window.currentTacticalTheme) {
                 window.tacticalThemes[window.currentTacticalTheme].start();
             }
+            
+            // Update all element positions based on normalized coordinates
+            updateAllPositions();
         }
         
         // Alias for drawing the tactical grid (just calls drawIsometricGrid)
         function drawTacticalGrid() {
             drawIsometricGrid();
+        }
+        
+        // ===== COORDINATE NORMALIZATION SYSTEM =====
+        // Converts between pixel coordinates and normalized coordinates (0-1 range)
+        // This ensures consistent positioning across different screen sizes
+        
+        function pixelToNormalized(pixelX, pixelY) {
+            const canvas = document.getElementById('canvas');
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: pixelX / rect.width,
+                y: pixelY / rect.height
+            };
+        }
+        
+        function normalizedToPixel(normalizedX, normalizedY) {
+            const canvas = document.getElementById('canvas');
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: normalizedX * rect.width,
+                y: normalizedY * rect.height
+            };
+        }
+        
+        // Update all element positions based on their stored normalized coordinates
+        function updateAllPositions() {
+            // Update avatars
+            avatars.forEach((avatarData, id) => {
+                if (avatarData.normalizedX !== undefined && avatarData.normalizedY !== undefined) {
+                    const pixel = normalizedToPixel(avatarData.normalizedX, avatarData.normalizedY);
+                    avatarData.element.style.left = pixel.x + 'px';
+                    avatarData.element.style.top = pixel.y + 'px';
+                    // Update stored pixel coordinates for compatibility
+                    avatarData.x = pixel.x;
+                    avatarData.y = pixel.y;
+                }
+            });
+            
+            // Update images
+            images.forEach((imageData, id) => {
+                if (imageData.normalizedX !== undefined && imageData.normalizedY !== undefined) {
+                    const pixel = normalizedToPixel(imageData.normalizedX, imageData.normalizedY);
+                    imageData.element.style.left = pixel.x + 'px';
+                    imageData.element.style.top = pixel.y + 'px';
+                    imageData.x = pixel.x;
+                    imageData.y = pixel.y;
+                }
+            });
+            
+            // Update tactical tokens
+            tacticalTokens.forEach((tokenData, tokenId) => {
+                if (tokenData.normalizedX !== undefined && tokenData.normalizedY !== undefined) {
+                    const pixel = normalizedToPixel(tokenData.normalizedX, tokenData.normalizedY);
+                    tokenData.element.style.left = pixel.x + 'px';
+                    tokenData.element.style.top = pixel.y + 'px';
+                    tokenData.x = pixel.x;
+                    tokenData.y = pixel.y;
+                }
+            });
+            
+            console.log('📍 Updated all positions for current canvas size');
         }
 
         // Initialize
@@ -1648,10 +1712,13 @@
                                     id: id,
                                     src: avatar.src
                                 });
+                                // Broadcast normalized coordinates if available, otherwise convert from pixels
+                                const normalizedX = avatar.normalizedX !== undefined ? avatar.normalizedX : pixelToNormalized(avatar.x, avatar.y).x;
+                                const normalizedY = avatar.normalizedY !== undefined ? avatar.normalizedY : pixelToNormalized(avatar.x, avatar.y).y;
                                 socket.emit('move-avatar', {
                                     id: id,
-                                    x: avatar.x,
-                                    y: avatar.y
+                                    normalizedX: normalizedX,
+                                    normalizedY: normalizedY
                                 });
                             }
                         });
@@ -1695,11 +1762,15 @@
                         console.log(`📤 Broadcasting ${tacticalTokens.size} tokens`);
                         tacticalTokens.forEach((tokenData, tokenId) => {
                             console.log(`  📤 Token: ${tokenId}`);
+                            // Use normalized coordinates if available, otherwise convert from pixels
+                            const normalizedX = tokenData.normalizedX !== undefined ? tokenData.normalizedX : pixelToNormalized(tokenData.x, tokenData.y).x;
+                            const normalizedY = tokenData.normalizedY !== undefined ? tokenData.normalizedY : pixelToNormalized(tokenData.x, tokenData.y).y;
+                            
                             socket.emit('token-added', {
                                 id: tokenId,
                                 src: tokenData.src,
-                                x: tokenData.x,
-                                y: tokenData.y,
+                                normalizedX: normalizedX,
+                                normalizedY: normalizedY,
                                 hpTracking: tokenData.hpTracking,
                                 hp: tokenData.hp
                             });
@@ -1755,7 +1826,7 @@
                 socket.on('image-moved', (data) => {
                     try {
                         console.log('📷 Received image-moved:', data.id);
-                        moveImage(data.id, data.x, data.y, false);
+                        moveImage(data.id, data.normalizedX, data.normalizedY, false);
                     } catch (error) {
                         console.error('❌ Error handling image-moved:', error);
                     }
@@ -1772,7 +1843,7 @@
 
                 socket.on('avatar-moved', (data) => {
                     console.log('🎭 Received avatar-moved:', data.id);
-                    moveImage(data.id, data.x, data.y, false);
+                    moveImage(data.id, data.normalizedX, data.normalizedY, false);
                 });
 
                 socket.on('host-avatar-added', (data) => {
@@ -1946,7 +2017,9 @@
                 socket.on('token-added', (data) => {
                     try {
                         console.log('🎲 Received token-added:', data.id);
-                        addTokenToCanvas(data.id, data.src, data.x, data.y, false, data.hpTracking || false, data.hp || 10);
+                        // Convert normalized coordinates to pixels
+                        const pixel = normalizedToPixel(data.normalizedX, data.normalizedY);
+                        addTokenToCanvas(data.id, data.src, pixel.x, pixel.y, false, data.hpTracking || false, data.hp || 10);
                     } catch (error) {
                         console.error('❌ Error handling token-added:', error);
                     }
@@ -1955,7 +2028,7 @@
                 socket.on('token-moved', (data) => {
                     try {
                         console.log('🎲 Received token-moved:', data.id);
-                        moveToken(data.id, data.x, data.y);
+                        moveToken(data.id, data.normalizedX, data.normalizedY);
                     } catch (error) {
                         console.error('❌ Error handling token-moved:', error);
                     }
@@ -3326,11 +3399,17 @@
             });
             
             canvas.appendChild(avatar);
+            
+            // Convert to normalized coordinates for consistent positioning across screen sizes
+            const normalized = pixelToNormalized(x, y);
+            
             avatars.set(id, { 
                 element: avatar, 
                 src: src, // Store src for broadcasting
                 x, 
-                y, 
+                y,
+                normalizedX: normalized.x,
+                normalizedY: normalized.y,
                 width: avatarWidth, 
                 height: avatarHeight
             });
@@ -3541,24 +3620,39 @@
             }
             
             // Update local storage
+            const normalized = pixelToNormalized(x, y);
+            
             const imageData = images.get(id);
             if (imageData) {
                 imageData.x = x;
                 imageData.y = y;
+                imageData.normalizedX = normalized.x;
+                imageData.normalizedY = normalized.y;
             }
             
             const avatarData = avatars.get(id);
             if (avatarData) {
                 avatarData.x = x;
                 avatarData.y = y;
+                avatarData.normalizedX = normalized.x;
+                avatarData.normalizedY = normalized.y;
             }
             
-            // Broadcast to other players
+            // Check for tactical tokens
+            const tokenData = tacticalTokens.get(id);
+            if (tokenData) {
+                tokenData.x = x;
+                tokenData.y = y;
+                tokenData.normalizedX = normalized.x;
+                tokenData.normalizedY = normalized.y;
+            }
+            
+            // Broadcast to other players (use normalized coordinates)
             if (socket) {
                 if (isAvatar) {
-                    socket.emit('move-avatar', { id, x, y });
+                    socket.emit('move-avatar', { id, normalizedX: normalized.x, normalizedY: normalized.y });
                 } else {
-                    socket.emit('move-image', { id, x, y });
+                    socket.emit('move-image', { id, normalizedX: normalized.x, normalizedY: normalized.y });
                 }
             }
             
@@ -3567,14 +3661,42 @@
             document.removeEventListener('mouseup', stopDrag);
         }
 
-        function moveImage(id, x, y, isLocal = true) {
+        function moveImage(id, normalizedX, normalizedY, isLocal = true) {
             const imageData = images.get(id);
-            if (!imageData) return;
+            const avatarData = avatars.get(id);
+            const tokenData = tacticalTokens.get(id);
             
-            imageData.element.style.left = x + 'px';
-            imageData.element.style.top = y + 'px';
-            imageData.x = x;
-            imageData.y = y;
+            // Convert normalized to pixel coordinates
+            const pixel = normalizedToPixel(normalizedX, normalizedY);
+            const x = pixel.x;
+            const y = pixel.y;
+            
+            if (imageData) {
+                imageData.element.style.left = x + 'px';
+                imageData.element.style.top = y + 'px';
+                imageData.x = x;
+                imageData.y = y;
+                imageData.normalizedX = normalizedX;
+                imageData.normalizedY = normalizedY;
+            }
+            
+            if (avatarData) {
+                avatarData.element.style.left = x + 'px';
+                avatarData.element.style.top = y + 'px';
+                avatarData.x = x;
+                avatarData.y = y;
+                avatarData.normalizedX = normalizedX;
+                avatarData.normalizedY = normalizedY;
+            }
+            
+            if (tokenData) {
+                tokenData.element.style.left = x + 'px';
+                tokenData.element.style.top = y + 'px';
+                tokenData.x = x;
+                tokenData.y = y;
+                tokenData.normalizedX = normalizedX;
+                tokenData.normalizedY = normalizedY;
+            }
         }
 
         // ===== TACTICAL MODE SYSTEM =====
@@ -3706,13 +3828,14 @@
                     
                     addTokenToCanvas(tokenId, optimizedSrc, x, y, true, false, 10);
                     
-                    // Broadcast to other players
+                    // Broadcast to other players (use normalized coordinates)
                     if (socket) {
+                        const tokenData = tacticalTokens.get(tokenId);
                         socket.emit('token-added', { 
                             id: tokenId, 
                             src: optimizedSrc, 
-                            x, 
-                            y,
+                            normalizedX: tokenData.normalizedX,
+                            normalizedY: tokenData.normalizedY,
                             hpTracking: false,
                             hp: 10
                         });
@@ -3752,11 +3875,16 @@
             
             canvas.appendChild(tokenEl);
             
+            // Convert to normalized coordinates for consistent positioning across screen sizes
+            const normalized = pixelToNormalized(x, y);
+            
             // Store token data
             tacticalTokens.set(tokenId, {
                 element: tokenEl,
                 x: x,
                 y: y,
+                normalizedX: normalized.x,
+                normalizedY: normalized.y,
                 src: src,
                 hpTracking: hpTracking,
                 hp: hp,
@@ -3938,15 +4066,20 @@
                     tokenData.element.style.left = snapped.x + 'px';
                     tokenData.element.style.top = snapped.y + 'px';
                     
+                    // Store normalized coordinates
+                    const normalized = pixelToNormalized(snapped.x, snapped.y);
+                    tokenData.normalizedX = normalized.x;
+                    tokenData.normalizedY = normalized.y;
+                    
                     // Set z-index based on row for proper isometric stacking
                     // Higher row numbers (further down/forward) = higher z-index
                     const baseZIndex = 20;
                     const rowOffset = snapped.row * 10;
                     tokenData.element.style.zIndex = baseZIndex + rowOffset;
                     
-                    // Broadcast position
+                    // Broadcast position (use normalized coordinates)
                     if (socket) {
-                        socket.emit('token-moved', { id: draggedToken, x: tokenData.x, y: tokenData.y });
+                        socket.emit('token-moved', { id: draggedToken, normalizedX: normalized.x, normalizedY: normalized.y });
                     }
                     
                     draggedToken = null;
@@ -4072,14 +4205,21 @@
             }
         }
         
-        function moveToken(id, x, y) {
+        function moveToken(id, normalizedX, normalizedY) {
             const tokenData = tacticalTokens.get(id);
             if (!tokenData) return;
+            
+            // Convert normalized to pixel coordinates
+            const pixel = normalizedToPixel(normalizedX, normalizedY);
+            const x = pixel.x;
+            const y = pixel.y;
             
             tokenData.element.style.left = x + 'px';
             tokenData.element.style.top = y + 'px';
             tokenData.x = x;
             tokenData.y = y;
+            tokenData.normalizedX = normalizedX;
+            tokenData.normalizedY = normalizedY;
         }
 
         // ===== DRAWING TOOL SYSTEM =====
