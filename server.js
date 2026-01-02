@@ -120,8 +120,8 @@ io.on('connection', (socket) => {
             }))
         });
         
-        // Notify all players (including the host)
-        socket.to(currentRoom).emit('player-joined', {
+        // Notify all players INCLUDING the host
+        io.to(currentRoom).emit('player-joined', {
             socketId: data.socketId,
             name: pendingPlayer.name
         });
