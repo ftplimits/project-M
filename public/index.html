@@ -1580,8 +1580,9 @@
                 }
             });
             
-            // Update tactical tokens
+            // Update tactical tokens (positions AND sizes)
             tacticalTokens.forEach((tokenData, tokenId) => {
+                // Update position
                 if (tokenData.normalizedX !== undefined && tokenData.normalizedY !== undefined) {
                     const pixel = normalizedToPixel(tokenData.normalizedX, tokenData.normalizedY);
                     tokenData.element.style.left = pixel.x + 'px';
@@ -1589,9 +1590,30 @@
                     tokenData.x = pixel.x;
                     tokenData.y = pixel.y;
                 }
+                
+                // Update size (recalculate based on current scale)
+                if (tokenData.size) {
+                    const computedStyle = getComputedStyle(document.documentElement);
+                    const baseWidth = parseInt(computedStyle.getPropertyValue('--token-width')) || 90;
+                    const baseHeight = parseInt(computedStyle.getPropertyValue('--token-height')) || 165;
+                    
+                    const sizeMultipliers = {
+                        'small': 0.667,
+                        'standard': 1,
+                        'large': 1.333,
+                        'huge': 2
+                    };
+                    
+                    const multiplier = sizeMultipliers[tokenData.size] || 1;
+                    const finalWidth = Math.round(baseWidth * multiplier);
+                    const finalHeight = Math.round(baseHeight * multiplier);
+                    
+                    tokenData.element.style.width = finalWidth + 'px';
+                    tokenData.element.style.height = finalHeight + 'px';
+                }
             });
             
-            console.log('📍 Updated all positions for current canvas size');
+            console.log('📍 Updated all positions and token sizes for current canvas size');
         }
 
         // Initialize
@@ -4202,20 +4224,27 @@
             tokenData.size = size;
             const tokenEl = tokenData.element;
             
-            // Apply size multipliers
+            // Get current scaled token size from CSS variables
+            const computedStyle = getComputedStyle(document.documentElement);
+            const baseWidth = parseInt(computedStyle.getPropertyValue('--token-width')) || 90;
+            const baseHeight = parseInt(computedStyle.getPropertyValue('--token-height')) || 165;
+            
+            // Apply size multipliers (relative to 'standard' size)
             const sizeMultipliers = {
-                'small': 1,      // 60×110 (old standard)
-                'standard': 1.5, // 90×165 (old large)
-                'large': 2,      // 120×220 (old huge)
-                'huge': 3        // 180×330 (new)
+                'small': 0.667,  // 60×110 at 1080p (2/3 of standard)
+                'standard': 1,   // 90×165 at 1080p (base size)
+                'large': 1.333,  // 120×220 at 1080p (4/3 of standard)
+                'huge': 2        // 180×330 at 1080p (2x standard)
             };
             
-            const multiplier = sizeMultipliers[size] || 1.5; // Default to standard
-            const baseWidth = 60;
-            const baseHeight = 110;
+            const multiplier = sizeMultipliers[size] || 1; // Default to standard
             
-            tokenEl.style.width = (baseWidth * multiplier) + 'px';
-            tokenEl.style.height = (baseHeight * multiplier) + 'px';
+            // Calculate final size (base scaled size × multiplier)
+            const finalWidth = Math.round(baseWidth * multiplier);
+            const finalHeight = Math.round(baseHeight * multiplier);
+            
+            tokenEl.style.width = finalWidth + 'px';
+            tokenEl.style.height = finalHeight + 'px';
             
             // Broadcast size change
             if (socket) {
