@@ -1928,7 +1928,12 @@
                 });
 
                 socket.on('avatar-moved', (data) => {
-                    console.log('🎭 Received avatar-moved:', data.id);
+                    console.log(`🎭 Received avatar-moved: ${data.id}, normalizedX=${data.normalizedX?.toFixed(3)}, normalizedY=${data.normalizedY?.toFixed(3)}`);
+                    if (data.normalizedX === undefined || data.normalizedY === undefined || 
+                        isNaN(data.normalizedX) || isNaN(data.normalizedY)) {
+                        console.error(`  ❌ Invalid coordinates received! normalizedX=${data.normalizedX}, normalizedY=${data.normalizedY}`);
+                        return;
+                    }
                     moveImage(data.id, data.normalizedX, data.normalizedY, false);
                 });
 
@@ -3752,6 +3757,8 @@
             // Update local storage
             const normalized = pixelToNormalized(x, y);
             
+            console.log(`🔄 Drag stopped for ${id}: pixel=(${x.toFixed(0)}, ${y.toFixed(0)}) normalized=(${normalized.x.toFixed(3)}, ${normalized.y.toFixed(3)})`);
+            
             const imageData = images.get(id);
             if (imageData) {
                 imageData.x = x;
@@ -3766,6 +3773,7 @@
                 avatarData.y = y;
                 avatarData.normalizedX = normalized.x;
                 avatarData.normalizedY = normalized.y;
+                console.log(`  ✓ Updated avatar data in Map`);
             }
             
             // Check for tactical tokens
@@ -3780,6 +3788,7 @@
             // Broadcast to other players (use normalized coordinates)
             if (socket) {
                 if (isAvatar) {
+                    console.log(`  📡 Broadcasting avatar move: normalizedX=${normalized.x.toFixed(3)}, normalizedY=${normalized.y.toFixed(3)}`);
                     socket.emit('move-avatar', { id, normalizedX: normalized.x, normalizedY: normalized.y });
                 } else {
                     socket.emit('move-image', { id, normalizedX: normalized.x, normalizedY: normalized.y });
@@ -3801,6 +3810,8 @@
             const x = pixel.x;
             const y = pixel.y;
             
+            console.log(`  🔄 moveImage: id=${id}, normalized=(${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)}) → pixel=(${x.toFixed(0)}, ${y.toFixed(0)})`);
+            
             if (imageData) {
                 imageData.element.style.left = x + 'px';
                 imageData.element.style.top = y + 'px';
@@ -3808,6 +3819,7 @@
                 imageData.y = y;
                 imageData.normalizedX = normalizedX;
                 imageData.normalizedY = normalizedY;
+                console.log(`  ✓ Updated image element position`);
             }
             
             if (avatarData) {
@@ -3817,6 +3829,7 @@
                 avatarData.y = y;
                 avatarData.normalizedX = normalizedX;
                 avatarData.normalizedY = normalizedY;
+                console.log(`  ✓ Updated avatar element position`);
             }
             
             if (tokenData) {
