@@ -3850,7 +3850,7 @@
             }
         }
         
-        function snapToGrid(x, y, width, height) {
+        function snapAvatarToGrid(x, y, width, height) {
             // Calculate CENTER of avatar for snapping
             const centerX = x + (width / 2);
             const centerY = y + (height / 2);
@@ -3942,6 +3942,12 @@
                 const x = e.clientX - canvasRect.left - dragOffset.x;
                 const y = e.clientY - canvasRect.top - dragOffset.y;
                 
+                // Validate before storing
+                if (isNaN(x) || isNaN(y)) {
+                    console.error(`❌ Drag calc NaN! e.clientX=${e.clientX}, canvasRect.left=${canvasRect.left}, dragOffset.x=${dragOffset.x}`);
+                    return;
+                }
+                
                 // Update position
                 data.element.style.left = x + 'px';
                 data.element.style.top = y + 'px';
@@ -3957,10 +3963,26 @@
                     const data = currentAvatarData || currentImageData;
                     
                     if (!data) {
+                        console.error(`❌ No data found for ${draggedAvatarId} in stopDrag`);
                         draggedAvatarId = null;
                         document.removeEventListener('mousemove', drag);
                         document.removeEventListener('mouseup', stopDrag);
                         return;
+                    }
+                    
+                    // Debug: check current values
+                    console.log(`🔍 stopDrag: data.x=${data.x}, data.y=${data.y}`);
+                    
+                    // Validate data has valid coordinates
+                    if (isNaN(data.x) || isNaN(data.y)) {
+                        console.error(`❌ Avatar ${draggedAvatarId} has NaN coordinates in Map! data.x=${data.x}, data.y=${data.y}`);
+                        // Try to read from element position as fallback
+                        const elemRect = data.element.getBoundingClientRect();
+                        const canvasElem = document.getElementById('canvas');
+                        const canvasElemRect = canvasElem.getBoundingClientRect();
+                        data.x = elemRect.left - canvasElemRect.left;
+                        data.y = elemRect.top - canvasElemRect.top;
+                        console.log(`  Fallback from element: x=${data.x}, y=${data.y}`);
                     }
                     
                     data.element.classList.remove('dragging');
@@ -3972,7 +3994,7 @@
                     if (isAvatar) {
                         const width = data.element.offsetWidth;
                         const height = data.element.offsetHeight;
-                        const snapped = snapToGrid(data.x, data.y, width, height);
+                        const snapped = snapAvatarToGrid(data.x, data.y, width, height);
                         data.x = snapped.x;
                         data.y = snapped.y;
                         data.element.style.left = snapped.x + 'px';
