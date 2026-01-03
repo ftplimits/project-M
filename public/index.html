@@ -2164,12 +2164,19 @@
                 });
                 
                 socket.on('avatar-name-set', (data) => {
+                    console.log(`📛 Received name change: ${data.avatarId} → "${data.name}"`);
                     const avatarData = avatars.get(data.avatarId);
-                    if (!avatarData) return;
+                    if (!avatarData) {
+                        console.warn(`  ⚠️ Avatar ${data.avatarId} not found in local avatars map`);
+                        return;
+                    }
                     
                     let nameBanner = avatarData.element.querySelector('.avatar-name-banner');
                     if (nameBanner) {
                         nameBanner.textContent = data.name;
+                        console.log(`  ✓ Updated name banner`);
+                    } else {
+                        console.warn(`  ⚠️ Name banner element not found`);
                     }
                 });
                 
@@ -2893,6 +2900,7 @@
                     
                     // Broadcast name change
                     if (socket) {
+                        console.log(`📛 Broadcasting name change: ${currentContextAvatarId} → "${name}"`);
                         socket.emit('avatar-name-set', {
                             avatarId: currentContextAvatarId,
                             name: name
@@ -3728,6 +3736,7 @@
                     imageData.element.classList.add('scene-image');
                     imageData.element.style.cursor = 'default';
                     imageData.element.style.opacity = '0.9';
+                    imageData.element.style.pointerEvents = 'none'; // Don't interfere with dragging
                 }
                 
                 // Auto-lock scene images
@@ -3776,7 +3785,7 @@
                     { 
                         text: 'Clear', 
                         class: 'primary',
-                        action: () => {
+                        callback: () => {
                             sceneImages.forEach(id => {
                                 const imageData = images.get(id);
                                 if (imageData) {
@@ -3811,6 +3820,7 @@
             
             const img = document.createElement('img');
             img.src = src;
+            img.draggable = false; // Prevent native browser image dragging
             token.appendChild(img);
             
             // Add drag handlers
