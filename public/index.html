@@ -1450,7 +1450,7 @@
 
     <!-- Drawing Toolbox -->
     <div id="drawing-toolbox" class="drawing-toolbox">
-        <div class="drawing-toolbox-header">✏️ DRAWING TOOLS</div>
+        <div class="drawing-toolbox-header" id="drawing-toolbox-header">✏️ DRAWING TOOLS</div>
         
         <div class="drawing-tool-section">
             <div class="drawing-tool-label">TOOL</div>
@@ -1492,7 +1492,7 @@
 
     <!-- Text Toolbox -->
     <div id="text-toolbox" class="drawing-toolbox">
-        <div class="drawing-toolbox-header">📝 TEXT TOOL</div>
+        <div class="drawing-toolbox-header" id="text-toolbox-header">📝 TEXT TOOL</div>
         
         <div class="drawing-tool-section">
             <div class="drawing-tool-label">SIZE</div>
@@ -1517,6 +1517,16 @@
                 <div class="drawing-color-btn" data-color="#00FFFF" style="background: #00FFFF;"></div>
                 <div class="drawing-color-btn" data-color="#0000FF" style="background: #0000FF;"></div>
                 <div class="drawing-color-btn" data-color="#800080" style="background: #800080;"></div>
+            </div>
+        </div>
+        
+        <div class="drawing-tool-section">
+            <div class="drawing-tool-label">FORMAT</div>
+            <div class="drawing-color-palette">
+                <div class="drawing-color-btn active" id="text-tool-btn" data-format="text" style="background: var(--bg-secondary); color: var(--accent-gold); font-weight: bold; font-size: 14px;">T</div>
+                <div class="drawing-color-btn" id="text-bold-btn" data-format="bold" style="background: var(--bg-secondary); color: var(--text-secondary); font-weight: bold; font-size: 14px;">B</div>
+                <div class="drawing-color-btn" id="text-italic-btn" data-format="italic" style="background: var(--bg-secondary); color: var(--text-secondary); font-style: italic; font-size: 14px;">I</div>
+                <div class="drawing-color-btn" id="text-underline-btn" data-format="underline" style="background: var(--bg-secondary); color: var(--text-secondary); text-decoration: underline; font-size: 14px;">U</div>
             </div>
         </div>
         
@@ -1582,6 +1592,9 @@
         let textToolInitialized = false;
         let textColor = '#FFFFFF';
         let textSize = 36;
+        let textBold = false;
+        let textItalic = false;
+        let textUnderline = false;
         let textElements = new Map(); // id -> {element, text, x, y, color, size}
         let toolboxDragging = false;
         let toolboxOffset = { x: 0, y: 0 };
@@ -2246,15 +2259,23 @@
                     const avatarData = avatars.get(data.avatarId);
                     if (!avatarData) {
                         console.warn(`  ⚠️ Avatar ${data.avatarId} not found in local avatars map`);
+                        console.warn(`  Current avatars:`, Array.from(avatars.keys()));
                         return;
                     }
                     
                     let nameBanner = avatarData.element.querySelector('.avatar-name-banner');
                     if (nameBanner) {
+                        const oldText = nameBanner.textContent;
                         nameBanner.textContent = data.name;
-                        console.log(`  ✓ Updated name banner`);
+                        console.log(`  ✓ Updated name banner: "${oldText}" → "${data.name}"`);
                     } else {
-                        console.warn(`  ⚠️ Name banner element not found`);
+                        console.warn(`  ⚠️ Name banner element not found, creating one`);
+                        // Create name banner if it doesn't exist
+                        nameBanner = document.createElement('div');
+                        nameBanner.className = 'avatar-name-banner';
+                        nameBanner.textContent = data.name;
+                        avatarData.element.appendChild(nameBanner);
+                        console.log(`  ✓ Created and set name banner: "${data.name}"`);
                     }
                 });
                 
@@ -3265,10 +3286,12 @@
                                 
                                 nameBanner.addEventListener('blur', () => {
                                     nameBanner.contentEditable = false;
+                                    const name = nameBanner.textContent.trim();
                                     if (socket) {
+                                        console.log(`📛 Broadcasting name change (from edit): ${avatarData.id} → "${name}"`);
                                         socket.emit('avatar-name-set', {
                                             avatarId: avatarData.id,
-                                            name: nameBanner.textContent.trim()
+                                            name: name
                                         });
                                     }
                                 });
@@ -3365,10 +3388,12 @@
                             
                             nameBanner.addEventListener('blur', () => {
                                 nameBanner.contentEditable = false;
+                                const name = nameBanner.textContent.trim();
                                 if (socket) {
+                                    console.log(`📛 Broadcasting host name change: host → "${name}"`);
                                     socket.emit('avatar-name-set', {
                                         avatarId: 'host',
-                                        name: nameBanner.textContent.trim()
+                                        name: name
                                     });
                                 }
                             });
@@ -3690,11 +3715,17 @@
                             return; // Don't broadcast if we don't have valid coordinates
                         }
                         
+                        // Get name from name banner (if it exists and has text)
+                        const avatarElement = avatars.get(id)?.element;
+                        const nameBanner = avatarElement?.querySelector('.avatar-name-banner');
+                        const name = nameBanner ? nameBanner.textContent.trim() : '';
+                        
                         socket.emit('add-avatar', { 
                             id, 
                             src: optimizedSrc,
                             normalizedX: normalizedX,
-                            normalizedY: normalizedY
+                            normalizedY: normalizedY,
+                            name: name
                         });
                     }
                 }
@@ -4194,6 +4225,8 @@
             const sizeDisplay = document.getElementById('text-size-display');
             const clearBtn = document.getElementById('text-clear-btn');
             const colorPalette = document.getElementById('text-color-palette');
+            const toolbox = document.getElementById('text-toolbox');
+            const toolboxHeader = document.getElementById('text-toolbox-header');
             
             // Size slider
             sizeSlider.addEventListener('input', (e) => {
@@ -4204,10 +4237,43 @@
             // Color palette
             colorPalette.querySelectorAll('.drawing-color-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    colorPalette.querySelectorAll('.drawing-color-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    textColor = btn.dataset.color;
+                    if (btn.dataset.color) {
+                        colorPalette.querySelectorAll('.drawing-color-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        textColor = btn.dataset.color;
+                    }
                 });
+            });
+            
+            // Format buttons
+            const textToolBtn = document.getElementById('text-tool-btn');
+            const boldBtn = document.getElementById('text-bold-btn');
+            const italicBtn = document.getElementById('text-italic-btn');
+            const underlineBtn = document.getElementById('text-underline-btn');
+            
+            textToolBtn.addEventListener('click', () => {
+                textToolActive = true;
+                textToolBtn.classList.add('active');
+                textToolBtn.style.color = 'var(--accent-gold)';
+                canvas.style.cursor = 'text';
+            });
+            
+            boldBtn.addEventListener('click', () => {
+                textBold = !textBold;
+                boldBtn.classList.toggle('active');
+                boldBtn.style.color = textBold ? 'var(--accent-gold)' : 'var(--text-secondary)';
+            });
+            
+            italicBtn.addEventListener('click', () => {
+                textItalic = !textItalic;
+                italicBtn.classList.toggle('active');
+                italicBtn.style.color = textItalic ? 'var(--accent-gold)' : 'var(--text-secondary)';
+            });
+            
+            underlineBtn.addEventListener('click', () => {
+                textUnderline = !textUnderline;
+                underlineBtn.classList.toggle('active');
+                underlineBtn.style.color = textUnderline ? 'var(--accent-gold)' : 'var(--text-secondary)';
             });
             
             // Clear all text
@@ -4219,8 +4285,51 @@
                 console.log('🗑️ Cleared all text');
             });
             
+            // Make toolbox draggable
+            toolboxHeader.addEventListener('mousedown', (e) => {
+                toolboxDragging = true;
+                const rect = toolbox.getBoundingClientRect();
+                toolboxOffset.x = e.clientX - rect.left;
+                toolboxOffset.y = e.clientY - rect.top;
+                
+                const drag = (e) => {
+                    if (!toolboxDragging) return;
+                    toolbox.style.left = (e.clientX - toolboxOffset.x) + 'px';
+                    toolbox.style.top = (e.clientY - toolboxOffset.y) + 'px';
+                };
+                
+                const stopDrag = () => {
+                    toolboxDragging = false;
+                    document.removeEventListener('mousemove', drag);
+                    document.removeEventListener('mouseup', stopDrag);
+                };
+                
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', stopDrag);
+            });
+            
             // Canvas click to add text (only add once)
             canvas.addEventListener('click', handleTextClick);
+            
+            // Escape key to pause text tool
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && textToolActive) {
+                    textToolActive = false;
+                    textToolBtn.classList.remove('active');
+                    textToolBtn.style.color = 'var(--text-secondary)';
+                    canvas.style.cursor = 'default';
+                }
+            });
+            
+            // Right-click to pause text tool
+            canvas.addEventListener('contextmenu', (e) => {
+                if (textToolActive && !e.target.closest('.context-menu')) {
+                    textToolActive = false;
+                    textToolBtn.classList.remove('active');
+                    textToolBtn.style.color = 'var(--text-secondary)';
+                    canvas.style.cursor = 'default';
+                }
+            });
             
             console.log('📝 Text tool initialized');
         }
@@ -4253,6 +4362,13 @@
             textEl.style.top = y + 'px';
             textEl.style.color = textColor;
             textEl.style.fontSize = textSize + 'px';
+            textEl.style.fontFamily = '"Times New Roman", Times, serif';
+            
+            // Apply formatting
+            if (textBold) textEl.style.fontWeight = 'bold';
+            if (textItalic) textEl.style.fontStyle = 'italic';
+            if (textUnderline) textEl.style.textDecoration = 'underline';
+            
             textEl.dataset.id = id;
             
             canvas.appendChild(textEl);
@@ -6067,6 +6183,13 @@
                 currentTool = btn.dataset.tool;
                 drawingToolButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
+                
+                // Re-activate drawing tool if it was paused
+                if (!drawingToolActive) {
+                    drawingToolActive = true;
+                    const canvas = document.getElementById('drawing-canvas');
+                    canvas.classList.add('active');
+                }
             });
         });
         
@@ -6082,6 +6205,27 @@
         // Fill shape toggle
         fillShapeCheckbox.addEventListener('change', (e) => {
             fillShape = e.target.checked;
+        });
+        
+        // Escape key to pause drawing tool
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && drawingToolActive) {
+                drawingToolActive = false;
+                const canvas = document.getElementById('drawing-canvas');
+                canvas.classList.remove('active');
+                console.log('✏️ Drawing tool paused (press tool button to resume)');
+            }
+        });
+        
+        // Right-click on canvas to pause drawing tool
+        const drawingCanvasEl = document.getElementById('drawing-canvas');
+        drawingCanvasEl.addEventListener('contextmenu', (e) => {
+            if (drawingToolActive) {
+                e.preventDefault();
+                drawingToolActive = false;
+                drawingCanvasEl.classList.remove('active');
+                console.log('✏️ Drawing tool paused (press tool button to resume)');
+            }
         });
         
         // Make toolbox draggable
