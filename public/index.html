@@ -1456,7 +1456,6 @@
         // Image tracking
         let images = new Map();
         let avatars = new Map(); // Track player avatars separately
-        let draggedImage = null;
         let dragOffset = { x: 0, y: 0 };
         
         // Hotkey activation system
@@ -3893,7 +3892,9 @@
             return { x: snappedX, y: snappedY };
         }
         
-        // ===== DRAG SYSTEM =====
+        // ===== DRAG SYSTEM (Avatar/Image Drag - uses token pattern) =====
+        let draggedAvatarId = null;
+        
         function startDrag(e) {
             const target = e.currentTarget;
             const targetId = target.dataset.id;
@@ -3903,167 +3904,106 @@
                 return; // Don't allow dragging
             }
             
-            draggedImage = target;
-            draggedImage.classList.add('dragging');
+            // Check if this is an avatar or image
+            const isAvatar = target.classList.contains('avatar-token') || target.classList.contains('host-avatar');
+            const isImage = target.classList.contains('image-token');
             
-            const rect = draggedImage.getBoundingClientRect();
-            dragOffset.x = e.clientX - rect.left;
-            dragOffset.y = e.clientY - rect.top;
+            if (!isAvatar && !isImage) return;
             
-            // Validate dragOffset
-            if (isNaN(dragOffset.x) || isNaN(dragOffset.y)) {
-                console.error(`❌ startDrag: Invalid dragOffset! x=${dragOffset.x}, y=${dragOffset.y}`);
-                console.error(`  Debug: e.clientX=${e.clientX}, rect.left=${rect.left}`);
-                draggedImage.classList.remove('dragging');
-                draggedImage = null;
+            // Get avatar/image data from Map
+            const avatarData = avatars.get(targetId);
+            const imageData = images.get(targetId);
+            
+            if (!avatarData && !imageData) {
+                console.error(`Cannot start drag - no data found for ${targetId}`);
                 return;
             }
             
-            document.addEventListener('mousemove', drag);
-            document.addEventListener('mouseup', stopDrag);
-        }
-
-        function drag(e) {
-            if (!draggedImage) return;
+            draggedAvatarId = targetId;
+            target.classList.add('dragging');
             
+            const rect = target.getBoundingClientRect();
             const canvas = document.getElementById('canvas');
             const canvasRect = canvas.getBoundingClientRect();
             
-            let x = e.clientX - canvasRect.left - dragOffset.x;
-            let y = e.clientY - canvasRect.top - dragOffset.y;
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
             
-            // Validate coordinates - if NaN, abort
-            if (isNaN(x) || isNaN(y)) {
-                console.error(`❌ Drag calculation resulted in NaN: x=${x}, y=${y}`);
-                console.error(`  Debug: e.clientX=${e.clientX}, canvasRect.left=${canvasRect.left}, dragOffset.x=${dragOffset.x}`);
-                return;
-            }
-            
-            // Check if this is an avatar (has name banner)
-            const isAvatar = draggedImage.classList.contains('avatar-token') || 
-                           draggedImage.classList.contains('host-avatar');
-            
-            // Constrain to canvas
-            x = Math.max(0, Math.min(x, canvasRect.width - draggedImage.offsetWidth));
-            
-            // For avatars, account for name banner extending below
-            if (isAvatar) {
-                // Banner height: ~30px for player, ~36px for host
-                const bannerOffset = draggedImage.classList.contains('host-avatar') ? 36 : 30;
-                y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight - bannerOffset));
-            } else {
-                y = Math.max(0, Math.min(y, canvasRect.height - draggedImage.offsetHeight));
-            }
-            
-            draggedImage.style.left = x + 'px';
-            draggedImage.style.top = y + 'px';
-        }
-
-        function stopDrag(e) {
-            if (!draggedImage) return;
-            
-            const id = draggedImage.dataset.id;
-            
-            // Try to read from style first
-            let x = parseFloat(draggedImage.style.left);
-            let y = parseFloat(draggedImage.style.top);
-            
-            // Fallback: if NaN, calculate from element position
-            if (isNaN(x) || isNaN(y)) {
-                console.warn(`⚠️ Avatar ${id} has NaN coordinates in style, calculating from position`);
-                const canvas = document.getElementById('canvas');
-                const canvasRect = canvas.getBoundingClientRect();
-                const rect = draggedImage.getBoundingClientRect();
-                x = rect.left - canvasRect.left;
-                y = rect.top - canvasRect.top;
+            const drag = (e) => {
+                if (!draggedAvatarId) return;
                 
-                // If still NaN, use stored coordinates
-                if (isNaN(x) || isNaN(y)) {
-                    const avatarData = avatars.get(id);
-                    if (avatarData && !isNaN(avatarData.x) && !isNaN(avatarData.y)) {
-                        x = avatarData.x;
-                        y = avatarData.y;
-                        console.warn(`  Using stored coordinates: (${x}, ${y})`);
-                    } else {
-                        console.error(`  ❌ Cannot determine valid coordinates for avatar ${id}`);
-                        draggedImage = null;
+                // CRITICAL: Look up current data from Map
+                const currentAvatarData = avatars.get(draggedAvatarId);
+                const currentImageData = images.get(draggedAvatarId);
+                const data = currentAvatarData || currentImageData;
+                
+                if (!data) return;
+                
+                const x = e.clientX - canvasRect.left - dragOffset.x;
+                const y = e.clientY - canvasRect.top - dragOffset.y;
+                
+                // Update position
+                data.element.style.left = x + 'px';
+                data.element.style.top = y + 'px';
+                data.x = x;
+                data.y = y;
+            };
+            
+            const stopDrag = () => {
+                if (draggedAvatarId) {
+                    // CRITICAL: Look up current data from Map
+                    const currentAvatarData = avatars.get(draggedAvatarId);
+                    const currentImageData = images.get(draggedAvatarId);
+                    const data = currentAvatarData || currentImageData;
+                    
+                    if (!data) {
+                        draggedAvatarId = null;
                         document.removeEventListener('mousemove', drag);
                         document.removeEventListener('mouseup', stopDrag);
                         return;
                     }
+                    
+                    data.element.classList.remove('dragging');
+                    
+                    // Check if avatar (for grid snapping)
+                    const isAvatar = data.element.classList.contains('avatar-token') || 
+                                   data.element.classList.contains('host-avatar');
+                    
+                    if (isAvatar) {
+                        const width = data.element.offsetWidth;
+                        const height = data.element.offsetHeight;
+                        const snapped = snapToGrid(data.x, data.y, width, height);
+                        data.x = snapped.x;
+                        data.y = snapped.y;
+                        data.element.style.left = snapped.x + 'px';
+                        data.element.style.top = snapped.y + 'px';
+                    }
+                    
+                    // Store normalized coordinates
+                    const normalized = pixelToNormalized(data.x, data.y);
+                    data.normalizedX = normalized.x;
+                    data.normalizedY = normalized.y;
+                    
+                    console.log(`🔄 Drag stopped for ${draggedAvatarId}: pixel=(${data.x.toFixed(0)}, ${data.y.toFixed(0)}) normalized=(${normalized.x.toFixed(3)}, ${normalized.y.toFixed(3)})`);
+                    
+                    // Broadcast to other players
+                    if (socket) {
+                        if (isAvatar) {
+                            console.log(`  📡 Broadcasting avatar move: normalizedX=${normalized.x.toFixed(3)}, normalizedY=${normalized.y.toFixed(3)}`);
+                            socket.emit('move-avatar', { id: draggedAvatarId, normalizedX: normalized.x, normalizedY: normalized.y });
+                        } else {
+                            socket.emit('move-image', { id: draggedAvatarId, normalizedX: normalized.x, normalizedY: normalized.y });
+                        }
+                    }
+                    
+                    draggedAvatarId = null;
                 }
-            }
-            
-            draggedImage.classList.remove('dragging');
-            
-            // Apply grid snapping for avatars
-            const isAvatar = draggedImage.classList.contains('avatar-token') || 
-                           draggedImage.classList.contains('host-avatar');
-            
-            if (isAvatar) {
-                const width = draggedImage.offsetWidth;
-                const height = draggedImage.offsetHeight;
-                const snapped = snapToGrid(x, y, width, height);
-                x = snapped.x;
-                y = snapped.y;
-                
-                draggedImage.style.left = x + 'px';
-                draggedImage.style.top = y + 'px';
-            }
-            
-            // Update local storage
-            const normalized = pixelToNormalized(x, y);
-            
-            // Validate coordinates before logging and broadcasting
-            if (isNaN(normalized.x) || isNaN(normalized.y)) {
-                console.error(`❌ Avatar ${id} normalized coordinates are NaN! Aborting broadcast.`);
-                draggedImage = null;
                 document.removeEventListener('mousemove', drag);
                 document.removeEventListener('mouseup', stopDrag);
-                return;
-            }
+            };
             
-            console.log(`🔄 Drag stopped for ${id}: pixel=(${x.toFixed(0)}, ${y.toFixed(0)}) normalized=(${normalized.x.toFixed(3)}, ${normalized.y.toFixed(3)})`);
-            
-            const imageData = images.get(id);
-            if (imageData) {
-                imageData.x = x;
-                imageData.y = y;
-                imageData.normalizedX = normalized.x;
-                imageData.normalizedY = normalized.y;
-            }
-            
-            const avatarData = avatars.get(id);
-            if (avatarData) {
-                avatarData.x = x;
-                avatarData.y = y;
-                avatarData.normalizedX = normalized.x;
-                avatarData.normalizedY = normalized.y;
-                console.log(`  ✓ Updated avatar data in Map`);
-            }
-            
-            // Check for tactical tokens
-            const tokenData = tacticalTokens.get(id);
-            if (tokenData) {
-                tokenData.x = x;
-                tokenData.y = y;
-                tokenData.normalizedX = normalized.x;
-                tokenData.normalizedY = normalized.y;
-            }
-            
-            // Broadcast to other players (use normalized coordinates)
-            if (socket) {
-                if (isAvatar) {
-                    console.log(`  📡 Broadcasting avatar move: normalizedX=${normalized.x.toFixed(3)}, normalizedY=${normalized.y.toFixed(3)}`);
-                    socket.emit('move-avatar', { id, normalizedX: normalized.x, normalizedY: normalized.y });
-                } else {
-                    socket.emit('move-image', { id, normalizedX: normalized.x, normalizedY: normalized.y });
-                }
-            }
-            
-            draggedImage = null;
-            document.removeEventListener('mousemove', drag);
-            document.removeEventListener('mouseup', stopDrag);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', stopDrag);
         }
 
         function moveImage(id, normalizedX, normalizedY, isLocal = true) {
