@@ -1749,9 +1749,45 @@
                         console.log(`📤 Broadcasting ${avatars.size} avatars`);
                         avatars.forEach((avatar, id) => {
                             if (id !== 'host') {
-                                // Broadcast normalized coordinates if available, otherwise convert from pixels
-                                const normalizedX = avatar.normalizedX !== undefined ? avatar.normalizedX : (avatar.x !== undefined ? pixelToNormalized(avatar.x, avatar.y).x : 0.5);
-                                const normalizedY = avatar.normalizedY !== undefined ? avatar.normalizedY : (avatar.y !== undefined ? pixelToNormalized(avatar.x, avatar.y).y : 0.7);
+                                // Get normalized coordinates with NaN checks
+                                let normalizedX, normalizedY;
+                                
+                                // Try to use stored normalized coordinates first
+                                if (avatar.normalizedX !== undefined && !isNaN(avatar.normalizedX)) {
+                                    normalizedX = avatar.normalizedX;
+                                    normalizedY = avatar.normalizedY;
+                                }
+                                // Fall back to calculating from pixel coordinates
+                                else if (avatar.x !== undefined && !isNaN(avatar.x)) {
+                                    const normalized = pixelToNormalized(avatar.x, avatar.y);
+                                    normalizedX = normalized.x;
+                                    normalizedY = normalized.y;
+                                }
+                                // Last resort: use element's current position
+                                else if (avatar.element) {
+                                    const rect = avatar.element.getBoundingClientRect();
+                                    const canvas = document.getElementById('canvas');
+                                    const canvasRect = canvas.getBoundingClientRect();
+                                    const elementX = rect.left - canvasRect.left;
+                                    const elementY = rect.top - canvasRect.top;
+                                    const normalized = pixelToNormalized(elementX, elementY);
+                                    normalizedX = normalized.x;
+                                    normalizedY = normalized.y;
+                                    
+                                    // Update the stored coordinates for future broadcasts
+                                    avatar.x = elementX;
+                                    avatar.y = elementY;
+                                    avatar.normalizedX = normalizedX;
+                                    avatar.normalizedY = normalizedY;
+                                    
+                                    console.log(`  ⚠️ Avatar ${id} had invalid coordinates, reading from DOM position`);
+                                }
+                                // Ultimate fallback: center-bottom
+                                else {
+                                    normalizedX = 0.5;
+                                    normalizedY = 0.7;
+                                    console.log(`  ⚠️ Avatar ${id} has no valid position data, using fallback (0.5, 0.7)`);
+                                }
                                 
                                 console.log(`  📤 Avatar ${id}: pos=(${avatar.x}, ${avatar.y}) normalized=(${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)})`);
                                 
@@ -1875,14 +1911,15 @@
 
                 socket.on('avatar-added', (data) => {
                     try {
-                        console.log(`🎭 Received avatar-added: ${data.id}, pos=(${data.normalizedX?.toFixed(3)}, ${data.normalizedY?.toFixed(3)})`);
-                        // If position data provided, use it; otherwise let addAvatarToStage calculate
-                        if (data.normalizedX !== undefined && data.normalizedY !== undefined) {
+                        console.log(`🎭 Received avatar-added: ${data.id}, pos=(${data.normalizedX}, ${data.normalizedY})`);
+                        // If position data provided and valid, use it; otherwise let addAvatarToStage calculate
+                        if (data.normalizedX !== undefined && !isNaN(data.normalizedX) && 
+                            data.normalizedY !== undefined && !isNaN(data.normalizedY)) {
                             const pixel = normalizedToPixel(data.normalizedX, data.normalizedY);
                             console.log(`  → Converting to pixel: (${pixel.x.toFixed(0)}, ${pixel.y.toFixed(0)})`);
                             addAvatarToStage(data.id, data.src, false, pixel.x, pixel.y);
                         } else {
-                            console.log('  → No position data, calculating automatically');
+                            console.log('  → No valid position data, calculating automatically');
                             addAvatarToStage(data.id, data.src, false);
                         }
                     } catch (error) {
@@ -3380,8 +3417,23 @@
                 if (socket) {
                     const avatarData = avatars.get(id);
                     if (avatarData) {
-                        const normalizedX = avatarData.normalizedX !== undefined ? avatarData.normalizedX : pixelToNormalized(avatarData.x, avatarData.y).x;
-                        const normalizedY = avatarData.normalizedY !== undefined ? avatarData.normalizedY : pixelToNormalized(avatarData.x, avatarData.y).y;
+                        // Ensure we have valid coordinates before broadcasting
+                        let normalizedX, normalizedY;
+                        
+                        if (avatarData.normalizedX !== undefined && !isNaN(avatarData.normalizedX)) {
+                            normalizedX = avatarData.normalizedX;
+                            normalizedY = avatarData.normalizedY;
+                        } else if (avatarData.x !== undefined && !isNaN(avatarData.x)) {
+                            const normalized = pixelToNormalized(avatarData.x, avatarData.y);
+                            normalizedX = normalized.x;
+                            normalizedY = normalized.y;
+                            // Update stored coordinates
+                            avatarData.normalizedX = normalizedX;
+                            avatarData.normalizedY = normalizedY;
+                        } else {
+                            console.error('⚠️ Avatar has invalid coordinates, cannot broadcast!');
+                            return; // Don't broadcast if we don't have valid coordinates
+                        }
                         
                         socket.emit('add-avatar', { 
                             id, 
@@ -3471,6 +3523,14 @@
             
             // Convert to normalized coordinates for consistent positioning across screen sizes
             const normalized = pixelToNormalized(x, y);
+            
+            // Validate coordinates
+            if (isNaN(x) || isNaN(y)) {
+                console.error(`⚠️ WARNING: Avatar ${id} has NaN pixel coordinates! x=${x}, y=${y}`);
+            }
+            if (isNaN(normalized.x) || isNaN(normalized.y)) {
+                console.error(`⚠️ WARNING: Avatar ${id} has NaN normalized coordinates! normalized.x=${normalized.x}, normalized.y=${normalized.y}`);
+            }
             
             console.log(`📍 Storing avatar ${id}: pixel=(${x.toFixed(0)}, ${y.toFixed(0)}) normalized=(${normalized.x.toFixed(3)}, ${normalized.y.toFixed(3)})`);
             
