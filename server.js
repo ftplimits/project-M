@@ -98,53 +98,69 @@ io.on('connection', (socket) => {
     
     // Host admits a player
     socket.on('admit-player', (data) => {
-        if (!currentRoom) return;
-        const room = rooms.get(currentRoom);
-        if (!room || room.host !== socket.id) return; // Only host can admit
-        
-        const pendingPlayer = room.pendingPlayers.get(data.socketId);
-        if (!pendingPlayer) return;
-        
-        // Move from pending to active players
-        room.players.set(data.socketId, pendingPlayer);
-        room.pendingPlayers.delete(data.socketId);
-        
-        // Join the socket.io room
-        pendingPlayer.socket.join(currentRoom);
-        
-        console.log(`Host admitted ${data.socketId} to room ${currentRoom}`);
-        
-        // Tell the player they're admitted
-        pendingPlayer.socket.emit('admitted', {
-            isHost: false,
-            players: Array.from(room.players.entries()).map(([sid, p]) => ({
-                socketId: sid,
-                name: p.name
-            }))
-        });
-        
-        // Notify all players INCLUDING the host
-        io.to(currentRoom).emit('player-joined', {
-            socketId: data.socketId,
-            name: pendingPlayer.name
-        });
+        try {
+            if (!currentRoom) return;
+            const room = rooms.get(currentRoom);
+            if (!room || room.host !== socket.id) return; // Only host can admit
+            
+            const pendingPlayer = room.pendingPlayers.get(data.socketId);
+            if (!pendingPlayer || !pendingPlayer.socket) {
+                console.log(`Cannot admit ${data.socketId} - player no longer pending or socket unavailable`);
+                return;
+            }
+            
+            // Move from pending to active players
+            room.players.set(data.socketId, pendingPlayer);
+            room.pendingPlayers.delete(data.socketId);
+            
+            // Join the socket.io room
+            pendingPlayer.socket.join(currentRoom);
+            
+            console.log(`Host admitted ${data.socketId} to room ${currentRoom}`);
+            
+            // Tell the player they're admitted
+            pendingPlayer.socket.emit('admitted', {
+                isHost: false,
+                players: Array.from(room.players.entries()).map(([sid, p]) => ({
+                    socketId: sid,
+                    name: p.name
+                }))
+            });
+            
+            // Notify all players INCLUDING the host
+            io.to(currentRoom).emit('player-joined', {
+                socketId: data.socketId,
+                name: pendingPlayer.name
+            });
+        } catch (error) {
+            console.error('Error admitting player:', error);
+        }
     });
     
     // Host denies a player
     socket.on('deny-player', (data) => {
-        if (!currentRoom) return;
-        const room = rooms.get(currentRoom);
-        if (!room || room.host !== socket.id) return; // Only host can deny
-        
-        const pendingPlayer = room.pendingPlayers.get(data.socketId);
-        if (!pendingPlayer) return;
-        
-        room.pendingPlayers.delete(data.socketId);
-        
-        console.log(`Host denied ${data.socketId} from room ${currentRoom}`);
-        
-        // Tell the player they're denied
-        pendingPlayer.socket.emit('denied');
+        try {
+            if (!currentRoom) return;
+            const room = rooms.get(currentRoom);
+            if (!room || room.host !== socket.id) return; // Only host can deny
+            
+            const pendingPlayer = room.pendingPlayers.get(data.socketId);
+            if (!pendingPlayer) {
+                console.log(`Cannot deny ${data.socketId} - player no longer pending`);
+                return;
+            }
+            
+            room.pendingPlayers.delete(data.socketId);
+            
+            console.log(`Host denied ${data.socketId} from room ${currentRoom}`);
+            
+            // Tell the player they're denied (only if socket still exists)
+            if (pendingPlayer.socket) {
+                pendingPlayer.socket.emit('denied');
+            }
+        } catch (error) {
+            console.error('Error denying player:', error);
+        }
     });
 
     // Dice rolling
@@ -383,48 +399,96 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        // Remove player from all rooms
-        rooms.forEach((room, roomId) => {
-            // Remove from active players
-            if (room.players && room.players.has(socket.id)) {
-                const wasHost = room.host === socket.id;
-                room.players.delete(socket.id);
-                
-                // Notify remaining players
-                io.to(roomId).emit('player-left', {
-                    socketId: socket.id
-                });
-                
-                // Handle host leaving
-                if (wasHost && room.players.size > 0) {
-                    // Transfer host to next player
-                    const newHost = room.players.keys().next().value;
-                    room.host = newHost;
-                    console.log(`Host transferred to ${newHost} in room ${roomId}`);
-                    
-                    // Notify new host
-                    const newHostSocket = room.players.get(newHost)?.socket;
-                    if (newHostSocket) {
-                        newHostSocket.emit('you-are-host');
-                        // Mark them as host
-                        io.to(roomId).emit('host-changed', { newHost: newHost });
-                    }
-                }
-                
-                // Clean up empty rooms
-                if (room.players.size === 0) {
-                    rooms.delete(roomId);
-                    console.log(`Room ${roomId} deleted (empty)`);
-                }
-            }
+        try {
+            console.log('Player disconnecting:', socket.id);
             
-            // Remove from pending players
-            if (room.pendingPlayers && room.pendingPlayers.has(socket.id)) {
-                room.pendingPlayers.delete(socket.id);
-            }
-        });
-        console.log('Player disconnected:', socket.id);
+            // Remove player from all rooms
+            rooms.forEach((room, roomId) => {
+                try {
+                    // Remove from active players
+                    if (room.players && room.players.has(socket.id)) {
+                        const wasHost = room.host === socket.id;
+                        const playerName = room.players.get(socket.id)?.name || 'Unknown';
+                        
+                        room.players.delete(socket.id);
+                        console.log(`  Removed ${playerName} from room ${roomId}`);
+                        
+                        // Notify remaining players (only if room still has players)
+                        if (room.players.size > 0) {
+                            try {
+                                io.to(roomId).emit('player-left', {
+                                    socketId: socket.id
+                                });
+                            } catch (broadcastError) {
+                                console.error('Error broadcasting player-left:', broadcastError);
+                            }
+                        }
+                        
+                        // Handle host leaving
+                        if (wasHost && room.players.size > 0) {
+                            try {
+                                // Transfer host to next player
+                                const newHostId = room.players.keys().next().value;
+                                const newHostData = room.players.get(newHostId);
+                                
+                                if (newHostId && newHostData) {
+                                    room.host = newHostId;
+                                    console.log(`  Host transferred to ${newHostData.name} (${newHostId}) in room ${roomId}`);
+                                    
+                                    // Notify new host
+                                    if (newHostData.socket) {
+                                        newHostData.socket.emit('you-are-host');
+                                    }
+                                    
+                                    // Notify all players of host change
+                                    io.to(roomId).emit('host-changed', { newHost: newHostId });
+                                } else {
+                                    console.error(`  Could not find new host in room ${roomId}`);
+                                }
+                            } catch (hostTransferError) {
+                                console.error('Error transferring host:', hostTransferError);
+                            }
+                        }
+                        
+                        // Clean up empty rooms
+                        if (room.players.size === 0) {
+                            rooms.delete(roomId);
+                            console.log(`  Room ${roomId} deleted (empty)`);
+                        }
+                    }
+                    
+                    // Remove from pending players
+                    if (room.pendingPlayers && room.pendingPlayers.has(socket.id)) {
+                        room.pendingPlayers.delete(socket.id);
+                        console.log(`  Removed from pending players in room ${roomId}`);
+                    }
+                } catch (roomError) {
+                    console.error(`Error cleaning up room ${roomId}:`, roomError);
+                }
+            });
+            
+            console.log('Player disconnected successfully:', socket.id);
+        } catch (error) {
+            console.error('CRITICAL: Error in disconnect handler:', error);
+        }
     });
+});
+
+// Global error handlers to prevent server crashes
+process.on('uncaughtException', (error) => {
+    console.error('❌ UNCAUGHT EXCEPTION:', error);
+    console.error('Stack:', error.stack);
+    // Don't exit - keep server running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ UNHANDLED REJECTION at:', promise);
+    console.error('Reason:', reason);
+    // Don't exit - keep server running
+});
+
+io.engine.on('connection_error', (err) => {
+    console.error('❌ Socket.IO connection error:', err);
 });
 
 httpServer.listen(PORT, () => {
