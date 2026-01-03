@@ -234,15 +234,18 @@ io.on('connection', (socket) => {
     socket.on('move-avatar', (data) => {
         if (!currentRoom) return;
         
+        console.log(`🎭 Avatar move from ${socket.id}: ${data.id} → (${data.normalizedX?.toFixed(3)}, ${data.normalizedY?.toFixed(3)})`);
+        
         const room = rooms.get(currentRoom);
         if (room && room.avatars.has(data.id)) {
             const avatar = room.avatars.get(data.id);
-            avatar.x = data.x;
-            avatar.y = data.y;
+            avatar.normalizedX = data.normalizedX;
+            avatar.normalizedY = data.normalizedY;
         }
         
         // Broadcast to all other players
         socket.to(currentRoom).emit('avatar-moved', data);
+        console.log(`  ✓ Broadcasted to room ${currentRoom}`);
     });
 
     // Host avatar upload handler
@@ -382,10 +385,12 @@ io.on('connection', (socket) => {
     socket.on('avatar-name-set', (data) => {
         if (!currentRoom) return;
         
+        console.log(`📛 Broadcasting name from ${socket.id}: ${data.avatarId} → "${data.name}"`);
+        
         // Broadcast to all other players in room
         socket.to(currentRoom).emit('avatar-name-set', data);
         
-        console.log(`Avatar ${data.avatarId} named: ${data.name}`);
+        console.log(`  ✓ Broadcasted to room ${currentRoom}`);
     });
     
     // Avatar lock handler
