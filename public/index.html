@@ -1967,19 +1967,15 @@
                                 
                                 console.log(`  📤 Avatar ${id}: pos=(${avatar.x}, ${avatar.y}) normalized=(${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)})`);
                                 
-                                // Get name banner text if exists
-                                let nameBannerText = '';
-                                const nameBanner = avatar.element?.querySelector('.avatar-name-banner');
-                                if (nameBanner) {
-                                    nameBannerText = nameBanner.textContent || '';
-                                }
+                                // Get name from Map (authoritative source)
+                                const name = avatar.name || '';
                                 
                                 socket.emit('add-avatar', {
                                     id: id,
                                     src: avatar.src,
                                     normalizedX: normalizedX,
                                     normalizedY: normalizedY,
-                                    name: nameBannerText
+                                    name: name
                                 });
                             }
                         });
@@ -1991,16 +1987,13 @@
                             if (hostImg) {
                                 console.log('📤 Broadcasting host avatar');
                                 
-                                // Get name banner text if exists
-                                let nameBannerText = '';
-                                const nameBanner = hostAvatar.querySelector('.avatar-name-banner');
-                                if (nameBanner) {
-                                    nameBannerText = nameBanner.textContent || '';
-                                }
+                                // Get name from Map (authoritative source)
+                                const hostData = avatars.get('host');
+                                const name = hostData?.name || '';
                                 
                                 socket.emit('add-host-avatar', {
                                     src: hostImg.src,
-                                    name: nameBannerText
+                                    name: name
                                 });
                             }
                         }
@@ -2198,7 +2191,8 @@
                     
                     avatars.set('host', {
                         element: hostAvatar,
-                        src: data.src // Store src for re-broadcasting
+                        src: data.src, // Store src for re-broadcasting
+                        name: data.name || '' // Store name
                     });
                 });
 
@@ -2262,6 +2256,10 @@
                         console.warn(`  Current avatars:`, Array.from(avatars.keys()));
                         return;
                     }
+                    
+                    // CRITICAL: Update name in Map
+                    avatarData.name = data.name;
+                    console.log(`  ✓ Updated name in Map: ${data.avatarId} → "${data.name}"`);
                     
                     let nameBanner = avatarData.element.querySelector('.avatar-name-banner');
                     if (nameBanner) {
@@ -3009,6 +3007,13 @@
                     nameBanner.contentEditable = false;
                     const name = nameBanner.textContent.trim();
                     
+                    // CRITICAL: Update name in avatars Map
+                    const avatarData = avatars.get(currentContextAvatarId);
+                    if (avatarData) {
+                        avatarData.name = name;
+                        console.log(`  ✓ Updated name in Map: ${currentContextAvatarId} → "${name}"`);
+                    }
+                    
                     // Broadcast name change
                     if (socket) {
                         console.log(`📛 Broadcasting name change: ${currentContextAvatarId} → "${name}"`);
@@ -3287,6 +3292,13 @@
                                 nameBanner.addEventListener('blur', () => {
                                     nameBanner.contentEditable = false;
                                     const name = nameBanner.textContent.trim();
+                                    
+                                    // CRITICAL: Update name in Map
+                                    if (avatarData) {
+                                        avatarData.name = name;
+                                        console.log(`  ✓ Updated name in Map: ${avatarData.id} → "${name}"`);
+                                    }
+                                    
                                     if (socket) {
                                         console.log(`📛 Broadcasting name change (from edit): ${avatarData.id} → "${name}"`);
                                         socket.emit('avatar-name-set', {
@@ -3389,6 +3401,14 @@
                             nameBanner.addEventListener('blur', () => {
                                 nameBanner.contentEditable = false;
                                 const name = nameBanner.textContent.trim();
+                                
+                                // CRITICAL: Update name in Map
+                                const hostData = avatars.get('host');
+                                if (hostData) {
+                                    hostData.name = name;
+                                    console.log(`  ✓ Updated host name in Map: "${name}"`);
+                                }
+                                
                                 if (socket) {
                                     console.log(`📛 Broadcasting host name change: host → "${name}"`);
                                     socket.emit('avatar-name-set', {
@@ -3425,7 +3445,8 @@
                         avatars.set('host', {
                             element: hostAvatar,
                             alternateImage: hostData.alternateSrc,
-                            originalImage: hostData.originalSrc
+                            originalImage: hostData.originalSrc,
+                            name: hostData.name || ''
                         });
                         
                         // Restore hotkey
@@ -3647,6 +3668,11 @@
                 characterImg.src = optimizedSrc;
                 hostAvatar.appendChild(characterImg);
                 
+                // Add name banner (CRITICAL: was missing!)
+                const nameBanner = document.createElement('div');
+                nameBanner.className = 'avatar-name-banner';
+                hostAvatar.appendChild(nameBanner);
+                
                 // Add drag handlers
                 hostAvatar.addEventListener('mousedown', (e) => {
                     if (e.button === 0) { // Left click
@@ -3666,7 +3692,8 @@
                 // Store host avatar data
                 avatars.set('host', {
                     element: hostAvatar,
-                    src: optimizedSrc // Store src for broadcasting
+                    src: optimizedSrc, // Store src for broadcasting
+                    name: '' // Initialize empty name
                 });
                 
                 // Broadcast to other players
@@ -3715,10 +3742,8 @@
                             return; // Don't broadcast if we don't have valid coordinates
                         }
                         
-                        // Get name from name banner (if it exists and has text)
-                        const avatarElement = avatars.get(id)?.element;
-                        const nameBanner = avatarElement?.querySelector('.avatar-name-banner');
-                        const name = nameBanner ? nameBanner.textContent.trim() : '';
+                        // Get name from Map (authoritative source)
+                        const name = avatarData.name || '';
                         
                         socket.emit('add-avatar', { 
                             id, 
@@ -3833,7 +3858,8 @@
                 normalizedX: normalized.x,
                 normalizedY: normalized.y,
                 width: avatarWidth, 
-                height: avatarHeight
+                height: avatarHeight,
+                name: '' // Initialize name (will be set when user edits)
             });
         }
 
