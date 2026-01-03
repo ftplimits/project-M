@@ -610,7 +610,7 @@
         }
         
         .tactical-token.dragging {
-            z-index: 1000;
+            z-index: 5000; /* Well above token baseline (1000) and grid (16) */
         }
         
         .tactical-token img {
@@ -4061,12 +4061,12 @@
             // Calculate and set initial z-index based on grid row
             // Pass element for accurate dimension calculation
             const snapped = snapToGrid(x, y, tokenEl);
-            const baseZIndex = 20;
+            const baseZIndex = 1000; // MAJOR FIX: Bumped to 1000 to stay above grid (z-index 16)
             // Clamp row to reasonable range (-20 to 20) to prevent extreme z-index values
             const clampedRow = Math.max(-20, Math.min(20, snapped.row));
             const rowOffset = clampedRow * 10;
-            // Ensure z-index never goes below 15 (scene images are at 10)
-            const finalZIndex = Math.max(15, baseZIndex + rowOffset);
+            // Ensure z-index never goes below 1000 (well above grid at 16)
+            const finalZIndex = Math.max(1000, baseZIndex + rowOffset);
             tokenEl.style.zIndex = finalZIndex;
             
             console.log(`🎲 Token created with z-index: ${finalZIndex} (row: ${snapped.row.toFixed(1)})`);
@@ -4219,40 +4219,54 @@
             const drag = (e) => {
                 if (!draggedToken) return;
                 
+                // CRITICAL FIX: Look up current token from Map using draggedToken
+                // Don't use tokenData from closure - it might be stale!
+                const currentTokenData = tacticalTokens.get(draggedToken);
+                if (!currentTokenData) return;
+                
                 const x = e.clientX - canvasRect.left - dragOffset.x;
                 const y = e.clientY - canvasRect.top - dragOffset.y;
                 
-                tokenData.element.style.left = x + 'px';
-                tokenData.element.style.top = y + 'px';
-                tokenData.x = x;
-                tokenData.y = y;
+                currentTokenData.element.style.left = x + 'px';
+                currentTokenData.element.style.top = y + 'px';
+                currentTokenData.x = x;
+                currentTokenData.y = y;
             };
             
             const stopDrag = () => {
                 if (draggedToken) {
-                    tokenData.element.classList.remove('dragging');
+                    // CRITICAL FIX: Look up current token from Map
+                    const currentTokenData = tacticalTokens.get(draggedToken);
+                    if (!currentTokenData) {
+                        draggedToken = null;
+                        document.removeEventListener('mousemove', drag);
+                        document.removeEventListener('mouseup', stopDrag);
+                        return;
+                    }
+                    
+                    currentTokenData.element.classList.remove('dragging');
                     
                     // Apply grid snapping - pass element for accurate dimension calculation
-                    const snapped = snapToGrid(tokenData.x, tokenData.y, tokenData.element);
-                    tokenData.x = snapped.x;
-                    tokenData.y = snapped.y;
-                    tokenData.element.style.left = snapped.x + 'px';
-                    tokenData.element.style.top = snapped.y + 'px';
+                    const snapped = snapToGrid(currentTokenData.x, currentTokenData.y, currentTokenData.element);
+                    currentTokenData.x = snapped.x;
+                    currentTokenData.y = snapped.y;
+                    currentTokenData.element.style.left = snapped.x + 'px';
+                    currentTokenData.element.style.top = snapped.y + 'px';
                     
                     // Store normalized coordinates
                     const normalized = pixelToNormalized(snapped.x, snapped.y);
-                    tokenData.normalizedX = normalized.x;
-                    tokenData.normalizedY = normalized.y;
+                    currentTokenData.normalizedX = normalized.x;
+                    currentTokenData.normalizedY = normalized.y;
                     
                     // Set z-index based on row for proper isometric stacking
-                    // Higher row numbers (further down/forward) = higher z-index
-                    const baseZIndex = 20;
+                    // MAJOR FIX: Baseline z-index bumped to 1000 to stay above grid (z-index 16)
+                    const baseZIndex = 1000;
                     // Clamp row to reasonable range (-20 to 20) to prevent extreme z-index values
                     const clampedRow = Math.max(-20, Math.min(20, snapped.row));
                     const rowOffset = clampedRow * 10;
-                    // Ensure z-index never goes below 15 (scene images are at 10)
-                    const finalZIndex = Math.max(15, baseZIndex + rowOffset);
-                    tokenData.element.style.zIndex = finalZIndex;
+                    // Ensure z-index never goes below 1000 (well above grid at 16)
+                    const finalZIndex = Math.max(1000, baseZIndex + rowOffset);
+                    currentTokenData.element.style.zIndex = finalZIndex;
                     
                     console.log(`🎲 Token z-index: ${finalZIndex} (row: ${snapped.row.toFixed(1)}, clamped: ${clampedRow})`);
                     
