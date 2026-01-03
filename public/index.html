@@ -2041,7 +2041,7 @@
                 });
 
                 socket.on('avatar-moved', (data) => {
-                    console.log(`🎭 Received avatar-moved: ${data.id}, normalizedX=${data.normalizedX?.toFixed(3)}, normalizedY=${data.normalizedY?.toFixed(3)}`);
+                    console.log(`🎭 Received avatar-moved: ${data.id}, normalizedX=${data.normalizedX}, normalizedY=${data.normalizedY}`);
                     if (data.normalizedX === undefined || data.normalizedY === undefined || 
                         isNaN(data.normalizedX) || isNaN(data.normalizedY)) {
                         console.error(`  ❌ Invalid coordinates received! normalizedX=${data.normalizedX}, normalizedY=${data.normalizedY}`);
@@ -3910,6 +3910,15 @@
             dragOffset.x = e.clientX - rect.left;
             dragOffset.y = e.clientY - rect.top;
             
+            // Validate dragOffset
+            if (isNaN(dragOffset.x) || isNaN(dragOffset.y)) {
+                console.error(`❌ startDrag: Invalid dragOffset! x=${dragOffset.x}, y=${dragOffset.y}`);
+                console.error(`  Debug: e.clientX=${e.clientX}, rect.left=${rect.left}`);
+                draggedImage.classList.remove('dragging');
+                draggedImage = null;
+                return;
+            }
+            
             document.addEventListener('mousemove', drag);
             document.addEventListener('mouseup', stopDrag);
         }
@@ -3922,6 +3931,13 @@
             
             let x = e.clientX - canvasRect.left - dragOffset.x;
             let y = e.clientY - canvasRect.top - dragOffset.y;
+            
+            // Validate coordinates - if NaN, abort
+            if (isNaN(x) || isNaN(y)) {
+                console.error(`❌ Drag calculation resulted in NaN: x=${x}, y=${y}`);
+                console.error(`  Debug: e.clientX=${e.clientX}, canvasRect.left=${canvasRect.left}, dragOffset.x=${dragOffset.x}`);
+                return;
+            }
             
             // Check if this is an avatar (has name banner)
             const isAvatar = draggedImage.classList.contains('avatar-token') || 
@@ -3947,8 +3963,36 @@
             if (!draggedImage) return;
             
             const id = draggedImage.dataset.id;
+            
+            // Try to read from style first
             let x = parseFloat(draggedImage.style.left);
             let y = parseFloat(draggedImage.style.top);
+            
+            // Fallback: if NaN, calculate from element position
+            if (isNaN(x) || isNaN(y)) {
+                console.warn(`⚠️ Avatar ${id} has NaN coordinates in style, calculating from position`);
+                const canvas = document.getElementById('canvas');
+                const canvasRect = canvas.getBoundingClientRect();
+                const rect = draggedImage.getBoundingClientRect();
+                x = rect.left - canvasRect.left;
+                y = rect.top - canvasRect.top;
+                
+                // If still NaN, use stored coordinates
+                if (isNaN(x) || isNaN(y)) {
+                    const avatarData = avatars.get(id);
+                    if (avatarData && !isNaN(avatarData.x) && !isNaN(avatarData.y)) {
+                        x = avatarData.x;
+                        y = avatarData.y;
+                        console.warn(`  Using stored coordinates: (${x}, ${y})`);
+                    } else {
+                        console.error(`  ❌ Cannot determine valid coordinates for avatar ${id}`);
+                        draggedImage = null;
+                        document.removeEventListener('mousemove', drag);
+                        document.removeEventListener('mouseup', stopDrag);
+                        return;
+                    }
+                }
+            }
             
             draggedImage.classList.remove('dragging');
             
@@ -3969,6 +4013,15 @@
             
             // Update local storage
             const normalized = pixelToNormalized(x, y);
+            
+            // Validate coordinates before logging and broadcasting
+            if (isNaN(normalized.x) || isNaN(normalized.y)) {
+                console.error(`❌ Avatar ${id} normalized coordinates are NaN! Aborting broadcast.`);
+                draggedImage = null;
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', stopDrag);
+                return;
+            }
             
             console.log(`🔄 Drag stopped for ${id}: pixel=(${x.toFixed(0)}, ${y.toFixed(0)}) normalized=(${normalized.x.toFixed(3)}, ${normalized.y.toFixed(3)})`);
             
@@ -4014,6 +4067,13 @@
         }
 
         function moveImage(id, normalizedX, normalizedY, isLocal = true) {
+            // Validate coordinates
+            if (normalizedX === undefined || normalizedX === null || isNaN(normalizedX) ||
+                normalizedY === undefined || normalizedY === null || isNaN(normalizedY)) {
+                console.error(`❌ moveImage called with invalid coordinates for ${id}: normalizedX=${normalizedX}, normalizedY=${normalizedY}`);
+                return;
+            }
+            
             const imageData = images.get(id);
             const avatarData = avatars.get(id);
             const tokenData = tacticalTokens.get(id);
