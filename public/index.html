@@ -884,6 +884,55 @@
             cursor: pointer;
         }
         
+        /* Text Tool Slider */
+        #text-size-slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--bg-secondary);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        #text-size-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent-gold);
+            cursor: pointer;
+        }
+        
+        #text-size-slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent-gold);
+            cursor: pointer;
+            border: none;
+        }
+        
+        /* Text Elements */
+        .text-element {
+            position: absolute;
+            font-family: 'Times New Roman', Times, serif;
+            cursor: move;
+            user-select: none;
+            z-index: 30;
+            pointer-events: auto;
+        }
+        
+        .text-element.editing {
+            cursor: text;
+            user-select: text;
+        }
+        
+        /* Text Toolbox Positioning */
+        #text-toolbox {
+            top: 450px;
+        }
+        
         .drawing-canvas {
             position: absolute;
             top: 0;
@@ -1204,6 +1253,7 @@
             <div class="context-item" data-action="toggle-tactical-mode">⚔️ Toggle Tactical Mode</div>
             <div class="context-item" data-action="upload-tokens">🎯 Upload Tokens</div>
             <div class="context-item" data-action="toggle-drawing-tool">✏️ Toggle Drawing Tool</div>
+            <div class="context-item" data-action="toggle-text-tool">📝 Toggle Text Tool</div>
             <div class="context-item" data-action="toggle-weather-menu">🌦️ Weather Effects</div>
             <div class="context-item" data-action="toggle-tactical-theme-menu">🗺️ Tactical Themes</div>
             <div class="context-item" data-action="upload-handout">📄 Upload Handout</div>
@@ -1440,6 +1490,41 @@
         </div>
     </div>
 
+    <!-- Text Toolbox -->
+    <div id="text-toolbox" class="drawing-toolbox">
+        <div class="drawing-toolbox-header">📝 TEXT TOOL</div>
+        
+        <div class="drawing-tool-section">
+            <div class="drawing-tool-label">SIZE</div>
+            <input type="range" id="text-size-slider" min="12" max="120" value="36" step="4">
+            <div style="text-align: center; font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                <span id="text-size-display">36</span>px
+            </div>
+        </div>
+        
+        <div class="drawing-tool-section">
+            <div class="drawing-tool-label">COLOR</div>
+            <div class="drawing-color-palette" id="text-color-palette">
+                <div class="drawing-color-btn active" data-color="#FFFFFF" style="background: #FFFFFF;"></div>
+                <div class="drawing-color-btn" data-color="#000000" style="background: #000000;"></div>
+                <div class="drawing-color-btn" data-color="#808080" style="background: #808080;"></div>
+                <div class="drawing-color-btn" data-color="#8B4513" style="background: #8B4513;"></div>
+                <div class="drawing-color-btn" data-color="#FF0000" style="background: #FF0000;"></div>
+                <div class="drawing-color-btn" data-color="#FFC0CB" style="background: #FFC0CB;"></div>
+                <div class="drawing-color-btn" data-color="#FFA500" style="background: #FFA500;"></div>
+                <div class="drawing-color-btn" data-color="#FFFF00" style="background: #FFFF00;"></div>
+                <div class="drawing-color-btn" data-color="#00FF00" style="background: #00FF00;"></div>
+                <div class="drawing-color-btn" data-color="#00FFFF" style="background: #00FFFF;"></div>
+                <div class="drawing-color-btn" data-color="#0000FF" style="background: #0000FF;"></div>
+                <div class="drawing-color-btn" data-color="#800080" style="background: #800080;"></div>
+            </div>
+        </div>
+        
+        <div class="drawing-tool-section">
+            <button class="drawing-tool-btn" id="text-clear-btn" style="width: 100%;">🗑️ Clear All Text</button>
+        </div>
+    </div>
+
     <script>
         const CLIENT_ID = '1455487225490837526';
         // The discord-sdk.js exports as: DiscordSDK.DiscordSDK
@@ -1487,6 +1572,17 @@
         let drawingToolActive = false;
         let currentTool = 'freehand';
         let currentColor = '#FFFFFF';
+        let fillShape = false;
+        let isDrawing = false;
+        let drawingStartX, drawingStartY;
+        let drawingCanvas, drawingCtx;
+        
+        // Text Tool Variables
+        let textToolActive = false;
+        let textToolInitialized = false;
+        let textColor = '#FFFFFF';
+        let textSize = 36;
+        let textElements = new Map(); // id -> {element, text, x, y, color, size}
         let fillShape = false;
         let isDrawing = false;
         let drawingStartX = 0;
@@ -2144,17 +2240,6 @@
                     }
                 });
                 
-                socket.on('avatar-flipped', (data) => {
-                    const avatarData = avatars.get(data.avatarId);
-                    if (!avatarData) return;
-                    
-                    if (data.flipped) {
-                        avatarData.element.classList.add('flipped');
-                    } else {
-                        avatarData.element.classList.remove('flipped');
-                    }
-                });
-                
                 socket.on('avatar-alternate-set', (data) => {
                     const avatarData = avatars.get(data.avatarId);
                     if (!avatarData) return;
@@ -2250,6 +2335,15 @@
                         moveToken(data.id, data.normalizedX, data.normalizedY);
                     } catch (error) {
                         console.error('❌ Error handling token-moved:', error);
+                    }
+                });
+                
+                // Real-time token movement during drag
+                socket.on('token-moving', (data) => {
+                    try {
+                        moveToken(data.id, data.normalizedX, data.normalizedY);
+                    } catch (error) {
+                        console.error('❌ Error handling token-moving:', error);
                     }
                 });
 
@@ -2427,6 +2521,9 @@
                         contextMenu.classList.remove('active');
                     } else if (action === 'toggle-drawing-tool') {
                         toggleDrawingTool();
+                        contextMenu.classList.remove('active');
+                    } else if (action === 'toggle-text-tool') {
+                        toggleTextTool();
                         contextMenu.classList.remove('active');
                     } else if (action === 'toggle-weather-menu') {
                         if (typeof window.toggleWeatherMenu === 'function') {
@@ -3426,13 +3523,8 @@
                 avatarData.element.classList.add('flipped');
             }
             
-            // Broadcast flip
-            if (socket) {
-                socket.emit('avatar-flipped', {
-                    avatarId: randomId,
-                    flipped: !isFlipped
-                });
-            }
+            // Avatar flipping is local only (eye candy)
+            // No need to broadcast - each client handles their own flips
         }
         
         // ===== PLAYER LIST & ADMIT/DENY =====
@@ -3673,6 +3765,11 @@
             characterImg.className = 'character-portrait';
             characterImg.src = src;
             avatar.appendChild(characterImg);
+            
+            // Add name banner
+            const nameBanner = document.createElement('div');
+            nameBanner.className = 'avatar-name-banner';
+            avatar.appendChild(nameBanner);
             
             // Add drag handlers
             avatar.addEventListener('mousedown', (e) => {
@@ -4077,6 +4174,183 @@
             }
         }
 
+        
+        // ===== TEXT TOOL SYSTEM =====
+        function toggleTextTool() {
+            textToolActive = !textToolActive;
+            const toolbox = document.getElementById('text-toolbox');
+            const canvas = document.getElementById('canvas');
+            
+            if (textToolActive) {
+                toolbox.classList.add('active');
+                canvas.style.cursor = 'text';
+                if (!textToolInitialized) {
+                    initTextTool();
+                    textToolInitialized = true;
+                }
+            } else {
+                toolbox.classList.remove('active');
+                canvas.style.cursor = 'default';
+            }
+        }
+        
+        function initTextTool() {
+            const canvas = document.getElementById('canvas');
+            const sizeSlider = document.getElementById('text-size-slider');
+            const sizeDisplay = document.getElementById('text-size-display');
+            const clearBtn = document.getElementById('text-clear-btn');
+            const colorPalette = document.getElementById('text-color-palette');
+            
+            // Size slider
+            sizeSlider.addEventListener('input', (e) => {
+                textSize = parseInt(e.target.value);
+                sizeDisplay.textContent = textSize;
+            });
+            
+            // Color palette
+            colorPalette.querySelectorAll('.drawing-color-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    colorPalette.querySelectorAll('.drawing-color-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    textColor = btn.dataset.color;
+                });
+            });
+            
+            // Clear all text
+            clearBtn.addEventListener('click', () => {
+                textElements.forEach((data, id) => {
+                    data.element.remove();
+                });
+                textElements.clear();
+                console.log('🗑️ Cleared all text');
+            });
+            
+            // Canvas click to add text (only add once)
+            canvas.addEventListener('click', handleTextClick);
+            
+            console.log('📝 Text tool initialized');
+        }
+        
+        function handleTextClick(e) {
+            if (!textToolActive) return;
+            
+            // Don't place text if clicking on UI elements or other interactive elements
+            if (e.target.id !== 'canvas' && !e.target.classList.contains('canvas-area')) {
+                return;
+            }
+            
+            const canvas = document.getElementById('canvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            const x = e.clientX - canvasRect.left;
+            const y = e.clientY - canvasRect.top;
+            
+            createTextElement(x, y);
+        }
+        
+        function createTextElement(x, y, text = 'Text', existingId = null) {
+            const canvas = document.getElementById('canvas');
+            const id = existingId || `text-${Date.now()}`;
+            
+            const textEl = document.createElement('div');
+            textEl.className = 'text-element';
+            textEl.contentEditable = 'true';
+            textEl.textContent = text;
+            textEl.style.left = x + 'px';
+            textEl.style.top = y + 'px';
+            textEl.style.color = textColor;
+            textEl.style.fontSize = textSize + 'px';
+            textEl.dataset.id = id;
+            
+            canvas.appendChild(textEl);
+            
+            // Store text data
+            textElements.set(id, {
+                element: textEl,
+                text: text,
+                x: x,
+                y: y,
+                color: textColor,
+                size: textSize
+            });
+            
+            // Focus for immediate editing
+            textEl.focus();
+            
+            // Select all text
+            const range = document.createRange();
+            const sel = window.getSelection();
+            range.selectNodeContents(textEl);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            // Handle text changes
+            textEl.addEventListener('blur', () => {
+                const data = textElements.get(id);
+                if (data) {
+                    data.text = textEl.textContent;
+                    if (data.text.trim() === '') {
+                        // Remove empty text elements
+                        textEl.remove();
+                        textElements.delete(id);
+                    }
+                }
+            });
+            
+            // Make draggable
+            textEl.addEventListener('mousedown', (e) => {
+                if (textEl.contentEditable === 'true' && e.detail === 1) {
+                    return; // Allow editing on single click
+                }
+                startDragText(e, id);
+            });
+            
+            // Double-click to edit
+            textEl.addEventListener('dblclick', () => {
+                textEl.contentEditable = 'true';
+                textEl.classList.add('editing');
+                textEl.focus();
+            });
+            
+            console.log(`📝 Created text element: ${id}`);
+        }
+        
+        function startDragText(e, textId) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const data = textElements.get(textId);
+            if (!data) return;
+            
+            // Disable editing during drag
+            data.element.contentEditable = 'false';
+            data.element.classList.remove('editing');
+            
+            const canvas = document.getElementById('canvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            const rect = data.element.getBoundingClientRect();
+            
+            const offsetX = e.clientX - rect.left;
+            const offsetY = e.clientY - rect.top;
+            
+            const drag = (e) => {
+                const x = e.clientX - canvasRect.left - offsetX;
+                const y = e.clientY - canvasRect.top - offsetY;
+                
+                data.element.style.left = x + 'px';
+                data.element.style.top = y + 'px';
+                data.x = x;
+                data.y = y;
+            };
+            
+            const stopDrag = () => {
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', stopDrag);
+            };
+            
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', stopDrag);
+        }
+
         // ===== TACTICAL MODE SYSTEM =====
         function toggleTacticalMode() {
             tacticalModeActive = !tacticalModeActive;
@@ -4428,6 +4702,10 @@
             dragOffset.x = e.clientX - rect.left;
             dragOffset.y = e.clientY - rect.top;
             
+            // Throttle for real-time broadcasting (20 updates/second)
+            let lastBroadcast = 0;
+            const BROADCAST_INTERVAL = 50; // 50ms = 20 times per second
+            
             const drag = (e) => {
                 if (!draggedToken) return;
                 
@@ -4443,6 +4721,14 @@
                 currentTokenData.element.style.top = y + 'px';
                 currentTokenData.x = x;
                 currentTokenData.y = y;
+                
+                // Real-time broadcast (throttled to 20/second)
+                const now = Date.now();
+                if (socket && now - lastBroadcast >= BROADCAST_INTERVAL) {
+                    const normalized = pixelToNormalized(x, y);
+                    socket.emit('token-moving', { id: draggedToken, normalizedX: normalized.x, normalizedY: normalized.y });
+                    lastBroadcast = now;
+                }
             };
             
             const stopDrag = () => {
