@@ -333,6 +333,12 @@ io.on('connection', (socket) => {
         socket.to(currentRoom).emit('token-moved', data);
     });
     
+    // Real-time token movement during drag (throttled at client)
+    socket.on('token-moving', (data) => {
+        if (!currentRoom) return;
+        socket.to(currentRoom).emit('token-moving', data);
+    });
+    
     socket.on('token-removed', (data) => {
         if (!currentRoom) return;
         socket.to(currentRoom).emit('token-removed', data);
@@ -361,14 +367,6 @@ io.on('connection', (socket) => {
         if (!currentRoom) return;
         socket.to(currentRoom).emit('token-size-changed', data);
         console.log(`Token ${data.id} size changed to ${data.size}`);
-    });
-    
-    // Avatar flip handler
-    socket.on('avatar-flipped', (data) => {
-        if (!currentRoom) return;
-        
-        // Broadcast to all other players in room
-        socket.to(currentRoom).emit('avatar-flipped', data);
     });
     
     // Avatar alternate image handler
