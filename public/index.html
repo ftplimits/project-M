@@ -1872,10 +1872,20 @@
                 });
 
                 socket.on('player-left', (data) => {
-                    console.log('Player left:', data.socketId);
-                    players.delete(data.socketId);
-                    updatePlayerList();
-                    updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
+                    try {
+                        console.log('Player left:', data.socketId);
+                        if (data && data.socketId) {
+                            players.delete(data.socketId);
+                            updatePlayerList();
+                            if (channelId) {
+                                updateUI({ id: channelId, name: `Channel ${channelId}` }, players.size);
+                            }
+                        } else {
+                            console.error('Invalid player-left data:', data);
+                        }
+                    } catch (error) {
+                        console.error('Error handling player-left:', error);
+                    }
                 });
 
                 socket.on('image-added', (data) => {
@@ -3282,22 +3292,35 @@
         
         // ===== PLAYER LIST & ADMIT/DENY =====
         function updatePlayerList() {
-            const playerListEl = document.getElementById('player-list');
-            const playerCountEl = document.getElementById('player-count');
-            
-            playerCountEl.textContent = players.size;
-            
-            playerListEl.innerHTML = '';
-            players.forEach((name, socketId) => {
-                const item = document.createElement('div');
-                item.className = 'player-item';
-                if (socketId === players.keys().next().value) {
-                    // First player is host
-                    item.classList.add('host');
+            try {
+                const playerListEl = document.getElementById('player-list');
+                const playerCountEl = document.getElementById('player-count');
+                
+                if (!playerListEl || !playerCountEl) {
+                    console.warn('Player list elements not found in DOM');
+                    return;
                 }
-                item.textContent = name || 'Player';
-                playerListEl.appendChild(item);
-            });
+                
+                playerCountEl.textContent = players.size;
+                
+                playerListEl.innerHTML = '';
+                players.forEach((name, socketId) => {
+                    try {
+                        const item = document.createElement('div');
+                        item.className = 'player-item';
+                        if (socketId === players.keys().next().value) {
+                            // First player is host
+                            item.classList.add('host');
+                        }
+                        item.textContent = name || 'Player';
+                        playerListEl.appendChild(item);
+                    } catch (itemError) {
+                        console.error('Error creating player list item:', itemError);
+                    }
+                });
+            } catch (error) {
+                console.error('Error updating player list:', error);
+            }
         }
         
         function togglePlayerList() {
