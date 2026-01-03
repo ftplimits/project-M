@@ -29,6 +29,21 @@
             overflow: hidden;
             margin: 0;
             padding: 0;
+            /* Suppress default browser highlights and selection */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+        }
+        
+        /* Allow text selection in inputs and editable elements */
+        input, textarea, [contenteditable="true"] {
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
         }
         
         .container {
@@ -71,60 +86,101 @@
         }
         
         /* Info Badge - Top Right */
-        .info-badge {
-            position: absolute;
-            top: 20px;
-            left: 20px;
+        /* Players Panel */
+        .players-panel {
+            position: fixed;
+            left: -250px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 220px;
+            max-height: 400px;
             background: var(--bg-panel);
             border: 2px solid var(--accent-gold);
-            border-radius: 4px;
-            padding: 12px 16px;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            z-index: 100;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-            min-width: 180px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .info-badge:hover {
-            border-color: var(--accent-red);
-        }
-        
-        .info-badge-header {
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            padding: 12px;
+            z-index: 2000;
+            box-shadow: 4px 0 12px rgba(0, 0, 0, 0.6);
+            transition: left 0.3s ease-in-out;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-weight: bold;
-            color: var(--accent-gold);
+            flex-direction: column;
         }
         
-        .player-list {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid var(--border-color);
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out;
-            text-transform: none;
-            letter-spacing: normal;
+        .players-panel.open {
+            left: 0;
         }
         
-        .info-badge.expanded .player-list {
-            max-height: 400px;
+        .players-panel-toggle {
+            position: fixed;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--bg-panel);
+            padding: 8px 6px;
+            border-radius: 0 8px 8px 0;
+            border: 2px solid var(--accent-gold);
+            border-left: none;
+            box-shadow: 4px 0 12px rgba(0, 0, 0, 0.6);
+            cursor: pointer;
+            z-index: 1999;
+            transition: left 0.3s ease-in-out, background-color 0.2s;
+            user-select: none;
+        }
+        
+        .players-panel-toggle:hover {
+            background-color: #2a2a2a;
+        }
+        
+        .players-panel.open ~ .players-panel-toggle {
+            left: 220px;
+        }
+        
+        .player-list-scroll {
+            overflow-y: auto;
+            flex: 1;
+            padding-right: 5px;
+        }
+        
+        .player-list-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .player-list-scroll::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 3px;
+        }
+        
+        .player-list-scroll::-webkit-scrollbar-thumb {
+            background: var(--accent-gold);
+            border-radius: 3px;
+        }
+        
+        .player-list-scroll::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-red);
         }
         
         .player-item {
-            padding: 6px 8px;
-            margin: 4px 0;
-            background: var(--bg-secondary);
-            border-radius: 4px;
+            padding: 6px 10px;
+            margin: 3px 0;
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, #1a1a1a 100%);
+            border-radius: 6px;
             font-size: 11px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            cursor: default;
+        }
+        
+        .player-item:hover {
+            border-color: var(--accent-gold);
+            background: linear-gradient(135deg, #2a2a2a 0%, var(--bg-secondary) 100%);
+        }
+        
+        .player-item.host {
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 8px rgba(212, 175, 55, 0.3);
         }
         
         .player-item.host::before {
@@ -135,6 +191,7 @@
         .player-item.pending {
             opacity: 0.6;
             border: 1px dashed var(--accent-gold);
+            background: var(--bg-secondary);
         }
         
         .info-badge div {
@@ -1142,6 +1199,7 @@
             <div class="context-item" data-action="add-player-avatar">🎭 Add Player Avatar</div>
             <div class="context-item" data-action="add-host-avatar">👑 Add Host Avatar</div>
             <div class="context-item" data-action="add-scene-image">🖼️ Add Scene Image</div>
+            <div class="context-item" data-action="clear-scene-image">🗑️ Clear Scene Image</div>
             <div class="context-divider"></div>
             <div class="context-item" data-action="toggle-tactical-mode">⚔️ Toggle Tactical Mode</div>
             <div class="context-item" data-action="upload-tokens">🎯 Upload Tokens</div>
@@ -1195,12 +1253,28 @@
         <input type="file" id="token-upload-input" accept="image/png,image/jpg,image/jpeg,image/webp" multiple style="display: none;">
         
         <!-- Info Badge -->
-        <div class="info-badge" id="info-badge">
-            <div class="info-badge-header">
-                <div id="channel-info">Connecting...</div>
-                <div id="player-count">0</div>
+        <!-- Players Panel with Pull Tab -->
+        <div id="playersPanel" class="players-panel">
+            <div class="players-header">
+                <div style="font-size: 12px; font-weight: bold; color: var(--accent-gold); text-align: center; border-bottom: 1px solid var(--accent-gold); padding-bottom: 5px; margin-bottom: 8px;">
+                    👥 PLAYERS
+                </div>
+                <div id="player-count-display" style="text-align: center; font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
+                    <span id="player-count">0</span> Connected
+                </div>
             </div>
-            <div class="player-list" id="player-list"></div>
+            <div id="player-list" class="player-list-scroll"></div>
+            <div class="panel-footer" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-color); text-align: center;">
+                <div class="context-item" id="show-channel-info" style="font-size: 10px; padding: 4px 8px; cursor: pointer; color: var(--text-secondary);">
+                    ℹ️ Channel Info
+                </div>
+            </div>
+        </div>
+        
+        <div id="playersPanelToggle" class="players-panel-toggle">
+            <div style="font-size: 14px; color: var(--accent-gold); font-weight: bold; writing-mode: vertical-rl; text-orientation: mixed;">
+                👥 PLAYERS
+            </div>
         </div>
         
         <!-- The Stage - Fixed 16:9 aspect ratio wrapper -->
@@ -1791,11 +1865,19 @@
                                 
                                 console.log(`  📤 Avatar ${id}: pos=(${avatar.x}, ${avatar.y}) normalized=(${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)})`);
                                 
+                                // Get name banner text if exists
+                                let nameBannerText = '';
+                                const nameBanner = avatar.element?.querySelector('.avatar-name-banner');
+                                if (nameBanner) {
+                                    nameBannerText = nameBanner.textContent || '';
+                                }
+                                
                                 socket.emit('add-avatar', {
                                     id: id,
                                     src: avatar.src,
                                     normalizedX: normalizedX,
-                                    normalizedY: normalizedY
+                                    normalizedY: normalizedY,
+                                    name: nameBannerText
                                 });
                             }
                         });
@@ -1806,8 +1888,17 @@
                             const hostImg = hostAvatar.querySelector('.character-portrait');
                             if (hostImg) {
                                 console.log('📤 Broadcasting host avatar');
+                                
+                                // Get name banner text if exists
+                                let nameBannerText = '';
+                                const nameBanner = hostAvatar.querySelector('.avatar-name-banner');
+                                if (nameBanner) {
+                                    nameBannerText = nameBanner.textContent || '';
+                                }
+                                
                                 socket.emit('add-host-avatar', {
-                                    src: hostImg.src
+                                    src: hostImg.src,
+                                    name: nameBannerText
                                 });
                             }
                         }
@@ -1921,7 +2012,7 @@
 
                 socket.on('avatar-added', (data) => {
                     try {
-                        console.log(`🎭 Received avatar-added: ${data.id}, pos=(${data.normalizedX}, ${data.normalizedY})`);
+                        console.log(`🎭 Received avatar-added: ${data.id}, pos=(${data.normalizedX}, ${data.normalizedY}), name="${data.name || ''}"`);
                         // If position data provided and valid, use it; otherwise let addAvatarToStage calculate
                         if (data.normalizedX !== undefined && !isNaN(data.normalizedX) && 
                             data.normalizedY !== undefined && !isNaN(data.normalizedY)) {
@@ -1931,6 +2022,18 @@
                         } else {
                             console.log('  → No valid position data, calculating automatically');
                             addAvatarToStage(data.id, data.src, false);
+                        }
+                        
+                        // Apply name banner if provided
+                        if (data.name) {
+                            const avatarData = avatars.get(data.id);
+                            if (avatarData) {
+                                const nameBanner = avatarData.element.querySelector('.avatar-name-banner');
+                                if (nameBanner) {
+                                    nameBanner.textContent = data.name;
+                                    console.log(`  → Applied name: "${data.name}"`);
+                                }
+                            }
                         }
                     } catch (error) {
                         console.error('❌ Error handling avatar-added:', error);
@@ -1948,7 +2051,7 @@
                 });
 
                 socket.on('host-avatar-added', (data) => {
-                    console.log('👑 Received host-avatar-added');
+                    console.log('👑 Received host-avatar-added, name="' + (data.name || '') + '"');
                     // Remove existing host avatar if any
                     const existingHost = document.querySelector('.host-avatar');
                     if (existingHost) {
@@ -1967,6 +2070,15 @@
                     characterImg.className = 'character-portrait';
                     characterImg.src = data.src;
                     hostAvatar.appendChild(characterImg);
+                    
+                    // Add name banner
+                    const nameBanner = document.createElement('div');
+                    nameBanner.className = 'avatar-name-banner';
+                    if (data.name) {
+                        nameBanner.textContent = data.name;
+                        console.log(`  → Applied host name: "${data.name}"`);
+                    }
+                    hostAvatar.appendChild(nameBanner);
                     
                     // Add drag handlers
                     hostAvatar.addEventListener('mousedown', (e) => {
@@ -2214,8 +2326,12 @@
         })();
 
         function updateUI(channel, playerCount) {
-            document.getElementById('channel-info').textContent = `Channel: ${channel.name || channel.id}`;
-            document.getElementById('player-count').textContent = `Players: ${playerCount}`;
+            // Store channel info for later display
+            window.currentChannelInfo = {
+                name: channel.name || channel.id,
+                id: channel.id
+            };
+            document.getElementById('player-count').textContent = playerCount;
         }
 
         function setupEventListeners() {
@@ -2294,6 +2410,9 @@
                     } else if (action === 'add-scene-image') {
                         document.getElementById('scene-image-input').click();
                         contextMenu.classList.remove('active');
+                    } else if (action === 'clear-scene-image') {
+                        clearSceneImage();
+                        contextMenu.classList.remove('active');
                     } else if (action === 'toggle-tactical-mode') {
                         toggleTacticalMode();
                         contextMenu.classList.remove('active');
@@ -2358,8 +2477,27 @@
             document.getElementById('load-session-input').addEventListener('change', handleLoadSession);
             document.getElementById('token-upload-input').addEventListener('change', handleTokenUpload);
             
-            // Info badge click to toggle player list
-            document.getElementById('info-badge').addEventListener('click', togglePlayerList);
+            // Players panel toggle
+            const playersPanel = document.getElementById('playersPanel');
+            const playersPanelToggle = document.getElementById('playersPanelToggle');
+            
+            playersPanelToggle.addEventListener('click', () => {
+                playersPanel.classList.toggle('open');
+            });
+            
+            // Channel info button
+            document.getElementById('show-channel-info').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const info = window.currentChannelInfo || { name: 'Unknown', id: 'Unknown' };
+                showModal(
+                    'Channel Information',
+                    `<div style="font-size: 14px; line-height: 1.6;">
+                        <p><strong>Channel Name:</strong> ${info.name}</p>
+                        <p><strong>Channel ID:</strong> ${info.id}</p>
+                    </div>`,
+                    [{ text: 'OK', class: 'cancel' }]
+                );
+            });
             
             // Admit/Deny button listeners
             document.getElementById('admit-button').addEventListener('click', handleAdmit);
@@ -3323,10 +3461,6 @@
             }
         }
         
-        function togglePlayerList() {
-            const infoBadge = document.getElementById('info-badge');
-            infoBadge.classList.toggle('expanded');
-        }
         
         function showAdmitDenyModal(playerName, socketId) {
             const modal = document.getElementById('admit-modal');
@@ -3618,6 +3752,52 @@
             
             // Reset input
             event.target.value = '';
+        }
+
+        function clearSceneImage() {
+            // Find all scene images (they have the scene-image class)
+            const sceneImages = [];
+            images.forEach((imageData, id) => {
+                if (imageData.element.classList.contains('scene-image')) {
+                    sceneImages.push(id);
+                }
+            });
+            
+            if (sceneImages.length === 0) {
+                showModal('No Scene Image', 'There is no scene image to clear.', [{ text: 'OK', class: 'cancel' }]);
+                return;
+            }
+            
+            // Confirm with user
+            showModal(
+                'Clear Scene Image?',
+                `Remove ${sceneImages.length} scene image${sceneImages.length > 1 ? 's' : ''}?`,
+                [
+                    { 
+                        text: 'Clear', 
+                        class: 'primary',
+                        action: () => {
+                            sceneImages.forEach(id => {
+                                const imageData = images.get(id);
+                                if (imageData) {
+                                    // Remove from DOM
+                                    imageData.element.remove();
+                                    // Remove from map
+                                    images.delete(id);
+                                    hardLockedAvatars.delete(id);
+                                    
+                                    // Broadcast removal to other players
+                                    if (socket) {
+                                        socket.emit('remove-image', { id });
+                                    }
+                                }
+                            });
+                            console.log(`🗑️ Cleared ${sceneImages.length} scene image(s)`);
+                        }
+                    },
+                    { text: 'Cancel', class: 'cancel' }
+                ]
+            );
         }
 
         function addImageToCanvas(id, src, x, y, width, height, isLocal = true) {
